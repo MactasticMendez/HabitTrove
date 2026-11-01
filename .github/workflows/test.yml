@@ -14,9 +14,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v1
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+          bun-download-url: https://github.com/oven-sh/bun/releases/latest/download/bun-linux-x64.zip
 
       - name: Install dependencies
         run: bun install
