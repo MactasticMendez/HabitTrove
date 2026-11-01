@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+* Download Bun for CI from its official GitHub release when the Bun download endpoint returns 403.
+
 ### Security
 
 * Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
