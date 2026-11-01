@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 const zodEnv = z.object({
-  AUTH_SECRET: z.string(),
+  AUTH_SECRET: z.string().min(32),
   DEMO: z.string().optional(),
 })
 
@@ -20,12 +20,12 @@ export function init() {
       const { fieldErrors } = err.flatten()
       const errorMessage = Object.entries(fieldErrors)
         .map(([field, errors]) =>
-          errors ? `${field}: ${errors.join(", ")}` : field,
+          Array.isArray(errors) ? `${field}: ${errors.join(", ")}` : field,
         )
         .join("\n ")
 
       throw new Error(
-        `Missing environment variables:\n ${errorMessage}`,
+        `Invalid environment variables:\n ${errorMessage}`,
       )
     }
   }

@@ -11,6 +11,10 @@ export const passwordSchema = string()
   .optional()
   .or(literal(''))
 
+export const newPasswordSchema = string()
+  .min(12, "Password must be at least 12 characters")
+  .max(32, "Password must be at most 32 characters")
+
 export const signInSchema = object({
   username: usernameSchema,
   password: passwordSchema,

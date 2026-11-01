@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { passwordSchema, usernameSchema } from '@/lib/zod';
+import { newPasswordSchema, usernameSchema } from '@/lib/zod';
 import { useTranslations } from 'next-intl';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -138,23 +138,28 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
       // Validate username
       const usernameResult = usernameSchema.safeParse(username);
       if (!usernameResult.success) {
-        setError(usernameResult.error.errors[0].message);
+        setError(usernameResult.error.issues[0].message);
         return;
       }
 
       // Validate password unless disabled
       if (!disablePassword && password) {
-        const passwordResult = passwordSchema.safeParse(password);
+        const passwordResult = newPasswordSchema.safeParse(password);
         if (!passwordResult.success) {
-          setError(passwordResult.error.errors[0].message);
+          setError(passwordResult.error.issues[0].message);
           return;
         }
       }
 
       if (isEditing) {
         // Update existing user
-        if (username !== user.username || avatarPath !== user.avatarPath || !_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin) {
-          await updateUser(user.id, { username, avatarPath, permissions, isAdmin });
+        if (username !== user.username || avatarPath !== user.avatarPath ||
+          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin))) {
+          await updateUser(user.id, {
+            username,
+            avatarPath,
+            ...(currentUser?.isAdmin && { permissions, isAdmin })
+          });
         }
 
         // Handle password update
@@ -171,8 +176,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
               ...u,
               username,
               avatarPath,
-              permissions,
-              isAdmin,
+              ...(currentUser?.isAdmin && { permissions, isAdmin }),
               hasPassword: disablePassword ? false : (password ? true : !!u.hasPassword)
             } : u
           ),
