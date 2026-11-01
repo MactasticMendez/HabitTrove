@@ -17,8 +17,8 @@ describe('password verification', () => {
     expect(verifyPassword('password', '00:zz')).toBe(false)
   })
 
-  test('preserves intentional passwordless accounts', () => {
-    expect(verifyPassword(undefined, undefined)).toBe(true)
+  test('rejects passwordless accounts', () => {
+    expect(verifyPassword(undefined, undefined)).toBe(false)
     expect(verifyPassword('password', undefined)).toBe(false)
   })
 })

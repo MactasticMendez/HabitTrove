@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import fs from 'fs/promises'
 import path from 'path'
 import { ALLOWED_AVATAR_EXTENSIONS, AVATAR_CONTENT_TYPE } from '@/lib/avatar'
+import { getCurrentUser } from '@/lib/server-helpers'
 
 function sanitizePathSegments(pathSegments?: string[]): string[] | null {
   if (!pathSegments || pathSegments.length === 0) {
@@ -50,6 +51,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  if (!await getCurrentUser()) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   const { path: pathSegments } = await Promise.resolve(params)
   const safeSegments = sanitizePathSegments(pathSegments)
 

@@ -9,6 +9,9 @@ import { SafeUser } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { signInWithAuthentik } from '@/app/actions/user';
+import { useAtomValue } from 'jotai';
+import { serverSettingsAtom } from '@/lib/atoms';
 
 interface PasswordEntryFormProps {
   user: SafeUser;
@@ -24,7 +27,10 @@ export default function PasswordEntryForm({
   error 
 }: PasswordEntryFormProps) {
   const t = useTranslations('PasswordEntryForm');
+  const accountText = useTranslations('AccountSecurity');
   const hasPassword = user.hasPassword ?? false;
+  const serverSettings = useAtomValue(serverSettingsAtom);
+  const canUseLocal = hasPassword || serverSettings.isDemo;
   const [password, setPassword] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,6 +47,7 @@ export default function PasswordEntryForm({
   };
 
   return (
+    <div className="space-y-4">
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex flex-col items-center gap-4 p-4 bg-muted/50 rounded-lg">
         <Avatar className="h-24 w-24">
@@ -86,10 +93,19 @@ export default function PasswordEntryForm({
         <Button type="button" variant="outline" onClick={onCancel}>
           {t('cancelButton')}
         </Button>
-        <Button type="submit" disabled={hasPassword && !password}>
+        <Button type="submit" disabled={!canUseLocal || (hasPassword && !password)}>
           {t('loginButton')}
         </Button>
       </div>
     </form>
+    {user.hasAuthentik && serverSettings.authentikEnabled && (
+      <form action={signInWithAuthentik}>
+        <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik')}</Button>
+      </form>
+    )}
+    {!canUseLocal && !(user.hasAuthentik && serverSettings.authentikEnabled) && (
+      <p role="status" className="text-sm text-destructive">{accountText('contactAdmin')}</p>
+    )}
+    </div>
   );
 }

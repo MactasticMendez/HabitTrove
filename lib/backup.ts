@@ -1,32 +1,32 @@
 import fs from 'fs/promises';
 import { createWriteStream } from 'fs'; // Use specific import for createWriteStream
 import path from 'path';
-import archiver from 'archiver';
-import { loadSettings } from '@/app/actions/data'; // Adjust path if needed
+import { ZipArchive } from 'archiver';
 import { DateTime } from 'luxon';
+import { getDefaultSettings, type Settings } from './types';
 
-const BACKUP_DIR = path.join(process.cwd(), 'backups');
-const DATA_DIR = path.join(process.cwd(), 'data');
+const backupDir = () => path.join(process.cwd(), 'backups');
+const dataDir = () => path.join(process.cwd(), 'data');
 const MAX_BACKUPS = 7; // Number of backups to keep
 
 async function ensureBackupDir() {
   try {
-    await fs.access(BACKUP_DIR);
+    await fs.access(backupDir());
   } catch {
-    await fs.mkdir(BACKUP_DIR, { recursive: true });
-    console.log('Created backup directory:', BACKUP_DIR);
+    await fs.mkdir(backupDir(), { recursive: true, mode: 0o700 });
+    console.log('Created backup directory:', backupDir());
   }
 }
 
 async function rotateBackups() {
   try {
     await ensureBackupDir();
-    const files = await fs.readdir(BACKUP_DIR);
+    const files = await fs.readdir(backupDir());
     const backupFiles = files
       .filter(file => file.startsWith('backup-') && file.endsWith('.zip'))
       .map(file => ({
         name: file,
-        path: path.join(BACKUP_DIR, file),
+        path: path.join(backupDir(), file),
       }));
 
     if (backupFiles.length <= MAX_BACKUPS) {
@@ -65,7 +65,13 @@ async function rotateBackups() {
 
 export async function runBackup() {
   try {
-    const settings = await loadSettings();
+    let settings: Settings;
+    try {
+      settings = JSON.parse(await fs.readFile(path.join(dataDir(), 'settings.json'), 'utf8')) as Settings;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      settings = getDefaultSettings();
+    }
     if (!settings.system.autoBackupEnabled) {
       console.log('Auto backup is disabled in settings. Skipping backup.');
       return;
@@ -76,11 +82,11 @@ export async function runBackup() {
 
     const timestamp = DateTime.now().toFormat('yyyy-MM-dd_HH-mm-ss');
     const backupFileName = `backup-${timestamp}.zip`;
-    const backupFilePath = path.join(BACKUP_DIR, backupFileName);
+    const backupFilePath = path.join(backupDir(), backupFileName);
 
     // Use createWriteStream from fs directly
-    const output = createWriteStream(backupFilePath);
-    const archive = archiver('zip', {
+    const output = createWriteStream(backupFilePath, { flags: 'wx', mode: 0o600 });
+    const archive = new ZipArchive({
       zlib: { level: 9 } // Sets the compression level.
     });
 
@@ -123,8 +129,8 @@ export async function runBackup() {
 
       // Append the entire data directory to the archive
       // The second argument specifies the path prefix inside the zip file (false means root)
-      console.log(`Archiving directory: ${DATA_DIR}`);
-      archive.directory(DATA_DIR, false);
+      console.log(`Archiving directory: ${dataDir()}`);
+      archive.directory(dataDir(), false);
 
       // Finalize the archive (writes the central directory)
       console.log('Finalizing archive...');

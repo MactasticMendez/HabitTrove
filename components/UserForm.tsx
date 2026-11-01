@@ -37,6 +37,7 @@ interface UserFormProps {
 
 export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps) {
   const t = useTranslations('UserForm');
+  const accountText = useTranslations('AccountSecurity');
   const [users, setUsersData] = useAtom(usersAtom);
   const serverSettings = useAtomValue(serverSettingsAtom)
   const user = userId ? users.users.find(u => u.id === userId) : undefined;
@@ -58,7 +59,11 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
 
   const [avatarPath, setAvatarPath] = useState(user?.avatarPath)
   const [username, setUsername] = useState(user?.username || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState<string | undefined>('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [authentikSubject, setAuthentikSubject] = useState('');
+  const [removeAuthentik, setRemoveAuthentik] = useState(false);
   const [disablePassword, setDisablePassword] = useState(user ? !user.hasPassword : serverSettings.isDemo);
   const [error, setError] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -152,21 +157,31 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
       }
 
       if (isEditing) {
+        const profileChanged = username !== user.username || email !== (user.email || '') || avatarPath !== user.avatarPath ||
+          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin || authentikSubject || removeAuthentik));
+        const passwordChanged = (disablePassword && user.hasPassword) || !!password;
+        if (profileChanged && passwordChanged) {
+          setError(accountText('saveSeparately'));
+          return;
+        }
         // Update existing user
-        if (username !== user.username || avatarPath !== user.avatarPath ||
-          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin))) {
+        if (profileChanged) {
           await updateUser(user.id, {
             username,
+            ...(email !== (user.email || '') && { email }),
             avatarPath,
-            ...(currentUser?.isAdmin && { permissions, isAdmin })
+            ...(currentUser?.isAdmin && !_.isEqual(permissions, user.permissions) && { permissions }),
+            ...(currentUser?.isAdmin && isAdmin !== user.isAdmin && { isAdmin }),
+            ...(currentUser?.isAdmin && authentikSubject && { authentikSubject }),
+            ...(currentUser?.isAdmin && removeAuthentik && { authentikSubject: null }),
           });
         }
 
         // Handle password update
-        if (disablePassword) {
-          await updateUserPassword(user.id, undefined);
+        if (disablePassword && user.hasPassword) {
+          await updateUserPassword(user.id, undefined, currentPassword);
         } else if (password) {
-          await updateUserPassword(user.id, password);
+          await updateUserPassword(user.id, password, currentPassword);
         }
 
         setUsersData(prev => ({
@@ -175,9 +190,11 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
             u.id === user.id ? {
               ...u,
               username,
+              email,
               avatarPath,
               ...(currentUser?.isAdmin && { permissions, isAdmin }),
-              hasPassword: disablePassword ? false : (password ? true : !!u.hasPassword)
+              hasPassword: disablePassword ? false : (password ? true : !!u.hasPassword),
+              hasAuthentik: removeAuthentik ? false : (authentikSubject ? true : !!u.hasAuthentik),
             } : u
           ),
         }));
@@ -191,6 +208,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
         // Create new user
         const formData = new FormData();
         formData.append('username', username);
+        formData.append('email', email);
         if (disablePassword) {
           formData.append('password', '');
         } else if (password) {
@@ -199,6 +217,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
         formData.append('permissions', JSON.stringify(isAdmin ? undefined : permissions));
         formData.append('isAdmin', JSON.stringify(isAdmin));
         formData.append('avatarPath', avatarPath || '');
+        if (authentikSubject) formData.append('authentikSubject', authentikSubject);
 
         const newUser = await createUser(formData);
         setUsersData(prev => ({
@@ -216,6 +235,11 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
       setPassword('');
       setError('');
       onSuccess();
+      if (user && currentUser?.id === user.id &&
+          (email !== (user.email || '') || !!password || (disablePassword && user.hasPassword) ||
+           authentikSubject || removeAuthentik || isAdmin !== user.isAdmin || !_.isEqual(permissions, user.permissions))) {
+        window.location.reload();
+      }
     } catch (err) {
       const action = isEditing ? t('actionUpdate') : t('actionCreate');
       setError(err instanceof Error ? err.message : t('errorFailedUserAction', { action }));
@@ -306,6 +330,10 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
             className={error ? 'border-red-500' : ''}
           />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="account-email">{accountText('emailLabel')}</Label>
+          <Input id="account-email" type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required />
+        </div>
 
         <div className="space-y-4">
           <div className="space-y-2">
@@ -324,6 +352,9 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
             {serverSettings.isDemo && (
               <p className="text-sm text-red-500">{t('demoPasswordDisabledMessage')}</p>
             )}
+            {isEditing && currentUser?.id === user?.id && !user.hasPassword && !serverSettings.isDemo && (
+              <p className="text-sm text-muted-foreground">{accountText('initialPasswordAdmin')}</p>
+            )}
           </div>
 
           <div className="flex items-center space-x-2">
@@ -331,11 +362,30 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
               id="disable-password"
               checked={disablePassword}
               onCheckedChange={setDisablePassword}
-              disabled={serverSettings.isDemo}
+              disabled={serverSettings.isDemo || (!currentUser?.isAdmin && !!user)}
             />
             <Label htmlFor="disable-password">{t('disablePasswordLabel')}</Label>
           </div>
+          {isEditing && currentUser?.id === user?.id && user?.hasPassword && (password || (disablePassword && user.hasPassword)) && (
+            <div className="space-y-2">
+              <Label htmlFor="current-password">{accountText('currentPassword')}</Label>
+              <Input id="current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required />
+            </div>
+          )}
         </div>
+
+        {currentUser?.isAdmin && (
+          <div className="space-y-2">
+            <Label htmlFor="authentik-subject">{accountText('authentikSubject')}</Label>
+            <Input id="authentik-subject" value={authentikSubject} onChange={event => setAuthentikSubject(event.target.value)} placeholder={user?.hasAuthentik ? accountText('subjectReplacePlaceholder') : accountText('subjectPlaceholder')} autoComplete="off" />
+            {user?.hasAuthentik && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={removeAuthentik} onChange={event => setRemoveAuthentik(event.target.checked)} />
+                {accountText('removeAuthentikLink')}
+              </label>
+            )}
+          </div>
+        )}
 
         {error && (
           <p className="text-sm text-red-500 bg-red-50 dark:bg-red-950/50 p-2 rounded">{error}</p>

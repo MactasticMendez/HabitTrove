@@ -8,22 +8,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import UserForm from './UserForm'
 import Link from "next/link"
 import { useAtom } from "jotai"
-import { aboutOpenAtom, settingsAtom, userSelectAtom, currentUserAtom } from "@/lib/atoms"
+import { aboutOpenAtom, settingsAtom, userSelectAtom, currentUserAtom, serverSettingsAtom } from "@/lib/atoms"
 import { useState } from "react"
 import { useTheme } from "next-themes"
 import { signOut } from "@/app/actions/user"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from 'next-intl'
+import AuthentikLinkForm from './AuthentikLinkForm'
 
 export function Profile() {
   const t = useTranslations('Profile');
+  const accountText = useTranslations('AccountSecurity');
   const [settings] = useAtom(settingsAtom)
   const [userSelect, setUserSelect] = useAtom(userSelectAtom)
   const [isEditing, setIsEditing] = useState(false)
   const [aboutOpen, setAboutOpen] = useAtom(aboutOpenAtom)
   const { theme, setTheme } = useTheme()
   const [user] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
   const [open, setOpen] = useState(false)
+  const [isLinking, setIsLinking] = useState(false)
 
   const handleSignOut = async () => {
     try {
@@ -46,7 +50,7 @@ export function Profile() {
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="flex items-center gap-2">
+          <Button variant="ghost" className="flex items-center gap-2" aria-label={accountText('profileMenu')}>
             <Avatar className="h-8 w-8">
               <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
               <AvatarFallback>
@@ -90,6 +94,7 @@ export function Profile() {
                     handleSignOut();
                   }}
                   className="border border-primary/50 text-primary rounded-md p-1.5 transition-colors hover:bg-primary/10 hover:border-primary active:scale-95"
+                    aria-label={accountText('signOut')}
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
@@ -108,6 +113,11 @@ export function Profile() {
               </div>
             </div>
           </DropdownMenuItem>
+          {user && serverSettings.authentikEnabled && !user.hasAuthentik && (
+            <DropdownMenuItem className="cursor-pointer px-2 py-1.5" onClick={() => { setOpen(false); setIsLinking(true) }}>
+              {accountText('linkAuthentik')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem className="cursor-pointer px-2 py-1.5" asChild>
             {/* need the Link element to be the direct child of the DropdownMenuItem, since we are using asChild here */}
             <Link
@@ -188,6 +198,16 @@ export function Profile() {
                 window.location.reload();
               }}
             />
+          </DialogContent>
+        </Dialog>
+      )}
+      {isLinking && user && (
+        <Dialog open={isLinking} onOpenChange={setIsLinking}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader><DialogTitle>{accountText('linkAuthentik')}</DialogTitle></DialogHeader>
+            {user.email && user.hasPassword ? <AuthentikLinkForm /> : (
+              <p role="status" className="text-sm">{accountText('linkUnavailable')}</p>
+            )}
           </DialogContent>
         </Dialog>
       )}

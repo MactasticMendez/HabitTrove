@@ -445,5 +445,26 @@
     "clearButton": "Effacer",
     "saveDrawingButton": "Enregistrer le dessin",
     "cancelButton": "Annuler"
+  },
+  "AccountSecurity": {
+    "emailLabel": "Email",
+    "addEmailTitle": "Add your email",
+    "addEmailDescription": "{username}, enter an email to finish setting up your account. You will need to sign in again after saving it.",
+    "saveEmail": "Save email",
+    "saveEmailError": "Could not save email",
+    "signOut": "Sign out",
+    "linkAuthentik": "Link Authentik account",
+    "linkDescription": "Confirm your local password, then sign in to the matching Authentik account.",
+    "currentPassword": "Current password",
+    "linkUnavailable": "Add an email and local password in your profile before linking Authentik.",
+    "authentikSubject": "Authentik subject",
+    "subjectReplacePlaceholder": "Linked; enter a new subject to replace",
+    "subjectPlaceholder": "Paste the user subject from Authentik",
+    "removeAuthentikLink": "Remove Authentik link",
+    "saveSeparately": "Save profile and password changes separately.",
+    "continueAuthentik": "Continue with Authentik",
+    "profileMenu": "Account menu",
+    "initialPasswordAdmin": "Ask an administrator to set your first local password.",
+    "contactAdmin": "Ask an administrator to set up a sign-in method for this account."
   }
 }

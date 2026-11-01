@@ -14,7 +14,6 @@ import {
   DATA_DEFAULTS,
   getDefaultSettings,
   UserData,
-  getDefaultUsersData,
   User,
   PublicUser,
   PublicUserData,
@@ -22,13 +21,12 @@ import {
   getDefaultHabitsData,
   getDefaultCoinsData,
   Permission,
-  ServerSettings,
-  SessionUser
+  ServerSettings
 } from '@/lib/types'
 import { checkPermission, d2t, getNow, uuid } from '@/lib/utils';
-import { verifyPassword } from "@/lib/server-helpers";
-import { saltAndHashPassword } from "@/lib/server-helpers";
-import { newPasswordSchema, signInSchema, usernameSchema } from '@/lib/zod';
+import { saltAndHashPassword } from '@/lib/password'
+import { authenticateLocalUser, readAuthData, updateAuthData } from '@/lib/auth-store'
+import { emailSchema, newPasswordSchema, signInSchema, usernameSchema } from '@/lib/zod';
 import _ from 'lodash';
 import { getCurrentUser } from '@/lib/server-helpers'
 import { prepareDataForHashing, generateCryptoHash } from '@/lib/utils';
@@ -38,6 +36,7 @@ import { PermissionError } from '@/lib/exceptions'
 import { z } from 'zod'
 import { MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
+import { validateHabit, validateSettings, validateWishlistItem } from '@/lib/security-validation'
 
 
 
@@ -50,12 +49,35 @@ const permissionSchema = z.array(z.object({
   coins: z.object({ write: z.boolean(), interact: z.boolean() }),
 })).max(1)
 
+let dataWriteQueue: Promise<void> = Promise.resolve()
+
+async function withDataWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+  const prior = dataWriteQueue
+  let release: () => void = () => {}
+  dataWriteQueue = new Promise<void>(resolve => { release = resolve })
+  await prior
+  try {
+    return await operation()
+  } finally {
+    release()
+  }
+}
+
 function validateAvatarPath(avatarPath: unknown): string | undefined {
   if (avatarPath == null || avatarPath === '') return undefined
   if (typeof avatarPath !== 'string' || !/^\/data\/avatars\/[a-zA-Z0-9-]+\.(png|jpe?g|gif|webp|avif)$/.test(avatarPath)) {
     throw new Error('Invalid avatar path')
   }
   return avatarPath
+}
+
+function validateAuthentikSubject(subject: unknown): string | undefined {
+  if (subject == null || subject === '') return undefined
+  return z.string().min(1).max(255).regex(/^[\x21-\x7e]+$/).parse(subject)
+}
+
+function validateEmail(email: unknown): string | undefined {
+  return emailSchema.parse(email).toLowerCase()
 }
 
 async function verifyPermission(
@@ -72,6 +94,7 @@ async function verifyPermission(
 async function requireUser(): Promise<User> {
   const user = await getCurrentUser()
   if (!user) throw new PermissionError('User not authenticated')
+  if (!user.email && process.env.DEMO !== 'true') throw new PermissionError('Email is required before using this account')
   return user
 }
 
@@ -133,7 +156,7 @@ function getDefaultData<T>(type: DataType): T {
 
 async function ensureDataDir() {
   const dataDir = path.join(process.cwd(), 'data')
-  await fs.mkdir(dataDir, { recursive: true })
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
 }
 
 // --- Backup Debug Action ---
@@ -173,21 +196,9 @@ async function loadData<T>(type: DataType): Promise<T> {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 
-  let initialData = getDefaultData<T>(type)
-  if (type === 'auth' && !process.env.DEMO) {
-    const initialPassword = process.env.INITIAL_ADMIN_PASSWORD
-    if (!initialPassword || initialPassword.length < 12 || initialPassword.length > 32) {
-      throw new Error('INITIAL_ADMIN_PASSWORD must be 12-32 characters for a new installation')
-    }
-    initialData = {
-      users: getDefaultUsersData().users.map(user => ({
-        ...user,
-        password: saltAndHashPassword(initialPassword),
-      })),
-    } as T
-  }
+  const initialData = getDefaultData<T>(type)
   try {
-    await fs.writeFile(filePath, JSON.stringify(initialData, null, 2), { flag: 'wx' })
+    await fs.writeFile(filePath, JSON.stringify(initialData, null, 2), { flag: 'wx', mode: 0o600 })
     return initialData
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
@@ -199,7 +210,13 @@ async function saveData<T>(type: DataType, data: T): Promise<void> {
   await requireUser()
   await ensureDataDir()
   const filePath = path.join(process.cwd(), 'data', `${type}.json`)
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2))
+  const temporary = `${filePath}.${process.pid}.${uuid()}.tmp`
+  try {
+    await fs.writeFile(temporary, JSON.stringify(data, null, 2), { flag: 'wx', mode: 0o600 })
+    await fs.rename(temporary, filePath)
+  } finally {
+    await fs.rm(temporary, { force: true })
+  }
 }
 
 /**
@@ -232,7 +249,7 @@ async function calculateServerFreshnessToken(): Promise<string | null> {
 // Wishlist specific functions
 export async function loadWishlistData(): Promise<WishlistData> {
   const user = await getCurrentUser()
-  if (!user) return getDefaultWishlistData()
+  if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultWishlistData()
 
   const data = await loadData<WishlistData>('wishlist')
   return {
@@ -247,18 +264,19 @@ export async function loadWishlistItems(): Promise<WishlistItemType[]> {
 }
 
 export async function saveWishlistItems(data: WishlistData): Promise<void> {
-  const user = await requireUser()
-  const canWrite = user.isAdmin || checkPermission(user.permissions, 'wishlist', 'write')
-  if (!canWrite) await verifyPermission('wishlist', 'interact')
-  const existingData = await loadData<WishlistData>('wishlist')
-  const items = mergeOwnedItems(data.items, existingData.items, user, canWrite, ['targetCompletions', 'archived'])
-  return saveData('wishlist', { items })
+  return withDataWriteLock(async () => {
+    const user = await verifyPermission('wishlist', 'write')
+    const existingData = await loadData<WishlistData>('wishlist')
+    if (!data || !Array.isArray(data.items)) throw new Error('Invalid reward list')
+    const items = mergeOwnedItems(data.items.map(validateWishlistItem), existingData.items, user, true, [])
+    return saveData('wishlist', { items })
+  })
 }
 
 // Habits specific functions
 export async function loadHabitsData(): Promise<HabitsData> {
   const user = await getCurrentUser()
-  if (!user) return getDefaultHabitsData()
+  if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultHabitsData()
   const data = await loadData<HabitsData>('habits')
   return {
     ...data,
@@ -267,12 +285,16 @@ export async function loadHabitsData(): Promise<HabitsData> {
 }
 
 export async function saveHabitsData(data: HabitsData): Promise<void> {
-  const user = await requireUser()
-  const canWrite = user.isAdmin || checkPermission(user.permissions, 'habit', 'write')
-  if (!canWrite) await verifyPermission('habit', 'interact')
-  const existingData = await loadData<HabitsData>('habits')
-  const habits = mergeOwnedItems(data.habits, existingData.habits, user, canWrite, ['completions', 'archived'])
-  return saveData('habits', { habits })
+  return withDataWriteLock(async () => {
+    const user = await requireUser()
+    const canWrite = user.isAdmin || checkPermission(user.permissions, 'habit', 'write')
+    if (!canWrite) await verifyPermission('habit', 'interact')
+    const existingData = await loadData<HabitsData>('habits')
+    if (!data || !Array.isArray(data.habits)) throw new Error('Invalid habit list')
+    const habits = mergeOwnedItems(data.habits.map(validateHabit), existingData.habits, user, canWrite, ['completions', 'archived'])
+    if (!canWrite) validateHabitInteractionChanges(habits, existingData.habits, user.id)
+    return saveData('habits', { habits })
+  })
 }
 
 
@@ -280,37 +302,68 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
 export async function loadCoinsData(): Promise<CoinsData> {
   try {
     const user = await getCurrentUser()
-    if (!user) return getDefaultCoinsData()
+    if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultCoinsData()
     const data = await loadData<CoinsData>('coins')
-    return {
-      ...data,
-      transactions: user.isAdmin ? data.transactions : data.transactions.filter(x => x.userId === user.id)
-    }
+    return visibleCoinsData(data, user)
   } catch {
     return getDefaultCoinsData()
   }
 }
 
+function visibleCoinsData(data: CoinsData, user: User): CoinsData {
+  if (user.isAdmin) return data
+  const transactions = data.transactions.filter(transaction => transaction.userId === user.id)
+  return { balance: transactions.reduce((total, transaction) => total + transaction.amount, 0), transactions }
+}
+
+function validateHabitInteractionChanges(submitted: HabitsData['habits'], existing: HabitsData['habits'], userId: string): void {
+  const original = new Map(existing.map(habit => [habit.id, habit]))
+  let changes = 0
+  for (const habit of submitted.filter(item => item.userIds?.includes(userId))) {
+    const previous = original.get(habit.id)!
+    if (_.isEqual(habit.completions, previous.completions) && habit.archived === previous.archived) continue
+    changes++
+    const before = previous.completions
+    const after = habit.completions
+    const appended = after.length === before.length + 1 && _.isEqual(after.slice(0, -1), before)
+    const removed = after.length === before.length - 1 && _.isEqual(after, before.slice(0, -1))
+    if (!appended && !removed) throw new PermissionError('Only one completion can be changed at a time')
+    const changed = appended ? after.at(-1)! : before.at(-1)!
+    const changedAt = DateTime.fromISO(changed).toMillis()
+    if (changedAt < Date.now() - 365 * 24 * 60 * 60 * 1000 || changedAt > Date.now() + 5 * 60 * 1000) {
+      throw new PermissionError('Completion date is outside the allowed range')
+    }
+    if (habit.archived !== previous.archived &&
+        (!habit.isTask || habit.archived !== appended ||
+          (appended && after.length < (habit.targetCompletions ?? 1)))) {
+      throw new PermissionError('Only a completed task may change archive state')
+    }
+  }
+  if (changes > 1) throw new PermissionError('Only one habit can be changed at a time')
+}
+
 export async function saveCoinsData(data: CoinsData): Promise<void> {
-  const user = await verifyPermission('coins', 'write')
-  const existingData = await loadData<CoinsData>('coins')
-  const visible = existingData.transactions.filter(transaction => user.isAdmin || transaction.userId === user.id)
-  if (!Array.isArray(data.transactions) || data.transactions.length !== visible.length) {
-    throw new PermissionError('Only transaction notes may be changed')
-  }
-  const submittedById = new Map(data.transactions.map(transaction => [transaction.id, transaction]))
-  if (submittedById.size !== visible.length || visible.some(transaction => {
-    const submitted = submittedById.get(transaction.id)
-    if (!submitted || !_.isEqual({ ...submitted, note: undefined }, { ...transaction, note: undefined })) return true
-    return submitted.note !== undefined && typeof submitted.note !== 'string'
-  })) {
-    throw new PermissionError('Only transaction notes may be changed')
-  }
-  const transactions = existingData.transactions.map(transaction => {
-    const submitted = submittedById.get(transaction.id)
-    return submitted ? { ...transaction, note: submitted.note } : transaction
+  return withDataWriteLock(async () => {
+    const user = await verifyPermission('coins', 'write')
+    const existingData = await loadData<CoinsData>('coins')
+    const visible = existingData.transactions.filter(transaction => user.isAdmin || transaction.userId === user.id)
+    if (!Array.isArray(data.transactions) || data.transactions.length !== visible.length) {
+      throw new PermissionError('Only transaction notes may be changed')
+    }
+    const submittedById = new Map(data.transactions.map(transaction => [transaction.id, transaction]))
+    if (submittedById.size !== visible.length || visible.some(transaction => {
+      const submitted = submittedById.get(transaction.id)
+      if (!submitted || !_.isEqual({ ...submitted, note: undefined }, { ...transaction, note: undefined })) return true
+      return submitted.note !== undefined && typeof submitted.note !== 'string'
+    })) {
+      throw new PermissionError('Only transaction notes may be changed')
+    }
+    const transactions = existingData.transactions.map(transaction => {
+      const submitted = submittedById.get(transaction.id)
+      return submitted ? { ...transaction, note: submitted.note } : transaction
+    })
+    return saveData('coins', { ...existingData, transactions })
   })
-  return saveData('coins', { ...existingData, transactions })
 }
 
 export async function addCoins({
@@ -328,37 +381,40 @@ export async function addCoins({
   note?: string
   userId?: string
 }): Promise<CoinsData> {
-  const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
-  if (!['MANUAL_ADJUSTMENT', 'HABIT_COMPLETION', 'TASK_COMPLETION'].includes(type)) throw new Error('Invalid credit type')
-  if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
-  if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
-  const targetUserId = userId || currentUser.id
-  await validateCoinTransaction(type, relatedItemId, amount, targetUserId)
-  const data = await loadData<CoinsData>('coins')
-  if (type === 'HABIT_COMPLETION' || type === 'TASK_COMPLETION') {
-    await validateHabitRewardBalance(type, relatedItemId!, targetUserId, data.transactions)
-  }
-  const newTransaction: CoinTransaction = {
-    id: uuid(),
-    amount,
-    type,
-    description,
-    timestamp: d2t({ dateTime: getNow({}) }),
-    ...(relatedItemId && { relatedItemId }),
-    ...(note && note.trim() !== '' && { note }),
-    userId: targetUserId
-  }
+  return withDataWriteLock(async () => {
+    const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
+    if (!['MANUAL_ADJUSTMENT', 'HABIT_COMPLETION', 'TASK_COMPLETION'].includes(type)) throw new Error('Invalid credit type')
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
+    if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
+    const targetUserId = userId || currentUser.id
+    if (type !== 'MANUAL_ADJUSTMENT' && !currentUser.isAdmin &&
+        !checkPermission(currentUser.permissions, 'habit', 'interact')) {
+      throw new PermissionError('Habit interaction permission required')
+    }
+    await validateCoinTransaction(type, relatedItemId, amount, targetUserId)
+    const data = await loadData<CoinsData>('coins')
+    if (type === 'HABIT_COMPLETION' || type === 'TASK_COMPLETION') {
+      await validateHabitRewardBalance(type, relatedItemId!, targetUserId, data.transactions)
+    }
+    const newTransaction: CoinTransaction = {
+      id: uuid(),
+      amount,
+      type,
+      description,
+      timestamp: d2t({ dateTime: getNow({}) }),
+      ...(relatedItemId && { relatedItemId }),
+      ...(note && note.trim() !== '' && { note }),
+      userId: targetUserId
+    }
 
-  const newData: CoinsData = {
-    balance: data.balance + amount,
-    transactions: [newTransaction, ...data.transactions]
-  }
+    const newData: CoinsData = {
+      balance: data.balance + amount,
+      transactions: [newTransaction, ...data.transactions]
+    }
 
-  await saveData('coins', newData)
-  return currentUser.isAdmin ? newData : {
-    ...newData,
-    transactions: newData.transactions.filter(transaction => transaction.userId === currentUser.id)
-  }
+    await saveData('coins', newData)
+    return visibleCoinsData(newData, currentUser)
+  })
 }
 
 async function validateCoinTransaction(
@@ -372,7 +428,8 @@ async function validateCoinTransaction(
   if (type === 'WISH_REDEMPTION') {
     const wishlist = await loadData<WishlistData>('wishlist')
     const item = wishlist.items.find(item => item.id === relatedItemId && item.userIds?.includes(targetUserId))
-    if (!item || item.coinCost !== amount) throw new PermissionError('Invalid reward transaction')
+    if (!item || item.archived || item.targetCompletions !== undefined && item.targetCompletions < 1 ||
+        item.coinCost !== amount) throw new PermissionError('Invalid reward transaction')
     return
   }
   if (!['HABIT_COMPLETION', 'HABIT_UNDO', 'TASK_COMPLETION', 'TASK_UNDO'].includes(type)) {
@@ -428,7 +485,7 @@ export async function loadSettings(): Promise<Settings> {
 
   try {
     const user = await getCurrentUser()
-    if (!user) return defaultSettings
+    if (!user || (!user.email && process.env.DEMO !== 'true')) return defaultSettings
     const data = await loadData<Settings>('settings')
     return { ...defaultSettings, ...data }
   } catch {
@@ -437,14 +494,28 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
-  const user = await requireUser()
-  if (!user.isAdmin) {
-    const existing = await loadSettings()
-    if (!_.isEqual(settings.system, existing.system) || !_.isEqual(settings.profile, existing.profile)) {
-      throw new PermissionError('Only administrators can change system settings')
+  return withDataWriteLock(async () => {
+    const user = await requireUser()
+    validateSettings(settings)
+    const stored = await loadData<Settings>('settings')
+    const defaults = getDefaultSettings()
+    const existing = validateSettings({
+      ...defaults, ...stored,
+      ui: { ...defaults.ui, ...stored.ui },
+      system: { ...defaults.system, ...stored.system },
+      profile: { ...defaults.profile, ...stored.profile },
+    })
+    if (process.env.DEMO === 'true' && !_.isEqual(settings.system, existing.system)) {
+      throw new PermissionError('System changes are disabled in demo mode')
     }
-  }
-  return saveData('settings', settings)
+    if (!user.isAdmin) {
+      if (!_.isEqual(settings.system, existing.system) || !_.isEqual(settings.profile, existing.profile)) {
+        throw new PermissionError('Only administrators can change system settings')
+      }
+      return saveData('settings', { ...existing, ui: settings.ui })
+    }
+    return saveData('settings', settings)
+  })
 }
 
 export async function removeCoins({
@@ -462,47 +533,66 @@ export async function removeCoins({
   note?: string
   userId?: string
 }): Promise<CoinsData> {
-  const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
-  if (!['MANUAL_ADJUSTMENT', 'HABIT_UNDO', 'TASK_UNDO', 'WISH_REDEMPTION'].includes(type)) throw new Error('Invalid debit type')
-  if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
-  if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
-  const targetUserId = userId || currentUser.id
-  await validateCoinTransaction(type, relatedItemId, amount, targetUserId)
-  const data = await loadData<CoinsData>('coins')
-  if (type === 'HABIT_UNDO' || type === 'TASK_UNDO') {
-    await validateHabitRewardBalance(type, relatedItemId!, targetUserId, data.transactions)
-  }
-  if (type === 'WISH_REDEMPTION') {
-    const balance = data.transactions
-      .filter(transaction => transaction.userId === targetUserId)
-      .reduce((sum, transaction) => sum + transaction.amount, 0)
-    if (balance < amount) throw new PermissionError('Insufficient coins')
-  }
-  const newTransaction: CoinTransaction = {
-    id: uuid(),
-    amount: -amount,
-    type,
-    description,
-    timestamp: d2t({ dateTime: getNow({}) }),
-    ...(relatedItemId && { relatedItemId }),
-    ...(note && note.trim() !== '' && { note }),
-    userId: targetUserId
-  }
+  return withDataWriteLock(async () => {
+    const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
+    if (!['MANUAL_ADJUSTMENT', 'HABIT_UNDO', 'TASK_UNDO', 'WISH_REDEMPTION'].includes(type)) throw new Error('Invalid debit type')
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
+    if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
+    const targetUserId = userId || currentUser.id
+    if (type === 'WISH_REDEMPTION' && !currentUser.isAdmin &&
+        !checkPermission(currentUser.permissions, 'wishlist', 'interact')) {
+      throw new PermissionError('Wishlist interaction permission required')
+    }
+    if ((type === 'HABIT_UNDO' || type === 'TASK_UNDO') && !currentUser.isAdmin &&
+        !checkPermission(currentUser.permissions, 'habit', 'interact')) {
+      throw new PermissionError('Habit interaction permission required')
+    }
+    await validateCoinTransaction(type, relatedItemId, amount, targetUserId)
+    const data = await loadData<CoinsData>('coins')
+    if (type === 'HABIT_UNDO' || type === 'TASK_UNDO') {
+      await validateHabitRewardBalance(type, relatedItemId!, targetUserId, data.transactions)
+    }
+    if (type === 'WISH_REDEMPTION') {
+      const balance = data.transactions
+        .filter(transaction => transaction.userId === targetUserId)
+        .reduce((sum, transaction) => sum + transaction.amount, 0)
+      if (balance < amount) throw new PermissionError('Insufficient coins')
+    }
+    const newTransaction: CoinTransaction = {
+      id: uuid(),
+      amount: -amount,
+      type,
+      description,
+      timestamp: d2t({ dateTime: getNow({}) }),
+      ...(relatedItemId && { relatedItemId }),
+      ...(note && note.trim() !== '' && { note }),
+      userId: targetUserId
+    }
 
-  const newData: CoinsData = {
-    balance: Math.max(0, data.balance - amount),
-    transactions: [newTransaction, ...data.transactions]
-  }
+    const newData: CoinsData = {
+      balance: Math.max(0, data.balance - amount),
+      transactions: [newTransaction, ...data.transactions]
+    }
 
-  await saveData('coins', newData)
-  return currentUser.isAdmin ? newData : {
-    ...newData,
-    transactions: newData.transactions.filter(transaction => transaction.userId === currentUser.id)
-  }
+    await saveData('coins', newData)
+    if (type === 'WISH_REDEMPTION') {
+      const wishlist = await loadData<WishlistData>('wishlist')
+      const item = wishlist.items.find(candidate => candidate.id === relatedItemId)!
+      if (item.targetCompletions !== undefined) {
+        item.targetCompletions--
+        if (item.targetCompletions === 0) {
+          item.targetCompletions = undefined
+          item.archived = true
+        }
+        await saveData('wishlist', wishlist)
+      }
+    }
+    return visibleCoinsData(newData, currentUser)
+  })
 }
 
 export async function uploadAvatar(formData: FormData): Promise<string> {
-  await requireUser()
+  const user = await requireUser()
   const file = formData.get('avatar')
   if (!(file instanceof File)) throw new Error('No file provided')
 
@@ -521,18 +611,17 @@ export async function uploadAvatar(formData: FormData): Promise<string> {
   }
 
   // Create avatars directory if it doesn't exist
-  const avatarsDir = path.join(process.cwd(), 'data', 'avatars')
-  await fs.mkdir(avatarsDir, { recursive: true })
-
-  // Generate unique filename
-  const filename = `${Date.now()}-${uuid()}${ext}`
-  const filePath = path.join(avatarsDir, filename)
-
-  // Save file
-  const buffer = await file.arrayBuffer()
-  await fs.writeFile(filePath, Buffer.from(buffer))
-
-  return `/data/avatars/${filename}`
+  return withDataWriteLock(async () => {
+    const avatarsDir = path.join(process.cwd(), 'data', 'avatars')
+    await fs.mkdir(avatarsDir, { recursive: true, mode: 0o700 })
+    const priorFiles = (await fs.readdir(avatarsDir)).filter(name => name.startsWith(`${user.id}-`)).sort()
+    const filename = `${user.id}-${Date.now()}-${uuid()}${ext}`
+    await fs.writeFile(path.join(avatarsDir, filename), Buffer.from(await file.arrayBuffer()), { flag: 'wx', mode: 0o600 })
+    for (const old of priorFiles.slice(0, Math.max(0, priorFiles.length - 2))) {
+      await fs.unlink(path.join(avatarsDir, old))
+    }
+    return `/data/avatars/${filename}`
+  })
 }
 
 export async function getChangelog(): Promise<string> {
@@ -547,38 +636,28 @@ export async function getChangelog(): Promise<string> {
 
 // user logic
 async function loadUsersData(): Promise<UserData> {
-  return loadData<UserData>('auth')
+  return readAuthData()
 }
 
 export async function loadUsersPublicData(): Promise<PublicUserData> {
+  const viewer = await getCurrentUser()
+  if (!viewer) return { users: [] }
+  if (!viewer.email && process.env.DEMO !== 'true') return sanitizeUserData({ users: [viewer] }, viewer.id, !!viewer.isAdmin)
   const data = await loadUsersData()
-  return sanitizeUserData(data)
-}
-
-async function saveUsersData(data: UserData): Promise<void> {
-  return saveData('auth', data)
-}
-
-export async function getUser(username: string, plainTextPassword?: string): Promise<SessionUser | null> {
-  const data = await loadUsersData()
-
-  const user = data.users.find(user => user.username === username)
-  if (!user) return null
-
-  // Verify the plaintext password against the stored salt:hash
-  const isValidPassword = verifyPassword(plainTextPassword, user.password)
-  if (!isValidPassword) return null
-
-  return { id: user.id }
+  return sanitizeUserData(data, viewer.id, !!viewer.isAdmin)
 }
 
 export async function createUser(formData: FormData): Promise<PublicUser> {
-  await requireAdmin()
+  const administrator = await requireAdmin()
+  if (process.env.DEMO === 'true') throw new PermissionError('Account changes are disabled in demo mode')
   const username = formData.get('username') as string;
   let password = formData.get('password') as string | undefined;
   const avatarPath = validateAvatarPath(formData.get('avatarPath'));
+  const email = validateEmail(formData.get('email'))
+  const authentikSubject = validateAuthentikSubject(formData.get('authentikSubject'))
   const isAdmin = formData.get('isAdmin') === 'true';
   const rawPermissions = formData.get('permissions')
+  if (typeof rawPermissions === 'string' && rawPermissions.length > 4096) throw new Error('Invalid permissions')
   const permissions = !isAdmin && rawPermissions && rawPermissions !== 'undefined'
     ? permissionSchema.parse(JSON.parse(rawPermissions as string)) as Permission[]
     : undefined;
@@ -588,74 +667,90 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   await signInSchema.parseAsync({ username, password });
   if (password) newPasswordSchema.parse(password)
 
-  const data = await loadUsersData();
-
-  // Check if username already exists
-  if (data.users.some(user => user.username === username)) {
-    throw new Error('Username already exists');
-  }
-
   const hashedPassword = password ? saltAndHashPassword(password) : undefined;
-  if (isAdmin && !hashedPassword && !process.env.DEMO) {
+  if (isAdmin && !hashedPassword && process.env.DEMO !== 'true') {
     throw new Error('Administrator accounts require a password')
   }
+  if (!hashedPassword && !authentikSubject && process.env.DEMO !== 'true') {
+    throw new Error('A password or Authentik subject is required')
+  }
 
-
-  const newUser: User = {
-    id: uuid(),
-    username,
-    password: hashedPassword,
-    permissions,
-    isAdmin,
-    lastNotificationReadTimestamp: undefined,
-    ...(avatarPath && { avatarPath })
-  };
-
-  const newData: UserData = {
-    users: [...data.users, newUser]
-  };
-
-  await saveUsersData(newData);
-  return sanitizeUserData({ users: [newUser] }).users[0]
+  const newUser = await updateAuthData(data => {
+    if (!data.users.find(user => user.id === administrator.id)?.isAdmin) throw new PermissionError('Administrator access required')
+    if (data.users.some(user => user.username === username)) throw new Error('Username already exists')
+    if (email && data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already exists')
+    if (authentikSubject && data.users.some(user => user.authentikSubject === authentikSubject)) {
+      throw new Error('Authentik identity is already linked')
+    }
+    const user: User = {
+      id: uuid(), username, password: hashedPassword, permissions, isAdmin,
+      ...(email && { email }),
+      authVersion: 0,
+      ...(authentikSubject && { authentikSubject }),
+      ...(avatarPath && { avatarPath }),
+    }
+    data.users.push(user)
+    return user
+  })
+  return sanitizeUserData({ users: [newUser] }, administrator.id, true).users[0]
 }
 
-export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password'>>): Promise<PublicUser> {
-  const currentUser = await requireUser()
-  const data = await loadUsersData()
-  const userIndex = data.users.findIndex(user => user.id === userId)
+export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password' | 'authVersion' | 'authentikSubject'>> & { authentikSubject?: string | null }): Promise<PublicUser> {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new PermissionError('User not authenticated')
+  if (process.env.DEMO === 'true') throw new PermissionError('Account changes are disabled in demo mode')
+  if (!currentUser.email && process.env.DEMO !== 'true' &&
+      (currentUser.id !== userId || Object.keys(updates).some(key => key !== 'email'))) {
+    throw new PermissionError('Email is required before using this account')
+  }
+  return updateAuthData(data => {
+    const actor = data.users.find(user => user.id === currentUser.id)
+    if (!actor) throw new PermissionError('User not authenticated')
+    const userIndex = data.users.findIndex(user => user.id === userId)
 
   if (userIndex === -1) {
     throw new Error('User not found')
   }
 
-  if (!currentUser.isAdmin && currentUser.id !== userId) {
+  if (!actor.isAdmin && actor.id !== userId) {
     throw new PermissionError('Cannot edit another user')
   }
 
-  const allowedKeys = ['username', 'avatarPath', 'permissions', 'isAdmin']
+  const allowedKeys = ['username', 'email', 'avatarPath', 'permissions', 'isAdmin', 'authentikSubject']
   if (Object.keys(updates).some(key => !allowedKeys.includes(key))) {
     throw new Error('Invalid user update')
   }
 
   const existingUser = data.users[userIndex]
-  if (currentUser.isAdmin && updates.isAdmin === false && existingUser.isAdmin &&
+  if (actor.isAdmin && updates.isAdmin === false && existingUser.isAdmin &&
     data.users.filter(user => user.isAdmin).length === 1) {
     throw new Error('Cannot remove the last administrator')
   }
-  if (currentUser.isAdmin && updates.isAdmin === true && !existingUser.password && !process.env.DEMO) {
+  if (actor.isAdmin && updates.isAdmin === true && !existingUser.password && process.env.DEMO !== 'true') {
     throw new Error('Administrator accounts require a password')
   }
-  if (!currentUser.isAdmin &&
+  if (!actor.isAdmin &&
     (updates.isAdmin !== undefined && updates.isAdmin !== existingUser.isAdmin ||
-      updates.permissions !== undefined && !_.isEqual(updates.permissions, existingUser.permissions))) {
+      updates.permissions !== undefined && !_.isEqual(updates.permissions, existingUser.permissions) ||
+      updates.authentikSubject !== undefined)) {
     throw new PermissionError('Cannot change account permissions')
   }
 
   const validatedUpdates = {
     ...(updates.username !== undefined && { username: usernameSchema.parse(updates.username) }),
+    ...(updates.email !== undefined && { email: validateEmail(updates.email) }),
     ...(updates.avatarPath !== undefined && { avatarPath: validateAvatarPath(updates.avatarPath) }),
-    ...(currentUser.isAdmin && updates.isAdmin !== undefined && { isAdmin: z.boolean().parse(updates.isAdmin) }),
-    ...(currentUser.isAdmin && updates.permissions !== undefined && { permissions: permissionSchema.parse(updates.permissions) }),
+    ...(actor.isAdmin && updates.isAdmin !== undefined && { isAdmin: z.boolean().parse(updates.isAdmin) }),
+    ...(actor.isAdmin && updates.permissions !== undefined && { permissions: permissionSchema.parse(updates.permissions) }),
+    ...(actor.isAdmin && updates.authentikSubject !== undefined && { authentikSubject: validateAuthentikSubject(updates.authentikSubject) }),
+  }
+
+  const subject = 'authentikSubject' in validatedUpdates ? validatedUpdates.authentikSubject : existingUser.authentikSubject
+  if (subject && data.users.some(user => user.id !== userId && user.authentikSubject === subject)) {
+    throw new Error('Authentik identity is already linked')
+  }
+  if (!existingUser.password && !subject && process.env.DEMO !== 'true') {
+    throw new Error('A password or Authentik subject is required')
   }
 
   // If username is being updated, check for duplicates
@@ -667,176 +762,158 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
       throw new Error('Username already exists')
     }
   }
+  if (validatedUpdates.email && data.users.some(user => user.id !== userId && user.email?.toLowerCase() === validatedUpdates.email)) {
+    throw new Error('Email already exists')
+  }
 
   const updatedUser = {
     ...data.users[userIndex],
-    ...validatedUpdates
+    ...validatedUpdates,
+    authVersion: (existingUser.authVersion ?? 0) + (updates.email !== undefined || updates.isAdmin !== undefined || updates.permissions !== undefined || updates.authentikSubject !== undefined ? 1 : 0),
   }
-
-  const newData: UserData = {
-    users: [
-      ...data.users.slice(0, userIndex),
-      updatedUser,
-      ...data.users.slice(userIndex + 1)
-    ]
-  }
-
-  await saveUsersData(newData)
-  return sanitizeUserData({ users: [updatedUser] }).users[0]
+  data.users[userIndex] = updatedUser
+  return sanitizeUserData({ users: [updatedUser] }, actor.id, !!actor.isAdmin).users[0]
+  })
 }
 
-export async function updateUserPassword(userId: string, newPassword?: string): Promise<void> {
+export async function updateUserPassword(userId: string, newPassword?: string, currentPassword?: string): Promise<void> {
+  if (process.env.DEMO === 'true') throw new PermissionError('Password changes are disabled in demo mode')
   const currentUser = await requireUser()
   if (!currentUser.isAdmin && currentUser.id !== userId) {
     throw new PermissionError('Cannot change another user\'s password')
   }
-  if (newPassword) newPasswordSchema.parse(newPassword)
-  const data = await loadUsersData()
-  const userIndex = data.users.findIndex(user => user.id === userId)
-
-  if (userIndex === -1) {
-    throw new Error('User not found')
-  }
-
-  if (data.users[userIndex].isAdmin && !newPassword && !process.env.DEMO) {
-    throw new Error('Administrator accounts require a password')
-  }
-
-  const hashedPassword = newPassword ? saltAndHashPassword(newPassword) : ''
-
-  const updatedUser = {
-    ...data.users[userIndex],
-    password: hashedPassword
-  }
-
-  const newData: UserData = {
-    users: [
-      ...data.users.slice(0, userIndex),
-      updatedUser,
-      ...data.users.slice(userIndex + 1)
-    ]
-  }
-
-  await saveUsersData(newData)
+  if (newPassword !== undefined) newPasswordSchema.parse(newPassword)
+  await updateAuthData(async data => {
+    const actor = data.users.find(user => user.id === currentUser.id)
+    const userIndex = data.users.findIndex(user => user.id === userId)
+    if (!actor || (!actor.isAdmin && actor.id !== userId)) throw new PermissionError('Cannot change another user\'s password')
+    if (userIndex === -1) throw new Error('User not found')
+    const target = data.users[userIndex]
+    if (actor.id === target.id && !target.password) {
+      throw new PermissionError('An administrator must set the initial local password')
+    }
+    if (actor.id === target.id && target.password) {
+      const verified = await authenticateLocalUser(target.username, currentPassword ?? '')
+      if (!verified || verified.id !== target.id) throw new PermissionError('Current password is incorrect')
+    }
+    if (target.isAdmin && newPassword === undefined && process.env.DEMO !== 'true') {
+      throw new Error('Administrator accounts require a password')
+    }
+    if (!target.authentikSubject && newPassword === undefined && process.env.DEMO !== 'true') {
+      throw new Error('A password or Authentik subject is required')
+    }
+    data.users[userIndex] = {
+      ...target,
+      password: newPassword ? saltAndHashPassword(newPassword) : undefined,
+      authVersion: (target.authVersion ?? 0) + 1,
+    }
+  })
 }
 
 export async function deleteUser(userId: string): Promise<void> {
-  const currentUser = await requireUser()
-  if (!currentUser.isAdmin && currentUser.id !== userId) {
-    throw new PermissionError('Cannot delete another user')
-  }
-  const authData = await loadUsersData()
-  const targetUser = authData.users.find(user => user.id === userId)
-  if (!targetUser) throw new Error('User not found')
-  if (targetUser.isAdmin && authData.users.filter(user => user.isAdmin).length === 1) {
-    throw new Error('Cannot delete the last administrator')
-  }
-  // Load all necessary data
-  const wishlistData = await loadData<WishlistData>('wishlist')
-  const habitsData = await loadData<HabitsData>('habits')
-  const coinsData = await loadData<CoinsData>('coins')
-
-  // Process Wishlist Data
-  const updatedWishlistItems = wishlistData.items.reduce((acc, item) => {
-    if (item.userIds?.includes(userId)) {
-      if (item.userIds.length === 1) {
-        // Remove item if this is the only user
-        return acc
-      } else {
-        // Remove userId from item's userIds
-        acc.push({
-          ...item,
-          userIds: item.userIds.filter(id => id !== userId)
-        })
-      }
-    } else {
-      // Keep item as is
-      acc.push(item)
+  if (process.env.DEMO === 'true') throw new PermissionError('Account deletion is disabled in demo mode')
+  return withDataWriteLock(async () => {
+    const currentUser = await requireUser()
+    await updateAuthData(async authData => {
+    const actor = authData.users.find(user => user.id === currentUser.id)
+    if (!actor || (!actor.isAdmin && actor.id !== userId)) throw new PermissionError('Cannot delete another user')
+    const targetUser = authData.users.find(user => user.id === userId)
+    if (!targetUser) throw new Error('User not found')
+    if (targetUser.isAdmin && authData.users.filter(user => user.isAdmin).length === 1) {
+      throw new Error('Cannot delete the last administrator')
     }
-    return acc
-  }, [] as WishlistItemType[])
-  wishlistData.items = updatedWishlistItems
-  await saveData('wishlist', wishlistData)
+    // Load all necessary data
+    const wishlistData = await loadData<WishlistData>('wishlist')
+    const habitsData = await loadData<HabitsData>('habits')
+    const coinsData = await loadData<CoinsData>('coins')
 
-  // Process Habits Data
-  const updatedHabits = habitsData.habits.reduce((acc, habit) => {
-    if (habit.userIds?.includes(userId)) {
-      if (habit.userIds.length === 1) {
-        // Remove habit if this is the only user
-        return acc
+    // Process Wishlist Data
+    const updatedWishlistItems = wishlistData.items.reduce((acc, item) => {
+      if (item.userIds?.includes(userId)) {
+        if (item.userIds.length === 1) {
+          // Remove item if this is the only user
+          return acc
+        } else {
+          // Remove userId from item's userIds
+          acc.push({
+            ...item,
+            userIds: item.userIds.filter(id => id !== userId)
+          })
+        }
       } else {
-        // Remove userId from habit's userIds
-        acc.push({
-          ...habit,
-          userIds: habit.userIds.filter(id => id !== userId)
-        })
+        // Keep item as is
+        acc.push(item)
       }
-    } else {
-      // Keep habit as is
-      acc.push(habit)
+      return acc
+    }, [] as WishlistItemType[])
+    wishlistData.items = updatedWishlistItems
+    await saveData('wishlist', wishlistData)
+
+    // Process Habits Data
+    const updatedHabits = habitsData.habits.reduce((acc, habit) => {
+      if (habit.userIds?.includes(userId)) {
+        if (habit.userIds.length === 1) {
+          // Remove habit if this is the only user
+          return acc
+        } else {
+          // Remove userId from habit's userIds
+          acc.push({
+            ...habit,
+            userIds: habit.userIds.filter(id => id !== userId)
+          })
+        }
+      } else {
+        // Keep habit as is
+        acc.push(habit)
+      }
+      return acc
+    }, [] as HabitsData['habits'])
+    habitsData.habits = updatedHabits
+    await saveData('habits', habitsData)
+
+    // Process Coins Data
+    coinsData.transactions = coinsData.transactions.filter(
+      transaction => transaction.userId !== userId
+    )
+    // Recalculate balance
+    coinsData.balance = coinsData.transactions.reduce(
+      (sum, transaction) => sum + transaction.amount,
+      0
+    )
+    await saveData('coins', coinsData)
+
+    // Delete User from Auth Data
+    const userIndex = authData.users.findIndex(user => user.id === userId)
+
+    if (userIndex === -1) {
+      throw new Error('User not found')
     }
-    return acc
-  }, [] as HabitsData['habits'])
-  habitsData.habits = updatedHabits
-  await saveData('habits', habitsData)
 
-  // Process Coins Data
-  coinsData.transactions = coinsData.transactions.filter(
-    transaction => transaction.userId !== userId
-  )
-  // Recalculate balance
-  coinsData.balance = coinsData.transactions.reduce(
-    (sum, transaction) => sum + transaction.amount,
-    0
-  )
-  await saveData('coins', coinsData)
+    authData.users = [
+      ...authData.users.slice(0, userIndex),
+      ...authData.users.slice(userIndex + 1)
+    ]
 
-  // Delete User from Auth Data
-  const userIndex = authData.users.findIndex(user => user.id === userId)
-
-  if (userIndex === -1) {
-    throw new Error('User not found')
-  }
-
-  authData.users = [
-    ...authData.users.slice(0, userIndex),
-    ...authData.users.slice(userIndex + 1)
-  ]
-
-  await saveUsersData(authData)
+    })
+  })
 }
 
 export async function updateLastNotificationReadTimestamp(userId: string, timestamp: string): Promise<void> {
   const currentUser = await requireUser()
   if (currentUser.id !== userId) throw new PermissionError('Cannot update another user')
   if (!Number.isFinite(Date.parse(timestamp))) throw new Error('Invalid timestamp')
-  const data = await loadUsersData()
-  const userIndex = data.users.findIndex(user => user.id === userId)
-
-  if (userIndex === -1) {
-    throw new Error('User not found for updating notification timestamp')
-  }
-
-  const updatedUser = {
-    ...data.users[userIndex],
-    lastNotificationReadTimestamp: timestamp
-  }
-
-  const newData: UserData = {
-    users: [
-      ...data.users.slice(0, userIndex),
-      updatedUser,
-      ...data.users.slice(userIndex + 1)
-    ]
-  }
-
-  await saveUsersData(newData)
+  await updateAuthData(data => {
+    const userIndex = data.users.findIndex(user => user.id === userId)
+    if (userIndex === -1) throw new Error('User not found for updating notification timestamp')
+    data.users[userIndex] = { ...data.users[userIndex], lastNotificationReadTimestamp: timestamp }
+  })
 }
 
 
 export async function loadServerSettings(): Promise<ServerSettings> {
   return {
-    isDemo: !!process.env.DEMO,
+    isDemo: process.env.DEMO === 'true',
+    authentikEnabled: !!(process.env.AUTHENTIK_ISSUER && process.env.AUTHENTIK_CLIENT_ID && process.env.AUTHENTIK_CLIENT_SECRET),
   }
 }
 
