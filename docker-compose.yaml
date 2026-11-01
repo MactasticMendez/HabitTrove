@@ -5,7 +5,13 @@ services:
     volumes:
       - "./data:/app/data"
       - "./backups:/app/backups"
-    image: dohsimpson/habittrove
+    build: .
+    image: habittrove:local
     environment:
       - AUTH_SECRET=${AUTH_SECRET:?Set a strong AUTH_SECRET}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-}
+      - AUTH_URL=${AUTH_URL:-}
+      - AUTHENTIK_ISSUER=${AUTHENTIK_ISSUER:-}
+      - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID:-}
+      - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET:-}

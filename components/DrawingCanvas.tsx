@@ -53,10 +53,15 @@ export default function DrawingCanvas({ initialDrawing, onSave, onClear }: Drawi
   }, [])
 
   useEffect(() => {
-    if (initialDrawing) {
+    if (initialDrawing && initialDrawing.length <= 256_000) {
       try {
-        const loadedData = JSON.parse(initialDrawing)
-        if (Array.isArray(loadedData)) {
+        const loadedData: unknown = JSON.parse(initialDrawing)
+        if (Array.isArray(loadedData) && loadedData.length <= 1000 && loadedData.every(stroke =>
+          stroke && typeof stroke === 'object' && Array.isArray(stroke.points) &&
+          typeof stroke.color === 'string' && /^#[0-9a-f]{6}$/i.test(stroke.color) &&
+          Number.isFinite(stroke.thickness) && stroke.points.every((point: unknown) =>
+            point && typeof point === 'object' &&
+            Number.isFinite((point as { x: number }).x) && Number.isFinite((point as { y: number }).y)))) {
           setDrawingHistory(loadedData)
         }
       } catch (e) {

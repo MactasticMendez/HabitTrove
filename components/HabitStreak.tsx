@@ -57,8 +57,8 @@ export default function HabitStreak({ habits }: HabitStreakProps) {
               }}
             >
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis allowDecimals={false} />
+              <XAxis dataKey="date" tick={{ fill: 'hsl(var(--foreground))' }} />
+              <YAxis allowDecimals={false} tick={{ fill: 'hsl(var(--foreground))' }} />
               <Tooltip formatter={(value, name) => {
                 const translatedName = name === 'habits' ? t('tooltipHabitsLabel') : t('tooltipTasksLabel');
                 return [`${value} ${translatedName}`, t('tooltipCompletedLabel')];

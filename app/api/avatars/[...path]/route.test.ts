@@ -4,6 +4,9 @@ import path from 'path'
 const mockReadFile = mock()
 const mockRealpath = mock()
 const mockLstat = mock()
+let currentUser: { id: string } | undefined = { id: 'test-user' }
+
+mock.module('@/lib/server-helpers', () => ({ getCurrentUser: async () => currentUser }))
 
 mock.module('fs/promises', () => ({
   default: {
@@ -28,6 +31,7 @@ afterEach(() => {
 
 describe('GET /api/avatars/[...path]', () => {
   beforeEach(() => {
+    currentUser = { id: 'test-user' }
     mockReadFile.mockReset()
     mockRealpath.mockReset()
     mockLstat.mockReset()
@@ -36,6 +40,15 @@ describe('GET /api/avatars/[...path]', () => {
 
     mockRealpath.mockImplementation(async (value: string) => value)
     mockLstat.mockResolvedValue({ isSymbolicLink: () => false })
+  })
+
+  test('requires an authenticated user', async () => {
+    currentUser = undefined
+    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
+      params: Promise.resolve({ path: ['avatar.png'] }),
+    })
+    expect(response.status).toBe(401)
+    expect(mockReadFile).not.toHaveBeenCalled()
   })
 
   test('returns avatar image for valid file path', async () => {

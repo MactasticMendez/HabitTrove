@@ -2,14 +2,15 @@
 
 import { ReactNode, useEffect, useCallback, useState, Suspense } from 'react'
 import { useAtom, useSetAtom, useAtomValue } from 'jotai'
-import { aboutOpenAtom, pomodoroAtom, userSelectAtom, currentUserIdAtom, clientFreshnessTokenAtom } from '@/lib/atoms'
+import { aboutOpenAtom, pomodoroAtom, userSelectAtom, currentUserIdAtom, clientFreshnessTokenAtom, usersAtom, serverSettingsAtom } from '@/lib/atoms'
 import PomodoroTimer from './PomodoroTimer'
-import UserSelectModal from './UserSelectModal'
+import UserSelectModal, { AnonymousSignIn } from './UserSelectModal'
 import { useSession } from 'next-auth/react'
 import AboutModal from './AboutModal'
 import LoadingSpinner from './LoadingSpinner'
 import { checkDataFreshness as checkServerDataFreshness } from '@/app/actions/data'
 import RefreshBanner from './RefreshBanner'
+import CompleteEmailAccount from './CompleteEmailAccount'
 
 function ClientWrapperContent({ children }: { children: ReactNode }) {
   const [pomo] = useAtom(pomodoroAtom)
@@ -18,6 +19,9 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
   const setCurrentUserIdAtom = useSetAtom(currentUserIdAtom)
   const { data: session, status } = useSession()
   const currentUserId = session?.user.id
+  const users = useAtomValue(usersAtom)
+  const serverSettings = useAtomValue(serverSettingsAtom)
+  const currentAccount = users.users.find(user => user.id === currentUserId)
   const [showRefreshBanner, setShowRefreshBanner] = useState(false);
 
   // clientFreshnessTokenAtom is async, useAtomValue will suspend until it's resolved.
@@ -26,18 +30,11 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    if (status === 'loading') return
-    if (!currentUserId && !userSelect) {
-      setUserSelect(true)
-    }
-  }, [currentUserId, status, userSelect, setUserSelect])
-
-  useEffect(() => {
     setCurrentUserIdAtom(currentUserId)
   }, [currentUserId, setCurrentUserIdAtom])
 
   const performFreshnessCheck = useCallback(async () => {
-    if (!clientToken || status !== 'authenticated') return;
+    if (!clientToken || status !== 'authenticated' || (!currentAccount?.email && !serverSettings.isDemo)) return;
 
     try {
       const result = await checkServerDataFreshness(clientToken);
@@ -47,7 +44,7 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Failed to check data freshness with server:", error);
     }
-  }, [clientToken, status]);
+  }, [clientToken, status, currentAccount?.email, serverSettings.isDemo]);
 
   useEffect(() => {
     // Interval for polling data freshness
@@ -66,6 +63,18 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
   };
 
   return (
+    status === 'loading'
+      ? <LoadingSpinner />
+      : status === 'unauthenticated'
+      ? <main className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="w-full max-w-md space-y-5 rounded-lg border bg-card p-6">
+            <h1 className="text-2xl font-semibold">HabitTrove</h1>
+            <AnonymousSignIn onSuccess={() => {}} authentikEnabled={serverSettings.authentikEnabled} isDemo={serverSettings.isDemo} />
+          </div>
+        </main>
+      : status === 'authenticated' && currentAccount && !currentAccount.email && !serverSettings.isDemo
+      ? <CompleteEmailAccount userId={currentAccount.id} username={currentAccount.username} />
+      :
     <>
       {children}
       {pomo.show && <PomodoroTimer />}
