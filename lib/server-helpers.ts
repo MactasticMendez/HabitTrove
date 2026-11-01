@@ -1,7 +1,7 @@
 import { auth } from '@/auth'
 import 'server-only'
-import { User, UserData, UserId, getDefaultUsersData } from './types'
-import { randomBytes, scryptSync } from 'crypto'
+import { User, UserData, UserId } from './types'
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import fs from 'fs/promises'
 import path from 'path'
 
@@ -10,8 +10,9 @@ async function loadUsersDataFromStore(): Promise<UserData> {
     const filePath = path.join(process.cwd(), 'data', 'auth.json')
     const data = await fs.readFile(filePath, 'utf8')
     return JSON.parse(data) as UserData
-  } catch {
-    return getDefaultUsersData()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { users: [] }
+    throw error
   }
 }
 
@@ -37,15 +38,11 @@ export function saltAndHashPassword(password: string, salt?: string): string {
 }
 
 export function verifyPassword(password?: string, storedHash?: string): boolean {
-  // if both password and storedHash is undefined, return true
   if (!password && !storedHash) return true
-  // else if either password or storedHash is undefined, return false
   if (!password || !storedHash) return false
 
-  // Split the stored hash into its salt and hash components
-  const [salt, hash] = storedHash.split(':')
-  // Hash the input password with the same salt
-  const newHash = saltAndHashPassword(password, salt).split(':')[1]
-  // Compare the new hash with the stored hash
-  return newHash === hash
+  const match = /^([a-f0-9]{32}):([a-f0-9]{128})$/i.exec(storedHash)
+  if (!match) return false
+  const actual = scryptSync(password, match[1], 64)
+  return timingSafeEqual(actual, Buffer.from(match[2], 'hex'))
 }

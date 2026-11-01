@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+* Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
+* Update Next.js, Auth.js, next-intl, and Zod to patched releases; refresh compatible locked dependencies.
+* Require an initial administrator password for new non-demo installations, strengthen new passwords, enforce server-side account, item, coin, and settings permissions, and prevent replayed habit rewards.
+* Require authentication for avatar uploads and freshness checks, protect account deletion from cross-origin requests, and remove unused push actions.
+* Reject malformed data instead of silently replacing it, and compare password hashes in constant time.
+
+### Changed
+
+* Show system settings only to administrators; existing account data and passwordless accounts remain unchanged.
+* Declare the required emoji and linkification peer packages so production builds resolve.
+
 ## Version 0.2.31
 
 **This Release contains important security patches, please update as soon as possible**

@@ -56,20 +56,21 @@ chown -R 1001:1001 data backups # Required for the nextjs user in container
 ```bash
 # Generate a secure authentication secret
 export AUTH_SECRET=$(openssl rand -base64 32)
-echo $AUTH_SECRET
+# Required when the data directory has no auth.json yet
+read -rsp 'Initial admin password (12-32 characters): ' INITIAL_ADMIN_PASSWORD
+printf '\n'
+export INITIAL_ADMIN_PASSWORD
 
 # Using docker-compose (recommended)
-## Update the AUTH_SECRET environment variable in docker-compose.yaml
-nano docker-compose.yaml
-## Start the container
 docker compose up -d
 
 # Or using docker run directly
 docker run -d \
   -p 3000:3000 \
   -v ./data:/app/data \
-  -v ./backups:/app/backups \ # Add this line to map the backups directory
+  -v ./backups:/app/backups \
   -e AUTH_SECRET=$AUTH_SECRET \
+  -e INITIAL_ADMIN_PASSWORD=$INITIAL_ADMIN_PASSWORD \
   dohsimpson/habittrove
 ```
 
@@ -100,6 +101,14 @@ npm run docker-run
 ```
 
 The application data will be persisted in the `data` directory in both cases.
+
+## Security
+
+For a new installation, set `INITIAL_ADMIN_PASSWORD` to a unique 12–32 character password before starting the app. HabitTrove stores its hash in `data/auth.json` on first run. Existing `auth.json` files are not changed by this setting; remove the environment value after setup if preferred. Set `AUTH_SECRET` to a random secret of at least 32 characters and protect both values as credentials.
+
+Existing passwordless accounts can still sign in without a password, and existing shorter passwords still work at sign-in. New or changed passwords must be 12–32 characters. Before exposing an installation, review every account and set passwords in the user profile or admin user editor. Restrict access with an external access control layer if passwordless accounts are intentional. Only administrators can create accounts or change system settings; users can edit their own profile and items they own or share.
+
+The source Dockerfile uses Node.js 22.23.4 to address [CVE-2026-111497](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). An existing `dohsimpson/habittrove` image does not change until its maintainer publishes a rebuilt image. Build from patched source or verify a newly published image's Node version before deploying it.
 
 ## Building the Project
 
