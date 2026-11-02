@@ -19,6 +19,7 @@
 * Improve chart label contrast and give the profile menu an accessible name.
 * Keep scheduled backups disabled when the backup setting is off, and fall back safely when old habit schedules or locale settings are malformed.
 * Download Bun for CI from its official GitHub release when the Bun download endpoint returns 403.
+* Make public assets readable by the non-root Docker user when the build source has restrictive permissions.
 
 ### Security
 
