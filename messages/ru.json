@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "Ежедневный прогресс",
+    "currentStreak": "Текущая серия: {count}",
     "tooltipHabitsLabel": "привычки",
     "tooltipTasksLabel": "задачи",
     "tooltipCompletedLabel": "Выполнено"
+  },
+  "HabitHeatmap": {
+    "title": "Календарь активности",
+    "summary": "За 12 недель: {count} выполнений",
+    "dayActivity": "{date}: {count} выполнений"
   },
   "CoinBalance": {
     "coinBalanceTitle": "Баланс"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "Потрачено сегодня",
     "todaysTransactionsLabel": "Транзакций сегодня",
     "transactionHistoryTitle": "История транзакций",
+    "allTransactionsLabel": "Все транзакции",
     "showLabel": "Показать:",
     "entriesSuffix": "записей",
     "showingEntries": "Показано с {from} по {to} из {total} записей",

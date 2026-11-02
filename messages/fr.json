@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "Série de complétions quotidiennes",
+    "currentStreak": "Série actuelle : {count}",
     "tooltipHabitsLabel": "habitudes",
     "tooltipTasksLabel": "tâches",
     "tooltipCompletedLabel": "Complété"
+  },
+  "HabitHeatmap": {
+    "title": "Calendrier d'activité",
+    "summary": "12 dernières semaines : {count} réalisations",
+    "dayActivity": "{date} : {count} réalisations"
   },
   "CoinBalance": {
     "coinBalanceTitle": "Solde de pièces"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "Dépensé aujourd'hui",
     "todaysTransactionsLabel": "Transactions d'aujourd'hui",
     "transactionHistoryTitle": "Historique des transactions",
+    "allTransactionsLabel": "Toutes les transactions",
     "showLabel": "Afficher :",
     "entriesSuffix": "entrées",
     "showingEntries": "Affichage de {from} à {to} de {total} entrées",

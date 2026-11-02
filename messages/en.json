@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "Daily Completion Streak",
+    "currentStreak": "Current streak: {count}",
     "tooltipHabitsLabel": "habits",
     "tooltipTasksLabel": "tasks",
     "tooltipCompletedLabel": "Completed"
+  },
+  "HabitHeatmap": {
+    "title": "Completion calendar",
+    "summary": "Last 12 weeks: {count} completions",
+    "dayActivity": "{date}: {count} completions"
   },
   "CoinBalance": {
     "coinBalanceTitle": "Coin Balance"
@@ -214,6 +220,7 @@
     "todaysSpentLabel": "Today's Spent",
     "todaysTransactionsLabel": "Today's Transactions",
     "transactionHistoryTitle": "Transaction History",
+    "allTransactionsLabel": "All transactions",
     "showLabel": "Show:",
     "entriesSuffix": "entries",
     "showingEntries": "Showing {from} to {to} of {total} entries",

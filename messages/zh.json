@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "每日完成连胜",
+    "currentStreak": "当前连续天数：{count}",
     "tooltipHabitsLabel": "习惯",
     "tooltipTasksLabel": "任务",
     "tooltipCompletedLabel": "已完成"
+  },
+  "HabitHeatmap": {
+    "title": "完成日历",
+    "summary": "过去 12 周：完成 {count} 次",
+    "dayActivity": "{date}：完成 {count} 次"
   },
   "CoinBalance": {
     "coinBalanceTitle": "金币余额"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "今日支出",
     "todaysTransactionsLabel": "今日交易数",
     "transactionHistoryTitle": "交易历史",
+    "allTransactionsLabel": "所有交易",
     "showLabel": "显示:",
     "entriesSuffix": "条",
     "showingEntries": "显示 {from} 到 {to} 条，共 {total} 条",

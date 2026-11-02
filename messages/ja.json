@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "毎日達成ストリーク",
+    "currentStreak": "現在の連続記録: {count}",
     "tooltipHabitsLabel": "習慣",
     "tooltipTasksLabel": "タスク",
     "tooltipCompletedLabel": "完了"
+  },
+  "HabitHeatmap": {
+    "title": "達成カレンダー",
+    "summary": "過去12週間: {count}件完了",
+    "dayActivity": "{date}: {count}件完了"
   },
   "CoinBalance": {
     "coinBalanceTitle": "コイン残高"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "今日の支出額",
     "todaysTransactionsLabel": "今日の取引数",
     "transactionHistoryTitle": "取引履歴",
+    "allTransactionsLabel": "すべての取引",
     "showLabel": "表示:",
     "entriesSuffix": "件",
     "showingEntries": "{from} から {to} 件（全 {total} 件）",
