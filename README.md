@@ -9,10 +9,6 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 <a href="https://github.com/dohsimpson/TaskTrove"><img width="3400" height="920" alt="tasktrove-banner" src="https://github.com/user-attachments/assets/ec728fba-7645-4169-b383-f760967840b9" /></a>
 
 
-## Try the Demo
-
-Want to try HabitTrove before installing? Visit the public [demo instance](https://demo.habittrove.com) to experience all features without any setup required. (do not store personal info. Data on the demo instance is reset daily)
-
 ## Features
 
 - 🎯 Create and track daily habits
@@ -20,9 +16,9 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 - ↕️ Arrange habits and tasks manually, switch to compact cards, and combine today's due items
 - 🏆 Earn coins for completing habits
 - 💰 Create a wishlist of rewards to redeem with earned coins
-- 📊 View your habit completion streaks and statistics
+- 📊 View your current completion streak, dated chart, and 12-week activity calendar
 - ✏️ Add freehand drawings to habits and wishlist items for visual reminders
-- 📅 Calendar heatmap to visualize your progress (WIP)
+- 📅 Filter your coin history to see reward redemptions and their dates
 - 🌍 Multi-language support (English, Español, Català, Deutsch, Français, Русский, 简体中文, 한국어, 日本語)
 - 🌙 Dark mode support
 - 📲 Progressive Web App (PWA) support
@@ -34,9 +30,9 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 
 2. **Tracking Habits**: Mark habits as complete on your dashboard. When a daily target is reached, the member who records that completion earns the habit's coin reward, at most once per local day. Only the member who recorded the latest completion can undo it.
 
-3. **Wishlist**: Add rewards to your wishlist that you can redeem with earned coins.
+3. **Wishlist**: Add rewards to your wishlist that you can redeem with earned coins. The Coins page shows dated transactions and can filter to reward redemptions.
 
-4. **Statistics**: View your progress through the heatmap and streak counters. The calendar uses the timezone selected in Settings, and the dashboard advances to the next day when that timezone reaches midnight.
+4. **Statistics**: View the current completion streak, a dated seven-day chart, and a 12-week activity calendar. A day counts when at least one habit or task reaches its daily completion target. Today's unfinished day does not break the streak. The calendar uses the timezone selected in Settings, and the dashboard advances to the next day when that timezone reaches midnight.
 
 5. **Organizing**: Choose Manual order on the Habits or Tasks page to drag items or move them with the arrow buttons. Pinned items stay ahead of unpinned items. Manual positions are saved with the items and are visible to everyone who shares them; your chosen sort mode and compact view stay in this browser. On the dashboard, switch Today's Overview between separate sections and a combined list of due habits, due tasks, and overdue tasks.
 

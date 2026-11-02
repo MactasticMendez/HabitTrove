@@ -1,74 +1,60 @@
 'use client'
 
-import HeatMap from '@uiw/react-heat-map'
-import { Habit } from '@/lib/types'
-import { getNow, d2s, t2d } from '@/lib/utils'
+import { DateTime } from 'luxon'
 import { useAtom } from 'jotai'
-import { settingsAtom } from '@/lib/atoms'
+import { useTranslations } from 'next-intl'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { completedHabitsMapAtom, settingsAtom } from '@/lib/atoms'
+import { getActivityDays } from '@/lib/activity'
+import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 
-interface HabitHeatmapProps {
-  habits: Habit[]
-}
+const intensity = [
+  'bg-muted',
+  'bg-emerald-200 dark:bg-emerald-900',
+  'bg-emerald-400 dark:bg-emerald-700',
+  'bg-emerald-600 dark:bg-emerald-500',
+  'bg-emerald-800 dark:bg-emerald-300',
+]
 
-export default function HabitHeatmap({ habits }: HabitHeatmapProps) {
-  // Aggregate all habit completions into a count per day
-  const completionCounts = habits.reduce((acc: { [key: string]: number }, habit) => {
-    const target = habit.targetCompletions || 1
-    const dailyCompletions = habit.completions.reduce((dailyAcc, completion) => {
-      const formattedDate = d2s({
-        dateTime: t2d({ timestamp: completion, timezone: settings.system.timezone }),
-        format: 'yyyy-MM-dd',
-        timezone: settings.system.timezone
-      })
-      dailyAcc[formattedDate] = (dailyAcc[formattedDate] || 0) + 1
-      return dailyAcc
-    }, {} as { [key: string]: number })
-
-    Object.entries(dailyCompletions).forEach(([date, count]) => {
-      if (count >= target) {
-        acc[date] = (acc[date] || 0) + 1
-      }
-    })
-    return acc
-  }, {})
-
-  // Convert to the format expected by the heatmap
-  const value = Object.entries(completionCounts).map(([date, count]) => ({
-    date,
-    count
-  }))
-
+export default function HabitHeatmap() {
+  const t = useTranslations('HabitHeatmap')
   const [settings] = useAtom(settingsAtom)
-
-  // Get start date (30 days ago)
-  const now = getNow({ timezone: settings.system.timezone })
-  const startDate = now.minus({ days: 30 }).toJSDate()
+  const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
+  const today = useTodayInTimezone(settings.system.timezone)
+  const currentDay = DateTime.fromISO(today, { zone: settings.system.timezone })
+  const days = getActivityDays(completedHabitsMap, currentDay, 84)
+  const total = days.reduce((sum, day) => sum + day.total, 0)
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow">
-      <h2 className="text-lg font-semibold mb-4">Habit Completion Heatmap</h2>
-      <div className="overflow-x-auto">
-        <HeatMap
-          value={value}
-          startDate={startDate}
-          width={500}
-          style={{ color: '#047857' }}
-          panelColors={[
-            '#f0fdf4',  // Very light green
-            '#dcfce7',  // Light green
-            '#bbf7d0',  // Medium light green
-            '#86efac',  // Medium green
-            '#4ade80',  // Bright green
-            '#22c55e'   // Dark green
-          ]}
-          rectProps={{ rx: 3 }} // Rounded corners
-          rectRender={(props, data) => {
-            return (
-              <title>{`${data.date}: ${data.count || 0} habits completed`}</title>
-            );
-          }}
-        />
-      </div>
-    </div>
+    <Card className="md:col-span-2 lg:col-span-3">
+      <CardHeader>
+        <CardTitle>{t('title')}</CardTitle>
+        <p className="text-sm text-muted-foreground">{t('summary', { count: total })}</p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto pb-2">
+          <div className="grid grid-flow-col grid-rows-7 gap-1 w-max" role="group" aria-label={t('title')}>
+            {days.map(day => {
+              const date = DateTime.fromISO(day.date, { zone: settings.system.timezone })
+                .setLocale(settings.system.language).toLocaleString(DateTime.DATE_FULL)
+              const label = t('dayActivity', { date, count: day.total })
+              return (
+                <span
+                  key={day.date}
+                  tabIndex={0}
+                  role="img"
+                  aria-label={label}
+                  className={`group relative h-6 w-6 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${intensity[Math.min(day.total, 4)]}`}
+                >
+                  <span aria-hidden="true" className="pointer-events-none absolute z-10 bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs text-popover-foreground shadow group-hover:block group-focus:block">
+                    {label}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

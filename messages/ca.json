@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "Ratxa de finalització diària",
+    "currentStreak": "Ratxa actual: {count}",
     "tooltipHabitsLabel": "hàbits",
     "tooltipTasksLabel": "tasques",
     "tooltipCompletedLabel": "Completat"
+  },
+  "HabitHeatmap": {
+    "title": "Calendari d'activitat",
+    "summary": "Últimes 12 setmanes: {count} complecions",
+    "dayActivity": "{date}: {count} complecions"
   },
   "CoinBalance": {
     "coinBalanceTitle": "Saldo de monedes"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "Gastat avui",
     "todaysTransactionsLabel": "Transaccions d'avui",
     "transactionHistoryTitle": "Historial de transaccions",
+    "allTransactionsLabel": "Totes les transaccions",
     "showLabel": "Mostra:",
     "entriesSuffix": "entrades",
     "showingEntries": "Mostrant {from} a {to} de {total} entrades",

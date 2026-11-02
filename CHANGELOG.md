@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+* Add a current completion streak, a keyboard-readable 12-week activity calendar, and explicit dates in chart tooltips ([upstream #111](https://github.com/dohsimpson/HabitTrove/issues/111), [#112](https://github.com/dohsimpson/HabitTrove/issues/112), [#113](https://github.com/dohsimpson/HabitTrove/issues/113)).
+* Add a reward-redemption filter to the existing coin transaction ledger ([upstream #121](https://github.com/dohsimpson/HabitTrove/issues/121)).
+
+### Changed
+
+* Remove the link to the upstream demo from this fork's README because it does not show the fork's changes.
+
+### Fixed
+
+* Refresh dashboard activity statistics at midnight in the configured timezone and show chart series labels correctly in every supported language.
+
 ## Version 0.4.0
 
 ### Added
