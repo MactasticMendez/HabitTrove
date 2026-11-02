@@ -45,7 +45,7 @@ RUN addgroup --system --gid 1001 nodejs && \
     mkdir -p /app/data /app/backups && \
     chown nextjs:nodejs /app/data /app/backups
 
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder /app/CHANGELOG.md ./
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
