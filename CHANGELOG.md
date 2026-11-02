@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+* Add local and Authentik OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
+* Add a recovery script for assigning local passwords to legacy passwordless accounts.
+
+### Changed
+
+* Require email for new accounts and first-use completion for existing accounts without one, while preserving account IDs and data.
+* Show a dedicated sign-in screen to signed-out visitors.
+* Build the fork's local image in the example Compose deployment.
+
+### Fixed
+
+* Restore Authentik sign-in for linked accounts by carrying the local account ID through Auth.js profile normalization.
+* Update Linkify React to match LinkifyJS and prevent a client-side crash on the dashboard.
+* Improve chart label contrast and give the profile menu an accessible name.
+* Keep scheduled backups disabled when the backup setting is off, and fall back safely when old habit schedules or locale settings are malformed.
+* Download Bun for CI from its official GitHub release when the Bun download endpoint returns 403.
+* Make public assets readable by the non-root Docker user when the build source has restrictive permissions.
+
+### Security
+
+* Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
+* Update Next.js, Auth.js, next-intl, and Zod to patched releases; refresh compatible locked dependencies.
+* Require an initial administrator password for new non-demo installations, strengthen new passwords, enforce server-side account, item, coin, and settings permissions, and prevent replayed habit rewards.
+* Require authentication for avatar uploads and freshness checks, protect account deletion from cross-origin requests, and remove unused push actions.
+* Reject malformed data instead of silently replacing it, and compare password hashes in constant time.
+* Block local sign-in for passwordless accounts, throttle failed local sign-ins, and invalidate sessions after credential, email, role, or Authentik-link changes.
+* Require local-password proof and a matching verified Authentik email before linking accounts; use Authentik's subject for subsequent sign-ins.
+* Update Archiver and node-cron, and replace Next.js's vulnerable nested PostCSS version with a patched release.
+* Write JSON data atomically and serialize in-process mutations to prevent duplicate rewards and concurrent overspending.
+* Restrict reward links to HTTP(S), isolate external popups, validate shared drawings, habit schedules, rewards, and settings, and bound retained avatar uploads.
+* Enforce demo restrictions in server actions, require resource permissions for habit credits and wishlist redemption, and make redemption limits and task archive transitions server controlled.
+* Restrict new data and backup files to their owner, hide other users' coin balances, and require an administrator to add the first local password to an Authentik-only account.
+* Pin the demo deployment action to a fixed revision, publish only from upstream main, and validate release versions before shell use.
+
+### Changed
+
+* Show system settings only to administrators; existing account data remains unchanged until users complete email setup or an administrator assigns credentials.
+* Declare the required emoji and linkification peer packages so production builds resolve.
+* Allow interaction-only members to change one recent habit completion at a time; keep reward and archive management with writers.
+
 ## Version 0.2.31
 
 **This Release contains important security patches, please update as soon as possible**

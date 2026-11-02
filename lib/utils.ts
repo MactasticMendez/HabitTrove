@@ -380,7 +380,8 @@ export function getHabitFreq(habit: Habit): Freq {
     // don't support recurring task yet
     return 'daily'
   }
-  const rrule = RRule.fromString(habit.frequency)
+  const rrule = deserializeRRule(habit.frequency)
+  if (!rrule) return 'daily'
   const freq = rrule.origOptions.freq
   switch (freq) {
     case RRule.DAILY: return 'daily'
@@ -430,12 +431,16 @@ export const playSound = (soundPath: string = '/sounds/timer-end.wav') => {
 
 // open a new window (client side only, must be run in browser)
 export const openWindow = (url: string): boolean => {
-  const newWindow = window.open(url, '_blank')
-  if (newWindow === null) {
-    // Popup was blocked
+  let safeUrl: URL
+  try { safeUrl = new URL(url) } catch { return false }
+  if (!['http:', 'https:'].includes(safeUrl.protocol) || safeUrl.username || safeUrl.password) return false
+  try {
+    // With noopener, browsers may return null even after opening the new tab.
+    window.open(safeUrl.href, '_blank', 'noopener,noreferrer')
+    return true
+  } catch {
     return false
   }
-  return true
 }
 
 export function deepMerge<T>(a: T, b: T) {

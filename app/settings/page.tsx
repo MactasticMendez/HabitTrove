@@ -12,7 +12,7 @@ import {
 import { DynamicTimeNoSSR } from '@/components/DynamicTimeNoSSR';
 import { useAtom } from 'jotai';
 import { useTranslations } from 'next-intl';
-import { settingsAtom, serverSettingsAtom } from '@/lib/atoms';
+import { settingsAtom, serverSettingsAtom, currentUserAtom } from '@/lib/atoms';
 import { Settings, WeekDay } from '@/lib/types'
 import { saveSettings } from '../actions/data'
 import { Info } from 'lucide-react'; // Import Info icon
@@ -27,6 +27,7 @@ export default function SettingsPage() {
   // tWarning removed
   const [settings, setSettings] = useAtom(settingsAtom);
   const [serverSettings] = useAtom(serverSettingsAtom);
+  const [currentUser] = useAtom(currentUserAtom);
   const { data: session } = useSession();
   const router = useRouter();
   // showConfirmDialog and isDeleting states removed
@@ -89,7 +90,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="mb-6">
+        {currentUser?.isAdmin && <Card className="mb-6">
           <CardHeader>
             <CardTitle>{t('systemSettingsTitle')}</CardTitle>
           </CardHeader>
@@ -238,7 +239,7 @@ export default function SettingsPage() {
             </div>
 
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Danger Zone Card Removed */}
       </div >

@@ -25,14 +25,33 @@ import {
   prepareDataForHashing,
   generateCryptoHash,
   getUnsupportedRRuleReason,
-  roundToInteger
+  roundToInteger,
+  openWindow
 } from './utils'
+
 import { CoinTransaction, ParsedResultType, Settings, HabitsData, CoinsData, WishlistData, UserData } from './types'
 import { DateTime } from "luxon";
 import { getDefaultSettings, getDefaultHabitsData, getDefaultCoinsData, getDefaultWishlistData, getDefaultUsersData } from './types';
 import { RRule, Weekday } from 'rrule';
 import { Habit } from '@/lib/types';
 import { INITIAL_DUE } from './constants';
+
+test('external popups reject unsafe schemes and isolate the opener', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const calls: unknown[][] = []
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { open: (...args: unknown[]) => { calls.push(args); return null } },
+  })
+  try {
+    expect(openWindow('javascript:alert(1)')).toBe(false)
+    expect(openWindow('https://example.com/reward')).toBe(true)
+    expect(calls).toEqual([['https://example.com/reward', '_blank', 'noopener,noreferrer']])
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'window', original)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
+})
 
 describe('cn utility', () => {
   test('should merge class names correctly', () => {

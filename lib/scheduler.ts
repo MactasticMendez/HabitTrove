@@ -22,10 +22,6 @@ export function initializeScheduler() {
     } catch (err) {
       console.error(`[${new Date().toISOString()}] Scheduled backup task failed:`, err);
     }
-  }, {
-    scheduled: true,
-    // Consider adding timezone support later if needed, based on user settings
-    // timezone: "Your/Timezone"
   });
 
   console.log('Scheduler initialized. Daily backup scheduled for 2:00 AM server time.');
