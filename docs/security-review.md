@@ -1,12 +1,13 @@
 # Security review
 
-The Codex Security deep source scan reviewed the whole repository at commit `98cd36e` and reported 38 findings (29 medium, 9 low). This branch was checked against those findings and adds server-side controls for authentication, account linking, resource permissions, shared input, coin rewards and redemption, demo behavior, backup permissions, and CI publishing. Production dependencies were also audited. The static scan did not exercise the live instance or Authentik.
+The Codex Security deep source scan reviewed the whole repository at commit `98cd36e` and reported 38 findings (29 medium, 9 low). This branch was checked against those findings and adds server-side controls for authentication, account linking, resource permissions, shared input, coin rewards and redemption, demo behavior, backup permissions, and CI publishing. Production dependencies were also audited. The source scan itself did not exercise the live instance or Authentik; the sign-in flow was checked separately after deployment.
 
 ## Validation
 
 - Unit and security tests, TypeScript, lint, and production build cover the changed code.
 - A local browser check covers local sign-in and the mandatory-email screen. Pa11y/axe found no issues on those screens. On the dashboard, axe marks five SVG chart labels for manual contrast review because it cannot determine the background behind the chart. The rendered labels use the foreground color; this is a tool limitation, not a measured contrast failure.
-- OAuth setup and live deployment require the operator's own Authentik provider and remain untested end to end.
+- A live local account with a mandatory email was linked to the existing Authentik identity after the account owner entered their local password. The saved account record had one matching email and a linked identity. After deploying image `habittrove-fork:7923877`, a fresh Authentik sign-in reached that account's dashboard with its existing habits and coin balance. The Unraid container was healthy and returned HTTP 200 locally, and its saved template points to the deployed image. The prior image and account backup were retained for rollback.
+- This live check covers one existing account and one Authentik sign-in. It does not establish behavior for every identity-provider failure or future multi-user migration.
 
 ## Remaining risks
 
