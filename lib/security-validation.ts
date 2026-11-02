@@ -79,6 +79,17 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   if (habit.completions.some(value => typeof value !== 'string' || value.length > 64 || !DateTime.fromISO(value).isValid)) {
     throw new Error('Invalid habit completion')
   }
+  if (habit.completionRecords !== undefined &&
+      (!Array.isArray(habit.completionRecords) || habit.completionRecords.length !== habit.completions.length ||
+       habit.completionRecords.some(record => record !== null &&
+         (!record || typeof record !== 'object' || typeof record.id !== 'string' || record.id.length > 128 ||
+          typeof record.actorId !== 'string' || record.actorId.length > 128 ||
+          record.autoArchived !== undefined && typeof record.autoArchived !== 'boolean' ||
+          record.rewardedUserIds !== undefined &&
+            (!Array.isArray(record.rewardedUserIds) || record.rewardedUserIds.length > 100 ||
+             record.rewardedUserIds.some(id => typeof id !== 'string' || id.length > 128)))))) {
+    throw new Error('Invalid habit completion records')
+  }
   validateDrawing(habit.drawing)
   return habit
 }

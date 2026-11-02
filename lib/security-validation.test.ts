@@ -15,6 +15,9 @@ describe('shared data validation', () => {
     expect(validateHabit(habit)).toEqual(habit)
     expect(() => validateHabit({ ...habit, frequency: 'FREQ=SECONDLY' })).toThrow()
     expect(() => validateHabit({ ...habit, frequency: 'bad' })).toThrow()
+    expect(() => validateHabit({ ...habit, completionRecords: [{ id: 'record', actorId: 'member' }] }))
+      .toThrow('Invalid habit completion records')
+    expect(validateHabit({ ...habit, completionRecords: [] }).completionRecords).toEqual([])
     const crowdedTimes = `FREQ=DAILY;BYHOUR=${Array.from({ length: 24 }, (_, i) => i).join(',')};BYMINUTE=${Array.from({ length: 60 }, (_, i) => i).join(',')};BYSECOND=${Array.from({ length: 60 }, (_, i) => i).join(',')}`
     expect(() => validateHabit({ ...habit, frequency: crowdedTimes })).toThrow('Invalid recurrence rule')
     expect(validateHabit({ ...habit, frequency: crowdedTimes }, crowdedTimes).frequency).toBe(crowdedTimes)

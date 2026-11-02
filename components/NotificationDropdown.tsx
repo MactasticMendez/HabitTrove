@@ -67,7 +67,7 @@ export default function NotificationDropdown({
   }
 
   const renderNotification = (tx: CoinTransaction, isUnread: boolean) => {
-    const triggeringUser = usersData.users.find(u => u.id === tx.userId);
+    const triggeringUser = usersData.users.find(u => u.id === (tx.actorId ?? tx.userId));
     const relatedItemName = getRelatedItemName(tx, habitsData, wishlistData);
     const message = getNotificationMessage(tx, triggeringUser, relatedItemName); // Uses the new t-aware helper
     const txTimestamp = t2d({ timestamp: tx.timestamp, timezone: 'UTC' });
