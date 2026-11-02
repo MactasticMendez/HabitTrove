@@ -1,210 +1,111 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import fs from 'fs/promises'
+import os from 'os'
 import path from 'path'
 
-const mockReadFile = mock()
-const mockRealpath = mock()
-const mockLstat = mock()
 let currentUser: { id: string } | undefined = { id: 'test-user' }
+let directory: string
+let cwdSpy: ReturnType<typeof spyOn>
 
 mock.module('server-only', () => ({}))
 mock.module('@/lib/server-helpers', () => ({ getCurrentUser: async () => currentUser }))
 
-mock.module('fs/promises', () => ({
-  default: {
-    readFile: mockReadFile,
-    realpath: mockRealpath,
-    lstat: mockLstat,
-  },
-  readFile: mockReadFile,
-  realpath: mockRealpath,
-  lstat: mockLstat,
-}))
+const { GET } = await import('./route')
 
-let GET: typeof import('./route').GET
+const request = (segments: string[]) => GET(
+  new Request('http://localhost:3000/api/avatars/' + segments.join('/')),
+  { params: Promise.resolve({ path: segments }) },
+)
 
-beforeAll(async () => {
-  ;({ GET } = await import('./route'))
+beforeEach(async () => {
+  currentUser = { id: 'test-user' }
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-avatar-route-'))
+  await fs.mkdir(path.join(directory, 'data', 'avatars'), { recursive: true })
+  cwdSpy = spyOn(process, 'cwd').mockReturnValue(directory)
 })
 
-afterEach(() => {
-  mock.restore()
+afterEach(async () => {
+  cwdSpy.mockRestore()
+  await fs.rm(directory, { recursive: true, force: true })
 })
 
 describe('GET /api/avatars/[...path]', () => {
-  beforeEach(() => {
-    currentUser = { id: 'test-user' }
-    mockReadFile.mockReset()
-    mockRealpath.mockReset()
-    mockLstat.mockReset()
-
-    spyOn(process, 'cwd').mockReturnValue('/app')
-
-    mockRealpath.mockImplementation(async (value: string) => value)
-    mockLstat.mockResolvedValue({ isSymbolicLink: () => false })
-  })
-
   test('requires an authenticated user', async () => {
     currentUser = undefined
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
-      params: Promise.resolve({ path: ['avatar.png'] }),
-    })
-    expect(response.status).toBe(401)
-    expect(mockReadFile).not.toHaveBeenCalled()
+    expect((await request(['avatar.png'])).status).toBe(401)
   })
 
-  test('returns avatar image for valid file path', async () => {
-    mockReadFile.mockResolvedValue(Buffer.from('avatar-binary'))
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
-      params: Promise.resolve({ path: ['avatar.png'] }),
-    })
-
+  test('returns an avatar with a safe content type', async () => {
+    await fs.writeFile(path.join(directory, 'data', 'avatars', 'avatar.png'), 'avatar-binary')
+    const response = await request(['avatar.png'])
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('image/png')
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
-    expect(mockReadFile).toHaveBeenCalledWith(path.resolve('/app', 'data', 'avatars', 'avatar.png'))
+    expect(await response.text()).toBe('avatar-binary')
   })
 
-  test('allows nested valid avatar paths', async () => {
-    mockReadFile.mockResolvedValue(Buffer.from('avatar-binary'))
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/user-1/avatar.png'), {
-      params: Promise.resolve({ path: ['user-1', 'avatar.png'] }),
-    })
-
+  test('allows nested paths', async () => {
+    const nested = path.join(directory, 'data', 'avatars', 'user-1')
+    await fs.mkdir(nested)
+    await fs.writeFile(path.join(nested, 'avatar.png'), 'avatar-binary')
+    const response = await request(['user-1', 'avatar.png'])
     expect(response.status).toBe(200)
-    expect(mockReadFile).toHaveBeenCalledWith(path.resolve('/app', 'data', 'avatars', 'user-1', 'avatar.png'))
   })
 
   test('supports uppercase extensions', async () => {
-    mockReadFile.mockResolvedValue(Buffer.from('avatar-binary'))
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.PNG'), {
-      params: Promise.resolve({ path: ['avatar.PNG'] }),
-    })
-
+    await fs.writeFile(path.join(directory, 'data', 'avatars', 'avatar.PNG'), 'avatar-binary')
+    const response = await request(['avatar.PNG'])
     expect(response.status).toBe(200)
     expect(response.headers.get('Content-Type')).toBe('image/png')
   })
 
-  test('rejects traversal segments', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/../auth.json'), {
-      params: Promise.resolve({ path: ['..', 'auth.json'] }),
+  for (const [name, segments] of [
+    ['traversal segments', ['..', 'auth.json']],
+    ['encoded traversal', ['%2e%2e%2fauth.json']],
+    ['encoded backslash traversal', ['..%5cauth.png']],
+    ['null bytes', ['avatar.png%00']],
+    ['dot segments', ['.', 'avatar.png']],
+    ['malformed encoding', ['%E0%A4%A']],
+  ] as const) {
+    test(`rejects ${name}`, async () => {
+      const response = await request([...segments])
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
     })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
-
-  test('rejects encoded traversal payloads', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/%2e%2e%2fauth.json'), {
-      params: Promise.resolve({ path: ['%2e%2e%2fauth.json'] }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
-
-  test('rejects encoded backslash traversal payloads', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/..%5cauth.png'), {
-      params: Promise.resolve({ path: ['..%5cauth.png'] }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
-
-  test('rejects null byte payloads', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png%00'), {
-      params: Promise.resolve({ path: ['avatar.png%00'] }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
-
-  test('rejects dot-only segments', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/./avatar.png'), {
-      params: Promise.resolve({ path: ['.', 'avatar.png'] }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
-
-  test('rejects malformed encoded segments', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/%E0%A4%A'), {
-      params: Promise.resolve({ path: ['%E0%A4%A'] }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
-  })
+  }
 
   test('rejects unsupported file extensions', async () => {
-    const response = await GET(new Request('http://localhost:3000/api/avatars/config.json'), {
-      params: Promise.resolve({ path: ['config.json'] }),
-    })
-
+    const response = await request(['config.json'])
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Unsupported file type' })
-    expect(mockReadFile).not.toHaveBeenCalled()
   })
 
   test('rejects symlinked avatar files', async () => {
-    mockLstat.mockResolvedValue({ isSymbolicLink: () => true })
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
-      params: Promise.resolve({ path: ['avatar.png'] }),
-    })
-
+    await fs.symlink(path.join(directory, 'data', 'auth.json'), path.join(directory, 'data', 'avatars', 'avatar.png'))
+    const response = await request(['avatar.png'])
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
   })
 
-  test('rejects files whose real path escapes avatars directory', async () => {
-    mockRealpath.mockImplementation(async (value: string) => {
-      if (value === path.resolve('/app', 'data', 'avatars')) {
-        return value
-      }
-
-      return path.resolve('/app', 'data', 'auth.png')
-    })
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
-      params: Promise.resolve({ path: ['avatar.png'] }),
-    })
-
+  test('rejects paths that resolve outside the avatar directory', async () => {
+    const outside = path.join(directory, 'data', 'outside')
+    await fs.mkdir(outside)
+    await fs.writeFile(path.join(outside, 'avatar.png'), 'outside')
+    await fs.symlink(outside, path.join(directory, 'data', 'avatars', 'escape'))
+    const response = await request(['escape', 'avatar.png'])
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
-    expect(mockReadFile).not.toHaveBeenCalled()
   })
 
-  test('returns 404 when file is missing', async () => {
-    mockLstat.mockRejectedValue({ code: 'ENOENT' })
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/missing.png'), {
-      params: Promise.resolve({ path: ['missing.png'] }),
-    })
-
+  test('returns 404 when a file is missing', async () => {
+    const response = await request(['missing.png'])
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ error: 'File not found' })
   })
 
-  test('returns 500 for non-ENOENT read errors', async () => {
-    mockReadFile.mockRejectedValue({ code: 'EACCES' })
-
-    const response = await GET(new Request('http://localhost:3000/api/avatars/avatar.png'), {
-      params: Promise.resolve({ path: ['avatar.png'] }),
-    })
-
+  test('returns 500 for a non-ENOENT read error', async () => {
+    await fs.mkdir(path.join(directory, 'data', 'avatars', 'avatar.png'))
+    const response = await request(['avatar.png'])
     expect(response.status).toBe(500)
     expect(await response.json()).toEqual({ error: 'Internal server error' })
   })

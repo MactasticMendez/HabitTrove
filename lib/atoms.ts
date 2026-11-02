@@ -27,6 +27,7 @@ import {
 import { atomFamily, atomWithStorage } from "jotai/utils";
 import { DateTime } from "luxon";
 import { Freq } from "./types";
+import { isCountedCompletion } from './task-schedule'
 
 export interface BrowserSettings {
   viewType: ViewType
@@ -38,6 +39,10 @@ export interface BrowserSettings {
   compactItems?: boolean
   combinedToday?: boolean
   expandedToday?: boolean
+  dashboardOrder?: string[]
+  hideNonDaily?: boolean
+  remindersEnabled?: boolean
+  reminderLeadMinutes?: number
 }
 
 export const browserSettingsAtom = atomWithStorage('browserSettings', {
@@ -157,7 +162,8 @@ export const completionCacheAtom = atom((get) => {
   const cache: CompletionCache = {};
 
   habits.forEach(habit => {
-    habit.completions.forEach(utcTimestamp => {
+    habit.completions.forEach((utcTimestamp, index) => {
+      if (!isCountedCompletion(habit, index)) return
       const localDate = t2d({ timestamp: utcTimestamp, timezone })
         .toFormat('yyyy-MM-dd');
 

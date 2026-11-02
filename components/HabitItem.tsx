@@ -2,6 +2,8 @@ import { Habit, User } from '@/lib/types'
 import { useAtom } from 'jotai'
 import { settingsAtom, pomodoroAtom, browserSettingsAtom, usersAtom, currentUserAtom } from '@/lib/atoms'
 import { getCompletionsForToday, getNow, getUndoableCompletionIndex, isTaskOverdue, convertMachineReadableFrequencyToHumanReadable } from '@/lib/utils'
+import { getTaskMissedDates, getTaskProgress, isCountedCompletion } from '@/lib/task-schedule'
+import { getPerHabitProgress } from '@/lib/habit-progress'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Coins, Edit, Check, Undo2, MoreVertical, Pin } from 'lucide-react'
@@ -17,6 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { hasPermission } from '@/lib/utils'
 import { HabitContextMenuItems } from './HabitContextMenuItems'
 import DrawingDisplay from './DrawingDisplay'
+import { DateTime } from 'luxon'
 
 interface HabitItemProps {
   habit: Habit
@@ -46,13 +49,16 @@ const renderUserAvatars = (habit: Habit, currentUser: User | null, usersData: { 
 
 
 export default function HabitItem({ habit, compact = false, onEdit, onDelete }: HabitItemProps) {
-  const { completeHabit, undoComplete, archiveHabit, unarchiveHabit, saveHabit } = useHabits()
+  const { completeHabit, completePastHabit, undoComplete, toggleChecklistItem } = useHabits()
   const [settings] = useAtom(settingsAtom)
   const [_, setPomo] = useAtom(pomodoroAtom)
   const completionsToday = getCompletionsForToday({ habit, timezone: settings.system.timezone })
   const target = habit.targetCompletions || 1
   const isCompletedToday = completionsToday >= target
   const [isHighlighted, setIsHighlighted] = useState(false)
+  const [photo, setPhoto] = useState<File | undefined>()
+  const [photoError, setPhotoError] = useState('')
+  const [busy, setBusy] = useState(false)
   const t = useTranslations('HabitItem');
   const [usersData] = useAtom(usersAtom)
   const [currentUser] = useAtom(currentUserAtom)
@@ -62,6 +68,22 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   const [browserSettings] = useAtom(browserSettingsAtom)
   const isTasksView = browserSettings.viewType === 'tasks'
   const isRecurRule = !isTasksView
+  const today = DateTime.now().setZone(settings.system.timezone)
+  const missedDates = habit.isTask ? getTaskMissedDates(habit, today, settings.system.timezone) : []
+  const progress = getPerHabitProgress(habit, today, settings.system.timezone, settings.system.weekStartDay)
+  const pendingToday = habit.completions.some((timestamp, index) =>
+    isCountedCompletion(habit, index) && habit.completionRecords?.[index]?.approval === 'pending' &&
+    DateTime.fromISO(timestamp).setZone(settings.system.timezone).hasSame(today, 'day'))
+
+  const submitCompletion = async (date?: DateTime) => {
+    setBusy(true)
+    try {
+      const result = date ? await completePastHabit(habit, date, photo) : await completeHabit(habit, photo)
+      if (result) setPhoto(undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -139,6 +161,29 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
             <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
             <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t('coinsPerCompletion', { count: habit.coinReward })}</span>
           </div>
+          {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
+          {!habit.isTask && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
+          {!habit.isTask && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
+          {pendingToday && <p className="text-xs text-amber-700 dark:text-amber-300">{t('pendingApproval')}</p>}
+          {habit.checklist && habit.checklist.length > 0 && <div className="mt-2 space-y-1">
+            <p className="text-xs text-muted-foreground">{t('checklistProgress', { done: habit.checklist.filter(item => item.completed).length, total: habit.checklist.length })}</p>
+            {habit.checklist.map(item => <label key={item.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={item.completed} disabled={!canInteract || habit.archived || busy}
+                onChange={event => toggleChecklistItem(habit.id, item.id, event.target.checked)} />
+              <span className={item.completed ? 'line-through text-muted-foreground' : ''}>{item.text}</span>
+            </label>)}
+          </div>}
+          {habit.requiresApproval && !habit.archived && <label className="mt-2 block text-xs">
+            {t('evidenceLabel')}
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-xs"
+              onChange={event => {
+                const file = event.target.files?.[0]
+                const invalid = file && (file.size > 2_000_000 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+                setPhotoError(invalid ? t('invalidPhoto') : '')
+                setPhoto(invalid ? undefined : file)
+              }} />
+          </label>}
+          {photoError && <p role="alert" className="text-xs text-destructive">{photoError}</p>}
         </div>
       </CardContent>
       <CardFooter className={compact ? 'flex-[0_1_auto] justify-between gap-2 p-2' : 'flex-shrink-0 flex justify-between gap-2'}>
@@ -147,8 +192,8 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
             <Button
               variant={isCompletedToday ? "secondary" : "default"}
               size="sm"
-              onClick={async () => await completeHabit(habit)}
-              disabled={!canInteract || habit.archived || (isCompletedToday && completionsToday >= target)}
+              onClick={() => submitCompletion()}
+              disabled={!canInteract || habit.archived || busy || !!photoError || (isCompletedToday && completionsToday >= target)}
               className={`overflow-hidden w-24 sm:w-auto ${habit.archived ? 'cursor-not-allowed' : ''}`}
             >
               <Check className="h-4 w-4 sm:mr-2" />
@@ -181,6 +226,11 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
               )}
             </Button>
           </div>
+          {missedDates.length > 0 && !habit.archived && <Button type="button" variant="outline" size="sm"
+            disabled={!canInteract || busy || !!photoError} onClick={() => submitCompletion(missedDates[0])}
+            aria-label={t('catchUpDate', { date: missedDates[0].toISODate() ?? '' })}>
+            {t('catchUp')}
+          </Button>}
           {completionsToday > 0 && undoIndex >= 0 && (
             <Button
               variant="outline"

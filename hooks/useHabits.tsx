@@ -1,7 +1,7 @@
 import { useAtom, atom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { habitsAtom, coinsAtom, settingsAtom, usersAtom, habitFreqMapAtom, currentUserAtom } from '@/lib/atoms'
-import { recordHabitCompletion, undoHabitCompletion, saveHabitsData, reorderHabitItems } from '@/app/actions/data'
+import { recordHabitCompletion, undoHabitCompletion, saveHabitsData, reorderHabitItems, toggleTaskChecklistItem } from '@/app/actions/data'
 import { Habit, Permission, SafeUser, User } from '@/lib/types'
 import { toast } from '@/hooks/use-toast'
 import { DateTime } from 'luxon'
@@ -61,7 +61,7 @@ export function useHabits() {
   const [settings] = useAtom(settingsAtom)
   const [habitFreqMap] = useAtom(habitFreqMapAtom)
 
-  const completeHabit = async (habit: Habit) => {
+  const completeHabit = async (habit: Habit, photo?: File) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     const timezone = settings.system.timezone
     const today = getTodayInTimezone(timezone)
@@ -78,15 +78,17 @@ export function useHabits() {
       return
     }
     try {
-      const result = await recordHabitCompletion(habit.id, d2t({ dateTime: getNow({ timezone }) }))
+      const evidence = photo ? new FormData() : undefined
+      if (photo) evidence!.set('evidence', photo)
+      const result = await recordHabitCompletion(habit.id, d2t({ dateTime: getNow({ timezone }) }), evidence)
       const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
       setHabitsData({ habits: updatedHabits })
       setCoins(result.coins)
       if (result.targetReached) playSound()
       toast({
-        title: result.targetReached ? t("completedTitle") : t("progressTitle"),
-        description: result.rewarded
-          ? t("earnedCoinsDescription", { coinReward: habit.coinReward })
+        title: result.pending ? t('pendingApprovalTitle') : result.targetReached ? t("completedTitle") : t("progressTitle"),
+        description: result.pending ? t('pendingApprovalDescription') : result.rewarded
+          ? t("earnedCoinsDescription", { coinReward: result.rewardAmount })
           : t("progressDescription", { count: completionsToday + 1, target }),
         action: <ToastAction altText={tCommon('undoButton')} className="gap-2"
           onClick={() => undoComplete(result.habit, result.completionIndex, result.completionTimestamp)}>
@@ -144,6 +146,7 @@ export function useHabits() {
       ...storedHabit,
       ...habit,
       id: habit.id || getNowInMilliseconds().toString(),
+      createdBy: storedHabit ? storedHabit.createdBy : currentUser?.id,
       position: storedHabit?.position ?? (habit.id ? habit.position :
         Math.max(-1, ...habitsData.habits.filter(item => Boolean(item.isTask) === Boolean(habit.isTask))
           .map((item, index) => item.position ?? index)) + 1),
@@ -164,6 +167,16 @@ export function useHabits() {
     setHabitsData(updated)
   }
 
+  const toggleChecklistItem = async (habitId: string, itemId: string, completed: boolean) => {
+    if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
+    try {
+      const updated = await toggleTaskChecklistItem(habitId, itemId, completed)
+      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habitId ? updated : item) }))
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: t('checklistUpdateFailed'), variant: 'destructive' })
+    }
+  }
+
   const deleteHabit = async (id: string) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
     const updatedHabits = habitsData.habits.filter(h => h.id !== id)
@@ -172,15 +185,13 @@ export function useHabits() {
     return updatedHabits
   }
 
-  const completePastHabit = async (habit: Habit, date: DateTime) => {
+  const completePastHabit = async (habit: Habit, date: DateTime, photo?: File) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     const timezone = settings.system.timezone
     const dateKey = getISODate({ dateTime: date, timezone })
 
     // Check if already completed on this date
-    const completionsOnDate = habit.completions.filter(completion =>
-      isSameDate(t2d({ timestamp: completion, timezone }), date)
-    ).length
+    const completionsOnDate = getCompletionsForDate({ habit, date, timezone })
     const target = habit.targetCompletions || 1
 
     if (completionsOnDate >= target) {
@@ -202,14 +213,16 @@ export function useHabits() {
     })
     const completionTimestamp = d2t({ dateTime: completionDateTime })
     try {
-      const result = await recordHabitCompletion(habit.id, completionTimestamp)
+      const evidence = photo ? new FormData() : undefined
+      if (photo) evidence!.set('evidence', photo)
+      const result = await recordHabitCompletion(habit.id, completionTimestamp, evidence)
       const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
       setHabitsData({ habits: updatedHabits })
       setCoins(result.coins)
       toast({
-        title: result.targetReached ? t("completedTitle") : t("progressTitle"),
-        description: result.rewarded
-          ? t("earnedCoinsPastDateDescription", { coinReward: habit.coinReward, dateKey })
+        title: result.pending ? t('pendingApprovalTitle') : result.targetReached ? t("completedTitle") : t("progressTitle"),
+        description: result.pending ? t('pendingApprovalDescription') : result.rewarded
+          ? t("earnedCoinsPastDateDescription", { coinReward: result.rewardAmount, dateKey })
           : t("progressPastDateDescription", { count: completionsOnDate + 1, target, dateKey }),
         action: <ToastAction altText={tCommon('undoButton')} className="gap-2"
           onClick={() => undoComplete(result.habit, result.completionIndex, result.completionTimestamp)}>
@@ -245,6 +258,7 @@ export function useHabits() {
     undoComplete,
     saveHabit,
     reorderHabits,
+    toggleChecklistItem,
     deleteHabit,
     completePastHabit,
     archiveHabit,

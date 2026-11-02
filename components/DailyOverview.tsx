@@ -1,4 +1,4 @@
-import { Circle, Coins, ArrowRight, CircleCheck, ChevronDown, ChevronUp, Plus, Pin, AlertTriangle } from 'lucide-react' // Removed unused icons
+import { Circle, Coins, ArrowRight, CircleCheck, ChevronDown, ChevronUp, Plus, Pin, AlertTriangle, Flame } from 'lucide-react'
 import CompletionCountBadge from './CompletionCountBadge'
 import {
   ContextMenu,
@@ -11,7 +11,8 @@ import { useState } from 'react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { pomodoroAtom, settingsAtom, completedHabitsMapAtom, browserSettingsAtom, hasTasksAtom, currentUserAtom } from '@/lib/atoms'
-import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue } from '@/lib/utils'
+import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue, getHabitFreq } from '@/lib/utils'
+import { isCountedCompletion } from '@/lib/task-schedule'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,7 @@ import ConfirmDialog from './ConfirmDialog'
 import { Button } from './ui/button'
 import { HabitContextMenuItems } from './HabitContextMenuItems'
 import DrawingDisplay from './DrawingDisplay'
+import { getPerHabitProgress } from '@/lib/habit-progress'
 
 interface UpcomingItemsProps {
   habits: Habit[]
@@ -144,6 +146,10 @@ const ItemSection = ({
               return a.pinned ? -1 : 1;
             }
 
+            const aStreak = a.isTask ? 0 : getPerHabitProgress(a, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay).streak
+            const bStreak = b.isTask ? 0 : getPerHabitProgress(b, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay).streak
+            if ((aStreak >= 3) !== (bStreak >= 3)) return aStreak >= 3 ? -1 : 1
+
             // Then by completion status
             const aCompleted = currentTodayCompletions.includes(a);
             const bCompleted = currentTodayCompletions.includes(b);
@@ -172,10 +178,12 @@ const ItemSection = ({
           .slice(0, currentExpanded ? undefined : 5)
           .map((habit) => {
             const itemIsTask = Boolean(habit.isTask)
-            const completionsToday = habit.completions.filter(completion =>
+            const completionsToday = habit.completions.filter((completion, index) =>
+              isCountedCompletion(habit, index) &&
               isSameDate(t2d({ timestamp: completion, timezone: settings.system.timezone }), t2d({ timestamp: d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }), timezone: settings.system.timezone }))
             ).length
             const target = habit.targetCompletions || 1
+            const progress = !itemIsTask ? getPerHabitProgress(habit, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay) : null
             const isCompleted = completionsToday >= target || (itemIsTask && habit.archived)
             const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
             return (
@@ -287,6 +295,11 @@ const ItemSection = ({
                   </ContextMenu>
                 </span>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground flex-shrink-0">
+                  {progress && <span className="flex items-center gap-1" aria-label={`${t('individualProgress', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}${progress.graceUsed ? `; ${t('graceUsed')}` : ''}`}>
+                    {progress.streak >= 3 && <><Flame aria-hidden="true" className="h-3 w-3 text-orange-600" />{progress.streak}</>}
+                    {progress.graceUsed && <span className="text-amber-700 dark:text-amber-300">{t('graceUsed')}</span>}
+                    <span>{progress.weeklyDone}/{progress.weeklyDue}</span>
+                  </span>}
                   {habit.targetCompletions && (
                     <span className="bg-secondary px-1.5 py-0.5 rounded-full">
                       {completionsToday}/{target}
@@ -394,11 +407,13 @@ export default function DailyOverview({
   const dailyTasks = habits.filter(habit =>
     habit.isTask &&
     !habit.archived &&
+    (!browserSettings.hideNonDaily || !habit.taskRepeat || habit.taskRepeat === 'daily') &&
     (isHabitDue({ habit, timezone, date: todayDateObj }) || isTaskOverdue(habit, timezone))
   )
   const dailyHabits = habits.filter(habit =>
     !habit.isTask &&
     !habit.archived &&
+    (!browserSettings.hideNonDaily || getHabitFreq(habit) === 'daily') &&
     isHabitDue({ habit, timezone, date: todayDateObj })
   )
 
@@ -435,6 +450,11 @@ export default function DailyOverview({
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>{t('todaysOverviewTitle')}</CardTitle>
           <div role="group" aria-label={t('todayLayoutLabel')} className="flex gap-1">
+            <Button type="button" size="sm" variant={browserSettings.hideNonDaily ? 'secondary' : 'outline'}
+              aria-pressed={Boolean(browserSettings.hideNonDaily)}
+              onClick={() => setBrowserSettings(previous => ({ ...previous, hideNonDaily: !previous.hideNonDaily }))}>
+              {t('hideNonDaily')}
+            </Button>
             <Button type="button" size="sm" variant={browserSettings.combinedToday ? 'outline' : 'secondary'}
               aria-pressed={!browserSettings.combinedToday}
               onClick={() => setBrowserSettings(previous => ({ ...previous, combinedToday: false }))}>

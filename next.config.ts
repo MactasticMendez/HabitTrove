@@ -4,6 +4,7 @@ import createNextIntlPlugin from 'next-intl/plugin';
 const nextConfig: NextConfig = {
   /* config options here */
   output: 'standalone',
+  experimental: { serverActions: { bodySizeLimit: '3mb' } },
   webpack: (config) => {
     config.module.rules.push({
       test: /\.md$/,

@@ -8,6 +8,7 @@ import * as chrono from 'chrono-node'
 import _ from "lodash"
 import { v4 as uuidv4 } from 'uuid'
 import stableStringify from 'json-stable-stringify';
+import { getTaskMissedDates, isCountedCompletion, isTaskScheduledOnDate } from './task-schedule'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -109,15 +110,16 @@ export function getCompletionsForDate({
   timezone: string
 }): number {
   const dateObj = typeof date === 'string' ? DateTime.fromISO(date) : date
-  return habit.completions.filter((completion: string) =>
-    isSameDate(t2d({ timestamp: completion, timezone }), dateObj)
+  return habit.completions.filter((completion: string, index) =>
+    isCountedCompletion(habit, index) && isSameDate(t2d({ timestamp: completion, timezone }), dateObj)
   ).length
 }
 
 export function getUndoableCompletionIndex(habit: Habit, userId: string | undefined, date: DateTime, timezone: string): number {
   if (!userId) return -1
   const day = date.setZone(timezone).toISODate()
-  const index = habit.completions.findLastIndex(timestamp =>
+  const index = habit.completions.findLastIndex((timestamp, completionIndex) =>
+    isCountedCompletion(habit, completionIndex) &&
     DateTime.fromISO(timestamp, { setZone: true }).setZone(timezone).toISODate() === day)
   if (index < 0) return -1
   const record = habit.completionRecords?.[index]
@@ -359,17 +361,19 @@ export function convertMachineReadableFrequencyToHumanReadable({
 export function isHabitDue({
   habit,
   timezone,
-  date
+  date,
+  includeArchivedCompletions = false,
 }: {
   habit: Habit
   timezone: string
   date: DateTime
+  includeArchivedCompletions?: boolean
 }): boolean {
   // handle task
   if (habit.isTask) {
-    // For tasks, frequency is stored as a UTC ISO timestamp
-    const taskDueDate = t2d({ timestamp: habit.frequency, timezone })
-    return isSameDate(taskDueDate, date);
+    return habit.archived
+      ? includeArchivedCompletions && getCompletionsForDate({ habit, date, timezone }) > 0
+      : isTaskScheduledOnDate(habit, date, timezone)
   }
 
   // handle habit
@@ -412,9 +416,7 @@ export function isHabitCompleted(habit: Habit, timezone: string): boolean {
 
 export function isTaskOverdue(habit: Habit, timezone: string): boolean {
   if (!habit.isTask || habit.archived) return false
-  const dueDate = t2d({ timestamp: habit.frequency, timezone }).startOf('day')
-  const now = getNow({ timezone }).startOf('day')
-  return dueDate < now && !isHabitCompleted(habit, timezone)
+  return getTaskMissedDates(habit, getNow({ timezone }), timezone).length > 0
 }
 
 export function isHabitDueToday({
@@ -430,8 +432,7 @@ export function isHabitDueToday({
 
 export function getHabitFreq(habit: Habit): Freq {
   if (habit.isTask) {
-    // don't support recurring task yet
-    return 'daily'
+    return habit.taskRepeat ?? 'daily'
   }
   const rrule = deserializeRRule(habit.frequency)
   if (!rrule) return 'daily'

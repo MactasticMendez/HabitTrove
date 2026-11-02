@@ -19,6 +19,11 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 - 📊 View your current completion streak, dated chart, and 12-week activity calendar
 - ✏️ Add freehand drawings to habits and wishlist items for visual reminders
 - 📅 Filter your coin history to see reward redemptions and their dates
+- 🔁 Repeat tasks until a chosen completion goal, catch up missed dates, and track checklists
+- ✅ Require named approvers for tasks or habits, with optional private photo evidence
+- 🔔 Choose time reminders for items, with a browser-local on/off switch and lead time
+- 📈 See each habit's streak and week progress, rearrange dashboard cards, and filter to daily items
+- 🏅 Earn achievement badges and set temporary 2× or 3× coin boosts
 - 🌍 Multi-language support (English, Español, Català, Deutsch, Français, Русский, 简体中文, 한국어, 日本語)
 - 🌙 Dark mode support
 - 📲 Progressive Web App (PWA) support
@@ -35,6 +40,12 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 4. **Statistics**: View the current completion streak, a dated seven-day chart, and a 12-week activity calendar. A day counts when at least one habit or task reaches its daily completion target. Today's unfinished day does not break the streak. The calendar uses the timezone selected in Settings, and the dashboard advances to the next day when that timezone reaches midnight.
 
 5. **Organizing**: Choose Manual order on the Habits or Tasks page to drag items or move them with the arrow buttons. Pinned items stay ahead of unpinned items. Manual positions are saved with the items and are visible to everyone who shares them; your chosen sort mode and compact view stay in this browser. On the dashboard, switch Today's Overview between separate sections and a combined list of due habits, due tasks, and overdue tasks.
+
+6. **Recurring tasks and checklists**: Set a task's start date, repeat interval, and optional total number of completions. A recurring task stays open until that goal is reached. Use **Catch up** to record its oldest missed date within the past year. Checklist steps can be marked separately by assigned members; recurring task steps reset after an awarded completion. The main task is completed manually.
+
+7. **Approval and evidence**: Turn on **Require approval** while creating or editing a task or habit, then choose one or more approvers from username suggestions. New items record their creator; only that creator or an administrator can change approval settings. For older items without a recorded creator, an administrator must change those settings. Approvers, including the completer if listed, review submissions at **Approvals**. Coins are awarded to the completing account only after approval. Rejection permits resubmission. Photo evidence is optional; JPEG, PNG, and WebP uploads up to 2 MB are converted to metadata-free WebP and can be viewed only by the completer, creator, or designated approvers. Delete the item or withdraw the submission to remove its evidence file.
+
+8. **Reminders, progress, and boosts**: Choose a reminder time per item. Turn pop-up reminders on in **Settings → Preferences** and select a lead time. The site must be open to show reminders; they are stored per browser and account. Habit cards show the current occurrence streak and progress for the configured week, with one missed occurrence allowed as a grace day. A recurring task goal counts scheduled dates that reach their completion target, rather than individual check-ins. Use the dashboard arrows to reorder sections and **Daily only** to hide less frequent items. Achievement badges use your coin transaction history. A temporary 2× or 3× boost applies only to eligible future completions until its selected end date; an approval submission keeps the reward amount calculated when it was submitted.
 
 ## Docker Deployment
 
