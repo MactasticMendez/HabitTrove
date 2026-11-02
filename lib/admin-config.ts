@@ -108,10 +108,16 @@ export async function getLegacyOidcIssuer(): Promise<string | undefined> {
   return (await readStoredConfig())?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER
 }
 
-const activeOidcConfig = readEffectiveOidcConfig().catch(() => {
-  console.error('Saved OIDC configuration could not be loaded; using container configuration')
-  return environmentOidcConfig()
-})
+export async function readStartupOidcConfig(): Promise<OidcConfig | undefined> {
+  try {
+    return await readEffectiveOidcConfig()
+  } catch {
+    console.error('Saved OIDC configuration could not be loaded; OIDC sign-in is disabled')
+    return undefined
+  }
+}
+
+const activeOidcConfig = readStartupOidcConfig()
 
 export function getActiveOidcConfig(): Promise<OidcConfig | undefined> {
   return activeOidcConfig

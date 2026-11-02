@@ -27,6 +27,7 @@
 
 ### Security
 
+* Block disabling OIDC while linked accounts lack local passwords, and fail closed if the saved OIDC configuration cannot be read.
 * Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while Authentik accounts remain linked.
 * Require a fresh client secret when changing the OIDC issuer or client ID.
 * Bind OIDC account links to the issuer and reject a matching subject from a different provider; preserve legacy Authentik links for their original issuer.
