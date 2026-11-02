@@ -15,29 +15,31 @@ import { useTranslations } from 'next-intl';
 import { settingsAtom, serverSettingsAtom, currentUserAtom } from '@/lib/atoms';
 import { Settings, WeekDay } from '@/lib/types'
 import { saveSettings } from '../actions/data'
-import { Info } from 'lucide-react'; // Import Info icon
+import { Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast'
-import { useSession } from 'next-auth/react'; // signOut removed
-import { useRouter } from 'next/navigation';
-// AlertDialog components and useState removed
-// Trash2 icon removed
+import { useState, type KeyboardEvent } from 'react'
+import AdminConfiguration from '@/components/AdminConfiguration'
 
 export default function SettingsPage() {
   const t = useTranslations('SettingsPage');
-  // tWarning removed
   const [settings, setSettings] = useAtom(settingsAtom);
   const [serverSettings] = useAtom(serverSettingsAtom);
   const [currentUser] = useAtom(currentUserAtom);
-  const { data: session } = useSession();
-  const router = useRouter();
-  // showConfirmDialog and isDeleting states removed
+  const [activeTab, setActiveTab] = useState<'preferences' | 'admin'>('preferences');
 
   const updateSettings = async (newSettings: Settings) => {
     await saveSettings(newSettings)
     setSettings(newSettings)
   }
 
-  // handleDeleteAccount function removed
+  const changeTabWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (!currentUser?.isAdmin || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    const next = event.key === 'Home' ? 'preferences' : event.key === 'End' ? 'admin' :
+      activeTab === 'preferences' ? 'admin' : 'preferences'
+    setActiveTab(next)
+    document.getElementById(`settings-tab-${next}`)?.focus()
+  }
 
   if (!settings) return null
 
@@ -45,9 +47,34 @@ export default function SettingsPage() {
     <>
       <div>
         <h1 className="text-3xl font-bold mb-6">{t('title')}</h1>
+        <div role="tablist" aria-label={t('sectionsLabel')} className="mb-6 flex gap-2 border-b border-border">
+          <button
+            id="settings-tab-preferences"
+            type="button"
+            role="tab"
+            aria-controls="settings-panel-preferences"
+            aria-selected={activeTab === 'preferences' || !currentUser?.isAdmin}
+            tabIndex={activeTab === 'preferences' || !currentUser?.isAdmin ? 0 : -1}
+            onClick={() => setActiveTab('preferences')}
+            onKeyDown={changeTabWithKeyboard}
+            className={`rounded-t-md px-4 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${activeTab === 'preferences' || !currentUser?.isAdmin ? 'border-b-2 border-primary font-semibold' : 'text-foreground/80'}`}
+          >{t('preferencesTab')}</button>
+          {currentUser?.isAdmin && <button
+            id="settings-tab-admin"
+            type="button"
+            role="tab"
+            aria-controls="settings-panel-admin"
+            aria-selected={activeTab === 'admin'}
+            tabIndex={activeTab === 'admin' ? 0 : -1}
+            onClick={() => setActiveTab('admin')}
+            onKeyDown={changeTabWithKeyboard}
+            className={`rounded-t-md px-4 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${activeTab === 'admin' ? 'border-b-2 border-primary font-semibold' : 'text-foreground/80'}`}
+          >{t('adminTab')}</button>}
+        </div>
+        <div id="settings-panel-preferences" role="tabpanel" aria-labelledby="settings-tab-preferences" tabIndex={0} hidden={activeTab === 'admin' && !!currentUser?.isAdmin}>
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>{t('uiSettingsTitle')}</CardTitle>
+            <CardTitle role="heading" aria-level={2}>{t('uiSettingsTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
@@ -59,6 +86,7 @@ export default function SettingsPage() {
               </div>
               <Switch
                 id="number-formatting"
+                className="min-h-6"
                 checked={settings.ui.useNumberFormatting}
                 onCheckedChange={(checked) =>
                   updateSettings({
@@ -78,6 +106,7 @@ export default function SettingsPage() {
               </div>
               <Switch
                 id="number-grouping"
+                className="min-h-6"
                 checked={settings.ui.useGrouping}
                 onCheckedChange={(checked) =>
                   updateSettings({
@@ -89,10 +118,12 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+        </div>
 
-        {currentUser?.isAdmin && <Card className="mb-6">
+        {currentUser?.isAdmin && <div id="settings-panel-admin" role="tabpanel" aria-labelledby="settings-tab-admin" tabIndex={0} hidden={activeTab !== 'admin'}>
+        <Card className="mb-6">
           <CardHeader>
-            <CardTitle>{t('systemSettingsTitle')}</CardTitle>
+            <CardTitle role="heading" aria-level={2}>{t('systemSettingsTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
@@ -159,7 +190,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Add this section for Auto Backup */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
@@ -167,7 +197,9 @@ export default function SettingsPage() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                        <button type="button" aria-label={t('autoBackupTooltip')} className="inline-flex min-h-6 min-w-6 items-center justify-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+                          <Info aria-hidden="true" className="h-4 w-4 text-muted-foreground cursor-help" />
+                        </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" align="start">
                         <p className="max-w-xs text-sm">
@@ -183,6 +215,7 @@ export default function SettingsPage() {
               </div>
               <Switch
                 id="auto-backup"
+                className="min-h-6"
                 checked={settings.system.autoBackupEnabled}
                 onCheckedChange={(checked) =>
                   updateSettings({
@@ -192,8 +225,6 @@ export default function SettingsPage() {
                 }
               />
             </div>
-            {/* End of Auto Backup section */}
-
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
@@ -225,7 +256,6 @@ export default function SettingsPage() {
                 }}
                 className={`w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2 ${serverSettings.isDemo ? 'cursor-not-allowed opacity-50' : ''}`}
               >
-                {/* Add more languages as needed */}
                 <option value="en">English</option>
                 <option value="es">Español</option>
                 <option value="ca">Català</option>
@@ -239,9 +269,10 @@ export default function SettingsPage() {
             </div>
 
           </CardContent>
-        </Card>}
+        </Card>
+        <AdminConfiguration />
+        </div>}
 
-        {/* Danger Zone Card Removed */}
       </div >
     </>
   )

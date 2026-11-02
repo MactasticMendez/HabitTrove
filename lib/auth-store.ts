@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto'
 import { getDefaultUsersData, type User, type UserData } from './types'
 import { saltAndHashPassword, verifyPassword } from './password'
 import { emailSchema, newPasswordSchema } from './zod'
+import { getLegacyOidcIssuer } from './admin-config'
 
 const failedLogins = new Map<string, { count: number; until: number }>()
 const loginWindowMs = 15 * 60 * 1000
@@ -87,9 +88,17 @@ export async function findUserById(id: string): Promise<User | undefined> {
   return (await readAuthData()).users.find(user => user.id === id)
 }
 
-export async function findUserByAuthentikSubject(subject: string): Promise<User | undefined> {
-  const matches = (await readAuthData()).users.filter(user => user.authentikSubject === subject)
-  if (matches.length > 1) throw new Error('Duplicate Authentik identity')
+export async function userMatchesOidcIdentity(user: User, subject: string, issuer: string): Promise<boolean> {
+  if (user.authentikSubject !== subject) return false
+  if (user.oidcIssuer) return user.oidcIssuer === issuer
+  return (await getLegacyOidcIssuer()) === issuer
+}
+
+export async function findUserByAuthentikSubject(subject: string, issuer: string): Promise<User | undefined> {
+  const legacyIssuer = await getLegacyOidcIssuer()
+  const matches = (await readAuthData()).users.filter(user =>
+    user.authentikSubject === subject && (user.oidcIssuer === issuer || (!user.oidcIssuer && legacyIssuer === issuer)))
+  if (matches.length > 1) throw new Error('Duplicate OIDC identity')
   return matches[0]
 }
 
@@ -98,6 +107,7 @@ export async function linkUserToAuthentikSubject(
   authVersion: number,
   verifiedEmail: string,
   subject: string,
+  issuer: string,
 ): Promise<User> {
   return updateAuthData(data => {
     const user = data.users.find(candidate => candidate.id === userId)
@@ -106,9 +116,10 @@ export async function linkUserToAuthentikSubject(
       throw new Error('Account link is no longer valid')
     }
     if (data.users.some(candidate => candidate.authentikSubject === subject)) {
-      throw new Error('Authentik identity is already linked')
+      throw new Error('OIDC identity is already linked')
     }
     user.authentikSubject = subject
+    user.oidcIssuer = issuer
     user.authVersion = authVersion + 1
     return user
   })

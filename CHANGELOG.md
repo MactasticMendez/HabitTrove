@@ -4,11 +4,14 @@
 
 ### Added
 
+* Add an administrator tab in Settings for generic OIDC setup and application log level.
+* Support standard OIDC providers through in-app settings or `OIDC_*` environment variables, while retaining legacy Authentik configuration and linked accounts.
 * Add local and Authentik OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
 * Add a recovery script for assigning local passwords to legacy passwordless accounts.
 
 ### Changed
 
+* Move existing system settings into the administrator tab; apply log level changes immediately and OIDC changes after a restart.
 * Require email for new accounts and first-use completion for existing accounts without one, while preserving account IDs and data.
 * Show a dedicated sign-in screen to signed-out visitors.
 * Build the fork's local image in the example Compose deployment.
@@ -24,6 +27,10 @@
 
 ### Security
 
+* Block disabling OIDC while linked accounts lack local passwords, and fail closed if the saved OIDC configuration cannot be read.
+* Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while Authentik accounts remain linked.
+* Require a fresh client secret when changing the OIDC issuer or client ID.
+* Bind OIDC account links to the issuer and reject a matching subject from a different provider; preserve legacy Authentik links for their original issuer.
 * Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
 * Update Next.js, Auth.js, next-intl, and Zod to patched releases; refresh compatible locked dependencies.
 * Require an initial administrator password for new non-demo installations, strengthen new passwords, enforce server-side account, item, coin, and settings permissions, and prevent replayed habit rewards.

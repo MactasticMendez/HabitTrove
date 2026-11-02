@@ -122,12 +122,29 @@ describe('server action authorization', () => {
   test('links only a confirmed email to an unused Authentik subject', async () => {
     currentUser = admin
     await actions.updateUser('member', { email: 'MEMBER@example.com' })
-    const linked = await linkUserToAuthentikSubject('member', 1, 'member@example.com', 'opaque-subject')
+    const linked = await linkUserToAuthentikSubject('member', 1, 'member@example.com', 'opaque-subject', 'https://auth.example.test/issuer')
     expect(linked.authentikSubject).toBe('opaque-subject')
+    expect(linked.oidcIssuer).toBe('https://auth.example.test/issuer')
     expect(linked.authVersion).toBe(2)
-    await expect(linkUserToAuthentikSubject('member', 1, 'member@example.com', 'other-subject')).rejects.toThrow('no longer valid')
+    const publicUsers = await actions.loadUsersPublicData()
+    expect(publicUsers.users.find(user => user.id === 'member')).not.toHaveProperty('oidcIssuer')
+    await expect(linkUserToAuthentikSubject('member', 1, 'member@example.com', 'other-subject', 'https://auth.example.test/issuer')).rejects.toThrow('no longer valid')
     await actions.updateUser('admin', { email: 'admin@example.com' })
-    await expect(linkUserToAuthentikSubject('admin', 1, 'admin@example.com', 'opaque-subject')).rejects.toThrow('already linked')
+    await expect(linkUserToAuthentikSubject('admin', 1, 'admin@example.com', 'opaque-subject', 'https://auth.example.test/issuer')).rejects.toThrow('already linked')
+  })
+
+  test('binds administrator pre-links to the active OIDC issuer', async () => {
+    currentUser = admin
+    const { getActiveOidcConfig } = await import('@/lib/admin-config')
+    const active = await getActiveOidcConfig()
+    if (!active) {
+      await expect(actions.updateUser('member', { authentikSubject: 'new-subject' }))
+        .rejects.toThrow('Configure OIDC before linking an account')
+    } else {
+      await actions.updateUser('member', { authentikSubject: 'new-subject' })
+      const stored = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
+      expect(stored.users[1].oidcIssuer).toBe(active.issuer)
+    }
   })
 
   test('allows only admins to create users', async () => {
