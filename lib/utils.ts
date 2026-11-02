@@ -340,6 +340,7 @@ export function isHabitDue({
   const ruleText = habit.frequency
   const rrule = deserializeRRule(ruleText)
   if (!rrule) return false
+  if (getUnsupportedRRuleReason(rrule)) return false
   rrule.origOptions.tzid = timezone
   rrule.options.tzid = rrule.origOptions.tzid
   rrule.origOptions.dtstart = datetime(startOfDay.year, startOfDay.month, startOfDay.day, startOfDay.hour, startOfDay.minute, startOfDay.second)
@@ -400,9 +401,17 @@ export function getHabitFreq(habit: Habit): Freq {
  * @param rrule The RRule object to check.
  * @returns A string message explaining why the rule is unsupported, or null if it's supported.
  */
+export const EXCESSIVE_RRULE_TIMES_REASON = 'Recurrence rules with more than 256 times per day are not supported.'
+
 export function getUnsupportedRRuleReason(rrule: RRule): string | null {
   const freq = rrule.origOptions.freq;
   const interval = rrule.origOptions.interval || 1; // RRule defaults interval to 1
+  const timeCombinations = (rrule.options.byhour?.length ?? 1) *
+    (rrule.options.byminute?.length ?? 1) * (rrule.options.bysecond?.length ?? 1)
+
+  if (timeCombinations > 256) {
+    return EXCESSIVE_RRULE_TIMES_REASON;
+  }
 
   if (freq === RRule.HOURLY) {
     return 'Hourly frequency is not supported.';

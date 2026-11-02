@@ -2,6 +2,7 @@ import { expect, mock, spyOn, test } from 'bun:test'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
+import { ZipArchive } from 'archiver'
 
 mock.module('server-only', () => ({}))
 
@@ -35,6 +36,32 @@ test('does not create a backup when the setting is disabled', async () => {
     await runBackup()
     await expect(fs.readdir(path.join(directory, 'backups'))).rejects.toThrow()
   } finally {
+    cwdSpy.mockRestore()
+    await fs.rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('discards an archive with a warning without rotating older backups', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-backup-warning-'))
+  const cwdSpy = spyOn(process, 'cwd').mockImplementation(() => directory)
+  const originalDirectory = ZipArchive.prototype.directory
+  const directorySpy = spyOn(ZipArchive.prototype, 'directory').mockImplementation(function (this: ZipArchive, source: string, destination: string | false) {
+    this.emit('warning', Object.assign(new Error('file vanished'), { code: 'ENOENT' }))
+    return originalDirectory.call(this, source, destination)
+  })
+  try {
+    await fs.mkdir(path.join(directory, 'data'))
+    await fs.writeFile(path.join(directory, 'data', 'auth.json'), '{"users":[]}')
+    await fs.mkdir(path.join(directory, 'backups'))
+    for (let index = 0; index < 7; index++) {
+      await fs.writeFile(path.join(directory, 'backups', `backup-old-${index}.zip`), 'previous backup')
+    }
+    const { runBackup } = await import('./backup')
+    await expect(runBackup()).rejects.toThrow('file vanished')
+    expect((await fs.readdir(path.join(directory, 'backups'))).sort())
+      .toEqual(Array.from({ length: 7 }, (_, index) => `backup-old-${index}.zip`))
+  } finally {
+    directorySpy.mockRestore()
     cwdSpy.mockRestore()
     await fs.rm(directory, { recursive: true, force: true })
   }

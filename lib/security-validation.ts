@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon'
 import { RRule } from 'rrule'
-import { getUnsupportedRRuleReason } from './utils'
+import { EXCESSIVE_RRULE_TIMES_REASON, getUnsupportedRRuleReason } from './utils'
 import type { Habit, Settings, WishlistItemType } from './types'
 import { MAX_COIN_LIMIT } from './constants'
 
@@ -58,7 +58,7 @@ export function validateWishlistItem(item: WishlistItemType): WishlistItemType {
   return { ...item, link: safeExternalUrl(item.link) }
 }
 
-export function validateHabit(habit: Habit): Habit {
+export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   if (!habit || typeof habit.id !== 'string' || typeof habit.name !== 'string' ||
       habit.name.length > 200 || typeof habit.description !== 'string' || habit.description.length > 10_000 ||
       typeof habit.frequency !== 'string' || habit.frequency.length > 512 || !Array.isArray(habit.completions) ||
@@ -71,7 +71,9 @@ export function validateHabit(habit: Habit): Habit {
   } else {
     try {
       const rule = RRule.fromString(habit.frequency)
-      if (getUnsupportedRRuleReason(rule)) throw new Error('Unsupported recurrence rule')
+      const unsupportedReason = getUnsupportedRRuleReason(rule)
+      if (unsupportedReason && !(unsupportedReason === EXCESSIVE_RRULE_TIMES_REASON &&
+          existingFrequency === habit.frequency)) throw new Error('Unsupported recurrence rule')
     } catch { throw new Error('Invalid recurrence rule') }
   }
   if (habit.completions.some(value => typeof value !== 'string' || value.length > 64 || !DateTime.fromISO(value).isValid)) {

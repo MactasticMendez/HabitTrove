@@ -16,6 +16,8 @@ mock.module('fs', () => ({
   },
 }))
 
+const expectedPath = expect.stringMatching(/^data\/\.habittrove-permission-test-[0-9a-f-]{36}$/)
+
 describe('checkStartupPermissions', () => {
   beforeEach(() => {
     // Reset all mocks before each test
@@ -40,9 +42,9 @@ describe('checkStartupPermissions', () => {
 
     expect(result).toEqual({ success: true })
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
-    expect(mockReadFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'utf8')
-    expect(mockUnlink).toHaveBeenCalledWith('data/.habittrove-permission-test')
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
+    expect(mockReadFile).toHaveBeenCalledWith(expectedPath, 'utf8')
+    expect(mockUnlink).toHaveBeenCalledWith(expectedPath)
   })
 
   test('should return error when directory does not exist', async () => {
@@ -102,7 +104,7 @@ describe('checkStartupPermissions', () => {
       }
     })
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
     expect(mockReadFile).not.toHaveBeenCalled()
   })
 
@@ -127,8 +129,8 @@ describe('checkStartupPermissions', () => {
       }
     })
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
-    expect(mockReadFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'utf8')
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
+    expect(mockReadFile).toHaveBeenCalledWith(expectedPath, 'utf8')
   })
 
   test('should return error when read content does not match written content', async () => {
@@ -152,9 +154,9 @@ describe('checkStartupPermissions', () => {
       }
     })
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
-    expect(mockReadFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'utf8')
-    expect(mockUnlink).not.toHaveBeenCalled()
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
+    expect(mockReadFile).toHaveBeenCalledWith(expectedPath, 'utf8')
+    expect(mockUnlink).toHaveBeenCalledWith(expectedPath)
   })
 
   test('should return error when cleanup (unlink) fails', async () => {
@@ -180,9 +182,9 @@ describe('checkStartupPermissions', () => {
       }
     })
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
-    expect(mockReadFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'utf8')
-    expect(mockUnlink).toHaveBeenCalledWith('data/.habittrove-permission-test')
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
+    expect(mockReadFile).toHaveBeenCalledWith(expectedPath, 'utf8')
+    expect(mockUnlink).toHaveBeenCalledWith(expectedPath)
   })
 
   test('should use correct file paths', async () => {
@@ -198,8 +200,22 @@ describe('checkStartupPermissions', () => {
 
     // Verify the correct paths are used
     expect(mockStat).toHaveBeenCalledWith('data')
-    expect(mockWriteFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'permission-test')
-    expect(mockReadFile).toHaveBeenCalledWith('data/.habittrove-permission-test', 'utf8')
-    expect(mockUnlink).toHaveBeenCalledWith('data/.habittrove-permission-test')
+    expect(mockWriteFile).toHaveBeenCalledWith(expectedPath, 'permission-test', { flag: 'wx', mode: 0o600 })
+    expect(mockReadFile).toHaveBeenCalledWith(expectedPath, 'utf8')
+    expect(mockUnlink).toHaveBeenCalledWith(expectedPath)
+  })
+
+  test('uses a different private probe file for concurrent checks', async () => {
+    mockStat.mockResolvedValue({ isDirectory: () => true })
+    mockWriteFile.mockResolvedValue(undefined)
+    mockReadFile.mockResolvedValue('permission-test')
+    mockUnlink.mockResolvedValue(undefined)
+
+    expect(await Promise.all([checkStartupPermissions(), checkStartupPermissions()]))
+      .toEqual([{ success: true }, { success: true }])
+    const paths = mockWriteFile.mock.calls.map(([filePath]) => filePath)
+    expect(new Set(paths).size).toBe(2)
+    expect(mockReadFile.mock.calls.map(([filePath]) => filePath)).toEqual(paths)
+    expect(mockUnlink.mock.calls.map(([filePath]) => filePath)).toEqual(paths)
   })
 })

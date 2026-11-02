@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
-import { createWriteStream } from 'fs'; // Use specific import for createWriteStream
+import { createWriteStream } from 'fs';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { ZipArchive } from 'archiver';
 import { DateTime } from 'luxon';
@@ -82,65 +83,50 @@ export async function runBackup() {
     await ensureBackupDir();
 
     const timestamp = DateTime.now().toFormat('yyyy-MM-dd_HH-mm-ss');
-    const backupFileName = `backup-${timestamp}.zip`;
+    const backupFileName = `backup-${timestamp}-${randomUUID()}.zip`;
     const backupFilePath = path.join(backupDir(), backupFileName);
+    const stagingPath = path.join(backupDir(), `.${backupFileName}.tmp`);
 
-    // Use createWriteStream from fs directly
-    const output = createWriteStream(backupFilePath, { flags: 'wx', mode: 0o600 });
+    const output = createWriteStream(stagingPath, { flags: 'wx', mode: 0o600 });
     const archive = new ZipArchive({
       zlib: { level: 9 } // Sets the compression level.
     });
-
-    return new Promise<void>((resolve, reject) => {
-      output.on('close', async () => {
-        log('info', `Backup created: ${backupFileName} (${archive.pointer()} bytes)`);
-        try {
-          await rotateBackups(); // Rotate after successful backup
-          resolve();
-        } catch (rotationError) {
-          log('error', 'Error during post-backup rotation', rotationError);
-          // Decide if backup failure should depend on rotation failure
-          // For now, resolve even if rotation fails, as backup itself succeeded.
-          resolve();
-        }
+    let archiveFailure: Error | undefined;
+    const completed = new Promise<void>((resolve, reject) => {
+      output.once('error', error => {
+        archiveFailure ??= error;
+        output.destroy();
       });
-
-      // Handle stream finish event for better completion tracking
-      output.on('finish', () => {
-        log('debug', 'Backup file stream finished writing');
+      archive.once('error', error => {
+        archiveFailure ??= error;
+        output.destroy();
       });
-
-      archive.on('warning', (err) => {
-        if (err.code === 'ENOENT') {
-          // Log specific warnings but don't necessarily reject
-          log('warn', 'Archiver warning (ENOENT)', err);
-        } else {
-          // Treat other warnings as potential issues, but maybe not fatal
-          log('warn', 'Archiver warning', err);
-        }
+      archive.on('warning', error => {
+        archiveFailure ??= error;
+        log('warn', 'Archiver warning; discarding incomplete backup', error);
       });
-
-      archive.on('error', (err) => {
-        log('error', 'Archiver error', err);
-        reject(err); // Reject the promise on critical archiver errors
-      });
-
-      // Pipe archive data to the file
-      archive.pipe(output);
-
-      // Append the entire data directory to the archive
-      // The second argument specifies the path prefix inside the zip file (false means root)
-      log('debug', 'Archiving directory', dataDir());
-      archive.directory(dataDir(), false);
-
-      // Finalize the archive (writes the central directory)
-      log('debug', 'Finalizing archive');
-      archive.finalize().catch(err => {
-        // Catch potential errors during finalization
-        log('error', 'Error during archive finalization', err);
-        reject(err);
-      });
+      output.once('close', () => archiveFailure ? reject(archiveFailure) : resolve());
     });
+
+    try {
+      archive.pipe(output);
+      archive.directory(dataDir(), false);
+      await Promise.all([archive.finalize(), completed]);
+      await fs.link(stagingPath, backupFilePath);
+      await fs.unlink(stagingPath);
+      log('info', `Backup created: ${backupFileName} (${archive.pointer()} bytes)`);
+      await rotateBackups();
+    } catch (error) {
+      archive.abort();
+      output.destroy();
+      await completed.catch(() => undefined);
+      await fs.unlink(stagingPath).catch(cleanupError => {
+        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+          log('error', 'Failed to remove incomplete backup', cleanupError);
+        }
+      });
+      throw error;
+    }
 
   } catch (error) {
     log('error', 'Failed to run backup', error);
