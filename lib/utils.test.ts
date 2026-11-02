@@ -90,6 +90,15 @@ describe('roundToInteger', () => {
 });
 
 describe('getUnsupportedRRuleReason', () => {
+  test('bounds recurrence time combinations, including previously stored rules', () => {
+    const frequency = `FREQ=DAILY;BYHOUR=${Array.from({ length: 24 }, (_, i) => i).join(',')};BYMINUTE=${Array.from({ length: 11 }, (_, i) => i).join(',')}`
+    const rule = RRule.fromString(frequency)
+    expect(getUnsupportedRRuleReason(rule)).toContain('more than 256 times')
+    const habit: Habit = { id: 'crowded', name: 'Crowded', description: '', frequency, coinReward: 1, completions: [] }
+    expect(isHabitDue({ habit, timezone: 'UTC', date: DateTime.utc(2026, 11, 2) })).toBe(false)
+    expect(getUnsupportedRRuleReason(RRule.fromString('FREQ=DAILY;BYHOUR=0,1;BYMINUTE=0,1'))).toBeNull()
+  })
+
   test('should return message for HOURLY frequency', () => {
     const rrule = new RRule({ freq: RRule.HOURLY });
     expect(getUnsupportedRRuleReason(rrule)).toBe('Hourly frequency is not supported.');

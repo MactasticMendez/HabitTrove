@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from 'crypto'
 
 export function saltAndHashPassword(password: string, salt = randomBytes(16).toString('hex')): string {
   if (!password) throw new Error('Password must not be empty')
@@ -11,5 +11,15 @@ export function verifyPassword(password?: string, storedHash?: string): boolean 
   const match = /^([a-f0-9]{32}):([a-f0-9]{128})$/i.exec(storedHash)
   if (!match) return false
   const actual = scryptSync(password, match[1], 64)
+  return timingSafeEqual(actual, Buffer.from(match[2], 'hex'))
+}
+
+export async function verifyPasswordAsync(password?: string, storedHash?: string): Promise<boolean> {
+  if (!password || !storedHash) return false
+  const match = /^([a-f0-9]{32}):([a-f0-9]{128})$/i.exec(storedHash)
+  if (!match) return false
+  const actual = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(password, match[1], 64, (error, derived) => error ? reject(error) : resolve(derived))
+  })
   return timingSafeEqual(actual, Buffer.from(match[2], 'hex'))
 }

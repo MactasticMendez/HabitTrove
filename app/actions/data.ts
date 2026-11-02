@@ -25,7 +25,7 @@ import {
 } from '@/lib/types'
 import { checkPermission, d2t, getNow, uuid } from '@/lib/utils';
 import { saltAndHashPassword } from '@/lib/password'
-import { authenticateLocalUser, readAuthData, updateAuthData } from '@/lib/auth-store'
+import { readAuthData, updateAuthData, verifyStepUpPassword } from '@/lib/auth-store'
 import { emailSchema, newPasswordSchema, signInSchema, usernameSchema } from '@/lib/zod';
 import _ from 'lodash';
 import { getCurrentUser } from '@/lib/server-helpers'
@@ -80,6 +80,23 @@ function validateAuthentikSubject(subject: unknown): string | undefined {
 
 function validateEmail(email: unknown): string | undefined {
   return emailSchema.parse(email).toLowerCase()
+}
+
+function validateCoinText(description: unknown, note: unknown): void {
+  if (typeof description !== 'string' || description.length > 500) {
+    throw new Error('Invalid coin description')
+  }
+  if (note !== undefined && (typeof note !== 'string' || note.length > 10_000)) {
+    throw new Error('Invalid transaction note')
+  }
+}
+
+function isGeneratedAvatarForUser(filename: string, userId: string): boolean {
+  if (!filename.startsWith(`${userId}-`)) return false
+  const generatedPart = filename.slice(userId.length + 1)
+  const extension = path.extname(generatedPart).toLowerCase()
+  return ALLOWED_AVATAR_EXTENSIONS.has(extension) &&
+    /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(generatedPart.slice(0, -extension.length))
 }
 
 async function verifyPermission(
@@ -293,7 +310,20 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
     if (!canWrite) await verifyPermission('habit', 'interact')
     const existingData = await loadData<HabitsData>('habits')
     if (!data || !Array.isArray(data.habits)) throw new Error('Invalid habit list')
-    const habits = mergeOwnedItems(data.habits.map(validateHabit), existingData.habits, user, canWrite, ['completions', 'archived'])
+    const previous = new Map(existingData.habits.map(habit => [habit.id, habit]))
+    const habits = mergeOwnedItems(
+      data.habits.map(habit => validateHabit(habit, previous.get(habit.id)?.frequency)),
+      existingData.habits, user, canWrite, ['completions', 'archived'])
+    if (!user.isAdmin) {
+      for (const habit of habits) {
+        const stored = previous.get(habit.id)
+        if (!stored?.archived) continue
+        const unchanged = _.isEqual(habit.completions, stored.completions)
+        const undoLast = habit.completions.length === stored.completions.length - 1 &&
+          _.isEqual(habit.completions, stored.completions.slice(0, -1))
+        if (!unchanged && !undoLast) throw new PermissionError('Cannot complete an archived habit')
+      }
+    }
     if (!canWrite) validateHabitInteractionChanges(habits, existingData.habits, user.id)
     return saveData('habits', { habits })
   })
@@ -356,7 +386,7 @@ export async function saveCoinsData(data: CoinsData): Promise<void> {
     if (submittedById.size !== visible.length || visible.some(transaction => {
       const submitted = submittedById.get(transaction.id)
       if (!submitted || !_.isEqual({ ...submitted, note: undefined }, { ...transaction, note: undefined })) return true
-      return submitted.note !== undefined && typeof submitted.note !== 'string'
+      return submitted.note !== undefined && (typeof submitted.note !== 'string' || submitted.note.length > 10_000)
     })) {
       throw new PermissionError('Only transaction notes may be changed')
     }
@@ -387,6 +417,7 @@ export async function addCoins({
     const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
     if (!['MANUAL_ADJUSTMENT', 'HABIT_COMPLETION', 'TASK_COMPLETION'].includes(type)) throw new Error('Invalid credit type')
     if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
+    validateCoinText(description, note)
     if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
     const targetUserId = userId || currentUser.id
     if (type !== 'MANUAL_ADJUSTMENT' && !currentUser.isAdmin &&
@@ -539,6 +570,7 @@ export async function removeCoins({
     const currentUser = await verifyPermission('coins', type === 'MANUAL_ADJUSTMENT' ? 'write' : 'interact')
     if (!['MANUAL_ADJUSTMENT', 'HABIT_UNDO', 'TASK_UNDO', 'WISH_REDEMPTION'].includes(type)) throw new Error('Invalid debit type')
     if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_COIN_LIMIT) throw new Error('Invalid coin amount')
+    validateCoinText(description, note)
     if (!currentUser.isAdmin && userId && userId !== currentUser.id) throw new PermissionError('Cannot change another user\'s coins')
     const targetUserId = userId || currentUser.id
     if (type === 'WISH_REDEMPTION' && !currentUser.isAdmin &&
@@ -614,9 +646,11 @@ export async function uploadAvatar(formData: FormData): Promise<string> {
 
   // Create avatars directory if it doesn't exist
   return withDataWriteLock(async () => {
+    const account = (await readAuthData()).users.find(candidate => candidate.id === user.id)
+    if (!account) throw new PermissionError('User not authenticated')
     const avatarsDir = path.join(process.cwd(), 'data', 'avatars')
     await fs.mkdir(avatarsDir, { recursive: true, mode: 0o700 })
-    const priorFiles = (await fs.readdir(avatarsDir)).filter(name => name.startsWith(`${user.id}-`)).sort()
+    const priorFiles = (await fs.readdir(avatarsDir)).filter(name => isGeneratedAvatarForUser(name, user.id)).sort()
     const filename = `${user.id}-${Date.now()}-${uuid()}${ext}`
     await fs.writeFile(path.join(avatarsDir, filename), Buffer.from(await file.arrayBuffer()), { flag: 'wx', mode: 0o600 })
     for (const old of priorFiles.slice(0, Math.max(0, priorFiles.length - 2))) {
@@ -800,8 +834,10 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
       throw new PermissionError('An administrator must set the initial local password')
     }
     if (actor.id === target.id && target.password) {
-      const verified = await authenticateLocalUser(target.username, currentPassword ?? '')
-      if (!verified || verified.id !== target.id) throw new PermissionError('Current password is incorrect')
+      if (typeof currentPassword !== 'string' || currentPassword.length > 128 ||
+          !(await verifyStepUpPassword(target, currentPassword))) {
+        throw new PermissionError('Current password is incorrect')
+      }
     }
     if (target.isAdmin && newPassword === undefined && process.env.DEMO !== 'true') {
       throw new Error('Administrator accounts require a password')
@@ -828,6 +864,14 @@ export async function deleteUser(userId: string): Promise<void> {
     if (!targetUser) throw new Error('User not found')
     if (targetUser.isAdmin && authData.users.filter(user => user.isAdmin).length === 1) {
       throw new Error('Cannot delete the last administrator')
+    }
+    const avatarsDir = path.join(process.cwd(), 'data', 'avatars')
+    const avatarFiles = await fs.readdir(avatarsDir).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    })
+    for (const filename of avatarFiles.filter(name => isGeneratedAvatarForUser(name, userId))) {
+      await fs.unlink(path.join(avatarsDir, filename))
     }
     // Load all necessary data
     const wishlistData = await loadData<WishlistData>('wishlist')

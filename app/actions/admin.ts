@@ -1,7 +1,7 @@
 'use server'
 
 import { getCurrentUser } from '@/lib/server-helpers'
-import { authenticateLocalUser, readAuthData } from '@/lib/auth-store'
+import { readAuthData, verifyStepUpPassword } from '@/lib/auth-store'
 import { getAdminConfigSummary, getLegacyOidcIssuer, saveLogLevel, saveOidcConfig } from '@/lib/admin-config'
 import { PermissionError } from '@/lib/exceptions'
 
@@ -44,8 +44,7 @@ export async function updateOidcProvider(input: {
   if (typeof input?.currentPassword !== 'string' || input.currentPassword.length > 128 || !user.password) {
     throw new PermissionError('Current local password is required')
   }
-  const verified = await authenticateLocalUser(user.username, input.currentPassword)
-  if (!verified || verified.id !== user.id) throw new PermissionError('Current local password is incorrect')
+  if (!(await verifyStepUpPassword(user, input.currentPassword))) throw new PermissionError('Current local password is incorrect')
   if (!input.enabled && (await readAuthData()).users.some(account => account.authentikSubject && !account.password)) {
     throw new PermissionError('Set local passwords for OIDC-only accounts before disabling OIDC sign-in')
   }

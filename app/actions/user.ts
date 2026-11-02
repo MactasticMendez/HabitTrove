@@ -3,7 +3,7 @@
 import { signIn as signInNextAuth, signOut as signOutNextAuth } from '@/auth';
 import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/server-helpers'
-import { authenticateLocalUser } from '@/lib/auth-store'
+import { verifyStepUpPassword } from '@/lib/auth-store'
 import { authentikLinkCookie, createAuthentikLinkIntent } from '@/lib/authentik-link'
 import { getActiveOidcConfig } from '@/lib/admin-config'
 
@@ -49,8 +49,7 @@ export async function startAuthentikLink(_previous: { error: string }, formData:
   if (!user?.email || !user.password || user.authentikSubject || typeof password !== 'string' || password.length > 128) {
     return { error: 'Add an email and local password before linking' }
   }
-  const verified = await authenticateLocalUser(user.username, password)
-  if (!verified || verified.id !== user.id) return { error: 'Current password is incorrect' }
+  if (!(await verifyStepUpPassword(user, password))) return { error: 'Current password is incorrect' }
 
   const intent = createAuthentikLinkIntent(user.id, user.authVersion ?? 0, user.email.toLowerCase(), process.env.AUTH_SECRET ?? '')
   ;(await cookies()).set(authentikLinkCookie, intent, {

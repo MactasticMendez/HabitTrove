@@ -1,5 +1,11 @@
 # Security review
 
+## 2026-11-02 full rescan
+
+The fork's `main` tree `b6ddd51f6504c6d1fd44ad593208a820991c4c16` was reviewed across all 193 tracked files (scan `87e1579d-1fe5-47a7-a9c4-800c92c2cd97`). The scan validated nine current findings: seven medium and two low. Against the earlier 38 findings, 31 were resolved in that tree and seven remained partial. The current branch addresses eight of the nine new findings: unknown-username throttle saturation, synchronous login hashing, malformed coin text, incomplete backup publication, archived-habit reward claims, retained generated avatars, costly recurrence rules, and permission-probe races. A read-only patch review also found three compatibility or abuse gaps; all three were corrected before publication. Focused regression tests cover each changed behavior. The remaining new finding is targeted public-login lockout; ten wrong guesses can deny the account owner's public sign-in for 15 minutes. A trusted source-aware rate limiter or other abuse control is needed before removing that lockout without increasing online guessing risk.
+
+The previous partial findings involving multiple app processes sharing one JSON directory remain outside the supported single-process deployment. Earlier files with broad permissions still require a host-side repair. Habit completions remain self-reported, and shared completions do not record which member performed or undid them. The production dependency audit reported zero advisories; the full audit reported 15 moderate rows cascading from the dev-only `minimatch` advisory GHSA-g3hv-75wg-m249. This rescan and its fixes have not been exercised on the live instance or the deployed OIDC provider.
+
 The Codex Security deep source scan reviewed the whole repository at commit `98cd36e` and reported 38 findings (29 medium, 9 low). This branch was checked against those findings and adds server-side controls for authentication, account linking, resource permissions, shared input, coin rewards and redemption, demo behavior, backup permissions, and CI publishing. Production dependencies were also audited. The source scan itself did not exercise the live instance or Authentik; the sign-in flow was checked separately after deployment.
 
 ## Validation

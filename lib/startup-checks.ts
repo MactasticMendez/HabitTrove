@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs'
+import { randomUUID } from 'crypto'
 import { join } from 'path'
 
 const DEFAULT_DATA_DIR = 'data'
@@ -39,35 +40,35 @@ export async function checkStartupPermissions(): Promise<StartupPermissionResult
   }
 
   // Test read/write permissions with a temporary file
-  const testFilePath = join(dirPath, '.habittrove-permission-test')
+  const testFilePath = join(dirPath, `.habittrove-permission-test-${randomUUID()}`)
   const testContent = 'permission-test'
+  let created = false
+  let errorType: 'integrity' | 'permission' | undefined
 
   try {
-    await fs.writeFile(testFilePath, testContent)
+    await fs.writeFile(testFilePath, testContent, { flag: 'wx', mode: 0o600 })
+    created = true
     const readContent = await fs.readFile(testFilePath, 'utf8')
-    
     if (readContent !== testContent) {
-      return {
-        success: false,
-        error: {
-          path: dirPath,
-          message: `Data integrity check failed in '${dirPath}'. File system may be corrupted or have inconsistent behavior.`,
-          type: 'writable_data_dir'
-        }
-      }
+      errorType = 'integrity'
     }
-
-    await fs.unlink(testFilePath)
-    return { success: true }
-
-  } catch (rwError) {
+  } catch {
+    errorType = 'permission'
+  }
+  if (created) {
+    try { await fs.unlink(testFilePath) } catch { errorType = 'permission' }
+  }
+  if (errorType) {
     return {
       success: false,
       error: {
         path: dirPath,
-        message: `Insufficient read/write permissions for data directory '${dirPath}'. Check file permissions and ownership.`,
+        message: errorType === 'integrity'
+          ? `Data integrity check failed in '${dirPath}'. File system may be corrupted or have inconsistent behavior.`
+          : `Insufficient read/write permissions for data directory '${dirPath}'. Check file permissions and ownership.`,
         type: 'writable_data_dir'
       }
     }
   }
+  return { success: true }
 }

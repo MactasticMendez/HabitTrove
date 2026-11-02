@@ -3,14 +3,17 @@ import fs from 'fs/promises'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { getDefaultUsersData, type User, type UserData } from './types'
-import { saltAndHashPassword, verifyPassword } from './password'
+import { saltAndHashPassword, verifyPasswordAsync } from './password'
 import { emailSchema, newPasswordSchema } from './zod'
 import { getLegacyOidcIssuer } from './admin-config'
 
 const failedLogins = new Map<string, { count: number; until: number }>()
+const failedStepUps = new Map<string, { count: number; until: number }>()
 const loginWindowMs = 15 * 60 * 1000
 const maxFailedLogins = 10
+const maxConcurrentLoginVerifications = 4
 const dummyHash = saltAndHashPassword('invalid-user-placeholder')
+let activePasswordVerifications = 0
 let writeQueue: Promise<void> = Promise.resolve()
 
 function authPath(): string {
@@ -126,29 +129,49 @@ export async function linkUserToAuthentikSubject(
 }
 
 export async function authenticateLocalUser(username: string, password: string): Promise<User | null> {
-  const key = username.toLowerCase()
-  const now = Date.now()
-  const attempts = failedLogins.get(key)
-  if (attempts && attempts.until > now && attempts.count >= maxFailedLogins) return null
-  if (attempts && attempts.until <= now) failedLogins.delete(key)
-
-  const user = (await readAuthData()).users.find(candidate => candidate.username === username)
-  const valid = verifyPassword(password, user?.password || dummyHash)
-  if (user && valid) {
-    failedLogins.delete(key)
-    return user
-  }
-  if (user && process.env.DEMO === 'true' && !user.password && password === '') {
-    failedLogins.delete(key)
-    return user
-  }
-  if (!failedLogins.has(key) && failedLogins.size >= 1000) {
-    for (const [name, attempt] of failedLogins) {
-      if (attempt.until <= now) failedLogins.delete(name)
+  if (activePasswordVerifications >= maxConcurrentLoginVerifications) return null
+  activePasswordVerifications++
+  try {
+    const user = (await readAuthData()).users.find(candidate => candidate.username === username)
+    if (!user) {
+      await verifyPasswordAsync(password, dummyHash)
+      return null
     }
-    if (failedLogins.size >= 1000) return null
+    const now = Date.now()
+    const attempts = failedLogins.get(user.id)
+    if (attempts && attempts.until > now && attempts.count >= maxFailedLogins) return null
+    if (attempts && attempts.until <= now) failedLogins.delete(user.id)
+
+    const valid = await verifyPasswordAsync(password, user.password || dummyHash)
+    if (valid || process.env.DEMO === 'true' && !user.password && password === '') {
+      failedLogins.delete(user.id)
+      return user
+    }
+    const current = failedLogins.get(user.id)
+    failedLogins.set(user.id, { count: (current?.count ?? 0) + 1, until: now + loginWindowMs })
+    return null
+  } finally {
+    activePasswordVerifications--
   }
-  const current = failedLogins.get(key)
-  failedLogins.set(key, { count: (current?.count ?? 0) + 1, until: now + loginWindowMs })
-  return null
+}
+
+export async function verifyStepUpPassword(user: User, password: string): Promise<boolean> {
+  if (activePasswordVerifications >= maxConcurrentLoginVerifications) return false
+  activePasswordVerifications++
+  try {
+    const now = Date.now()
+    const attempts = failedStepUps.get(user.id)
+    if (attempts && attempts.until > now && attempts.count >= maxFailedLogins) return false
+    if (attempts && attempts.until <= now) failedStepUps.delete(user.id)
+    const valid = await verifyPasswordAsync(password, user.password)
+    if (valid) {
+      failedStepUps.delete(user.id)
+      return true
+    }
+    const current = failedStepUps.get(user.id)
+    failedStepUps.set(user.id, { count: (current?.count ?? 0) + 1, until: now + loginWindowMs })
+    return false
+  } finally {
+    activePasswordVerifications--
+  }
 }

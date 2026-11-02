@@ -27,6 +27,11 @@
 
 ### Security
 
+* Bound concurrent local password verification and keep unknown usernames out of the account failure tracker; authenticated password confirmations have a separate 10-failure throttle from public sign-in.
+* Reject malformed or oversized coin transaction text and new completions on already archived habits.
+* Reject recurrence rules with more than 256 daily time combinations, including when evaluating older saved habits.
+* Discard incomplete backup archives on Archiver warnings before publication or rotation, and remove generated avatars when an account is deleted.
+* Use unique, owner-only files for concurrent data-directory permission checks.
 * Block disabling OIDC while linked accounts lack local passwords, and fail closed if the saved OIDC configuration cannot be read.
 * Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while Authentik accounts remain linked.
 * Require a fresh client secret when changing the OIDC issuer or client ID.
