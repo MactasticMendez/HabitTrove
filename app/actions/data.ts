@@ -405,9 +405,10 @@ export async function recordHabitCompletion(habitId: string, timestamp: string):
     const target = habit.targetCompletions ?? 1
     if (count >= target) throw new PermissionError('Habit is already completed for this day')
 
-    const accountIds = new Set((await readAuthData()).users.map(account => account.id))
-    const recipients = [...new Set(habit.userIds ?? [user.id])].filter(id => accountIds.has(id))
-    if (!recipients.length || recipients.length > 100) throw new Error('Invalid habit assignees')
+    if (!(await readAuthData()).users.some(account => account.id === user.id)) {
+      throw new Error('Invalid completing account')
+    }
+    const recipients = [user.id]
     const targetReached = count + 1 === target
     const history = habit.completionRecords ?? habit.completions.map(() => null)
     const alreadyRewarded = habit.completions.some((value, index) =>

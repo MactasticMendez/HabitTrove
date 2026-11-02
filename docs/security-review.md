@@ -1,5 +1,9 @@
 # Security review
 
+## 2026-11-02 shared reward policy correction (v0.3.1)
+
+Future shared-habit completions credit only the member who records the target-reaching completion. Existing coin transactions are not rewritten. Undo still reads each completion's recorded recipients, so older awards to multiple members reverse against the original accounts. Focused regression tests cover recorder-only credits, ownership, target changes, concurrent submissions, and reversal of an older group award. The reward path remains serialized within one process and retains the separate-file crash-consistency risk described below. This change adds no UI controls; the earlier accessibility findings remain applicable.
+
 ## 2026-11-02 full rescan
 
 The fork's `main` tree `b6ddd51f6504c6d1fd44ad593208a820991c4c16` was reviewed across all 193 tracked files (scan `87e1579d-1fe5-47a7-a9c4-800c92c2cd97`). The scan validated nine current findings: seven medium and two low. Against the earlier 38 findings, 31 were resolved in that tree and seven remained partial. The current branch addresses eight of the nine new findings: unknown-username throttle saturation, synchronous login hashing, malformed coin text, incomplete backup publication, archived-habit reward claims, retained generated avatars, costly recurrence rules, and permission-probe races. A read-only patch review also found three compatibility or abuse gaps; all three were corrected before publication. Focused regression tests cover each changed behavior. The remaining new finding is targeted public-login lockout; ten wrong guesses can deny the account owner's public sign-in for 15 minutes. A trusted source-aware rate limiter or other abuse control is needed before removing that lockout without increasing online guessing risk.
