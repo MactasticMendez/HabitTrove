@@ -30,7 +30,7 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 
 1. **Creating Habits**: Click the "Add Habit" button to create a new habit. Set a name, description, and coin reward.
 
-2. **Tracking Habits**: Mark habits as complete on your dashboard. When a daily target is reached, every assigned member earns the habit's coin reward, at most once per local day. Only the member who recorded the latest completion can undo it.
+2. **Tracking Habits**: Mark habits as complete on your dashboard. When a daily target is reached, the member who records that completion earns the habit's coin reward, at most once per local day. Only the member who recorded the latest completion can undo it.
 
 3. **Wishlist**: Add rewards to your wishlist that you can redeem with earned coins.
 
@@ -131,7 +131,7 @@ To link an existing local account, sign in locally, add its email if needed, sig
 
 Local sign-in throttling is process-local. Password checks run asynchronously with a shared four-verification process limit; ten failures lock a known account's public sign-in for 15 minutes. Password-confirmed account actions have a separate 10-failure lockout. Run one app instance against a data directory; the JSON store and throttle are not designed for multiple replicas. Retain a private backup and a local administrator recovery password.
 
-The server accepts only HTTP(S) reward links, validates shared drawings and habit schedules, and checks reward limits and resource permissions during redemption. Assigned members may add one completion at a time, dated within the past year. New completions record who added them. Only that member may undo the latest completion for its day, and the server reverses the credits actually awarded to every assigned member. An administrator can recover a completion if its recorder is no longer assigned. Older shared completions have no recorded actor and cannot be undone by members; an administrator can correct their history and reconcile any legacy coin entries. A day that began with legacy completions receives no automatic new award during migration, preventing duplicate credits. Habit completion remains self-reported; this app cannot independently prove that a real-world habit was performed.
+The server accepts only HTTP(S) reward links, validates shared drawings and habit schedules, and checks reward limits and resource permissions during redemption. Assigned members may add one completion at a time, dated within the past year. New completions record who added them and reward only the member who records the target-reaching completion. Only that member may undo the latest completion for its day. Undo reverses the original recipients, including any older completion that rewarded every assigned member. An administrator can recover a completion if its recorder is no longer assigned. Older shared completions without a recorded actor cannot be undone by members; an administrator can correct their history and reconcile any legacy coin entries. A day that began with legacy completions receives no automatic new award during migration, preventing duplicate credits. Habit completion remains self-reported; this app cannot independently prove that a real-world habit was performed.
 
 New data files, avatar uploads, and backup archives use owner-only permissions. Check and restrict permissions on files created by older versions before exposing a shared host volume. Demo mode is enabled only with `DEMO=true`; account and password mutations and system-setting changes are blocked in that mode.
 

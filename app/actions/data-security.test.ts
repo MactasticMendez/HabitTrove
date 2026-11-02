@@ -254,15 +254,16 @@ describe('server action authorization', () => {
       .toEqual({ pinned: true, isTask: true, archived: true, name: 'Renamed task' })
   })
 
-  test('credits every assigned member and only the recorder can reverse their shared completion', async () => {
+  test('credits only the recorder and only they can reverse their shared completion', async () => {
     const timestamp = new Date().toISOString()
     const completed = await actions.recordHabitCompletion('shared', timestamp)
     expect(completed.rewarded).toBe(true)
     expect(completed.habit.completionRecords?.[0]?.actorId).toBe('member')
+    expect(completed.habit.completionRecords?.[0]?.rewardedUserIds).toEqual(['member'])
     const coinFile = path.join(directory, 'data', 'coins.json')
     const credits = JSON.parse(await fs.readFile(coinFile, 'utf8')).transactions
       .filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')
-    expect(credits.map((tx: { userId: string }) => tx.userId).sort()).toEqual(['member', 'other'])
+    expect(credits.map((tx: { userId: string }) => tx.userId)).toEqual(['member'])
     expect(credits.every((tx: { actorId: string }) => tx.actorId === 'member')).toBe(true)
 
     currentUser = { ...other, permissions: member.permissions }
@@ -280,25 +281,39 @@ describe('server action authorization', () => {
     expect(undone.habit.completions).toEqual([])
     const debits = JSON.parse(await fs.readFile(coinFile, 'utf8')).transactions
       .filter((tx: { type: string }) => tx.type === 'HABIT_UNDO')
-    expect(debits.map((tx: { userId: string }) => tx.userId).sort()).toEqual(['member', 'other'])
+    expect(debits.map((tx: { userId: string }) => tx.userId)).toEqual(['member'])
     expect(debits.every((tx: { amount: number }) => tx.amount === -2)).toBe(true)
     await expect(actions.undoHabitCompletion('shared', 0, timestamp)).rejects.toThrow('Completion has changed')
   })
 
-  test('preserves completion ownership through edits and reverses the original recipients', async () => {
+  test('preserves completion ownership through edits and reverses historical group credits', async () => {
     const timestamp = new Date().toISOString()
-    const completed = await actions.recordHabitCompletion('shared', timestamp)
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const coinFile = path.join(directory, 'data', 'coins.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0].completions = [timestamp]
+    stored.habits[0].completionRecords = [{ id: 'old-completion', actorId: 'member', rewardedUserIds: ['member', 'other'] }]
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const oldCoins = JSON.parse(await fs.readFile(coinFile, 'utf8'))
+    oldCoins.balance += 4
+    oldCoins.transactions.unshift(...['member', 'other'].map(userId => ({
+      id: `award-${userId}`, userId, actorId: 'member', completionId: 'old-completion', amount: 2,
+      type: 'HABIT_COMPLETION', relatedItemId: 'shared', description: 'Old shared award', timestamp,
+    })))
+    await fs.writeFile(coinFile, JSON.stringify(oldCoins))
+    const completed = (await actions.loadHabitsData()).habits[0]
     currentUser = { ...member, permissions: [{ ...member.permissions![0], habit: { write: true, interact: true } }] }
-    await expect(actions.saveHabitsData({ habits: [{ ...completed.habit, completionRecords: [{ id: 'forged', actorId: 'other' }] }] }))
+    await expect(actions.saveHabitsData({ habits: [{ ...completed, completionRecords: [{ id: 'forged', actorId: 'other' }] }] }))
       .rejects.toThrow('Use the completion action')
-    const { completionRecords: _omitted, ...withoutRecords } = completed.habit
+    const { completionRecords: _omitted, ...withoutRecords } = completed
     await actions.saveHabitsData({ habits: [{ ...withoutRecords, name: 'Renamed', userIds: ['member'], coinReward: 5, targetCompletions: 2 }] })
     const saved = (await actions.loadHabitsData()).habits[0]
     expect(saved.completionRecords?.[0]?.actorId).toBe('member')
     await actions.undoHabitCompletion('shared', 0, timestamp)
-    const transactions = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8')).transactions
-    expect(transactions.filter((tx: { type: string; userId: string; amount: number }) =>
-      tx.type === 'HABIT_UNDO' && tx.userId === 'other' && tx.amount === -2)).toHaveLength(1)
+    const transactions = JSON.parse(await fs.readFile(coinFile, 'utf8')).transactions
+    expect(transactions.filter((tx: { type: string; amount: number }) =>
+      tx.type === 'HABIT_UNDO' && tx.amount === -2).map((tx: { userId: string }) => tx.userId).sort())
+      .toEqual(['member', 'other'])
   })
 
   test('keeps legacy shared completions readable but denies member undo without an actor', async () => {
@@ -313,7 +328,7 @@ describe('server action authorization', () => {
       .rejects.toThrow('Use the completion action')
   })
 
-  test('credits only at the target and lets the final recorder undo the group reward', async () => {
+  test('credits only the target-reaching recorder and lets them undo the reward', async () => {
     const habitFile = path.join(directory, 'data', 'habits.json')
     const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
     stored.habits[0].targetCompletions = 2
@@ -323,6 +338,9 @@ describe('server action authorization', () => {
     currentUser = { ...other, permissions: member.permissions }
     const second = await actions.recordHabitCompletion('shared', new Date(Date.now() + 1).toISOString())
     expect(second.rewarded).toBe(true)
+    expect(second.habit.completionRecords?.[1]?.rewardedUserIds).toEqual(['other'])
+    expect((await actions.loadCoinsData()).transactions.filter(tx => tx.type === 'HABIT_COMPLETION').map(tx => tx.userId))
+      .toEqual(['other'])
     currentUser = member
     await expect(actions.undoHabitCompletion('shared', second.completionIndex, second.completionTimestamp))
       .rejects.toThrow('Only the person')
@@ -341,12 +359,12 @@ describe('server action authorization', () => {
     expect(second.rewarded).toBe(false)
     expect(second.habit.completionRecords?.[1]?.rewardedUserIds).toBeUndefined()
     const transactions = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8')).transactions
-    expect(transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(2)
+    expect(transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(1)
     await actions.undoHabitCompletion('shared', 1, second.completionTimestamp)
     expect((await actions.loadCoinsData()).transactions.filter(tx => tx.type === 'HABIT_UNDO')).toHaveLength(0)
     await actions.undoHabitCompletion('shared', 0, first.completionTimestamp)
     const reversed = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8')).transactions
-    expect(reversed.filter((tx: { type: string }) => tx.type === 'HABIT_UNDO')).toHaveLength(2)
+    expect(reversed.filter((tx: { type: string }) => tx.type === 'HABIT_UNDO')).toHaveLength(1)
   })
 
   test('lets an administrator recover a completion after its recorder is unassigned', async () => {
@@ -359,7 +377,7 @@ describe('server action authorization', () => {
     currentUser = admin
     const undone = await actions.undoHabitCompletion('shared', 0, completed.completionTimestamp)
     expect(undone.rewardReversed).toBe(true)
-    expect((await actions.loadCoinsData()).transactions.filter(tx => tx.type === 'HABIT_UNDO')).toHaveLength(2)
+    expect((await actions.loadCoinsData()).transactions.filter(tx => tx.type === 'HABIT_UNDO')).toHaveLength(1)
   })
 
   test('prevents stale administrator saves and manual reward actions from changing managed history', async () => {
@@ -393,7 +411,7 @@ describe('server action authorization', () => {
     ])
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     const coins = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8'))
-    expect(coins.transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(2)
+    expect(coins.transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(1)
 
     const habitFile = path.join(directory, 'data', 'habits.json')
     const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
@@ -404,7 +422,7 @@ describe('server action authorization', () => {
     const zero = await actions.recordHabitCompletion('shared', new Date().toISOString())
     expect(zero.rewarded).toBe(true)
     const after = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8'))
-    expect(after.transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(2)
+    expect(after.transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(1)
   })
 
   test('restores habit history if writing shared coin rewards fails', async () => {

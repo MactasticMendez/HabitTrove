@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## Version 0.3.1
+
+### Changed
+
+* Award future shared-habit coins only to the member who records the target-reaching completion. Existing awards and their undo history remain unchanged.
+
 ## Version 0.3.0
 
 ### Added
