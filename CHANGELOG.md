@@ -15,6 +15,7 @@
 
 ### Fixed
 
+* Restore Authentik sign-in for linked accounts by carrying the local account ID through Auth.js profile normalization.
 * Update Linkify React to match LinkifyJS and prevent a client-side crash on the dashboard.
 * Improve chart label contrast and give the profile menu an accessible name.
 * Keep scheduled backups disabled when the backup setting is off, and fall back safely when old habit schedules or locale settings are malformed.
