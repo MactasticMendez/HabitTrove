@@ -113,7 +113,6 @@ export function useWishlist() {
         })
         const newWishListData = { items: newItems }
         setWishlist(newWishListData)
-        await saveWishlistItems(newWishListData)
       }
 
       // Randomly choose a celebration effect

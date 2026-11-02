@@ -5,6 +5,21 @@ import { getCurrentUser } from '@/lib/server-helpers'
 
 export async function POST(req: Request) {
   try {
+    const origin = req.headers.get('origin')
+    const host = req.headers.get('host') ?? new URL(req.url).host
+    let originHost: string | undefined
+    try {
+      originHost = origin ? new URL(origin).host : undefined
+    } catch {
+      originHost = undefined
+    }
+    if (!originHost || originHost !== host) {
+      return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 })
+    }
+    if (!req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+      return NextResponse.json({ error: 'Expected JSON request' }, { status: 415 })
+    }
+
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -28,7 +43,7 @@ export async function POST(req: Request) {
     }
     
 
-    if (!userIdToDelete) {
+    if (typeof userIdToDelete !== 'string' || !userIdToDelete) {
       return NextResponse.json({ error: 'Bad Request: userId is required' }, { status: 400 })
     }
 

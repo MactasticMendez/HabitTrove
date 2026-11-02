@@ -1,44 +1,81 @@
-import NextAuth from "next-auth"
-import Credentials from "next-auth/providers/credentials"
-import { getUser } from "./app/actions/data"
-import { signInSchema } from "./lib/zod"
-import { SafeUser, SessionUser } from "./lib/types"
- 
+import NextAuth from 'next-auth'
+import Credentials from 'next-auth/providers/credentials'
+import type { Provider } from 'next-auth/providers'
+import { authenticateLocalUser, findUserByAuthentikSubject, findUserById, linkUserToAuthentikSubject } from './lib/auth-store'
+import { signInSchema } from './lib/zod'
+import { cookies } from 'next/headers'
+import { authentikLinkCookie, verifyAuthentikLinkIntent } from './lib/authentik-link'
+
+const providers: Provider[] = [
+  Credentials({
+    credentials: { username: {}, password: {} },
+    authorize: async credentials => {
+      const parsed = signInSchema.safeParse(credentials)
+      if (!parsed.success) return null
+      const user = await authenticateLocalUser(parsed.data.username, parsed.data.password ?? '')
+      return user ? { id: user.id, authVersion: user.authVersion ?? 0 } : null
+    },
+  }),
+]
+
+if (process.env.AUTHENTIK_ISSUER && process.env.AUTHENTIK_CLIENT_ID && process.env.AUTHENTIK_CLIENT_SECRET) {
+  providers.push({
+    id: 'authentik',
+    name: 'Authentik',
+    type: 'oidc',
+    issuer: process.env.AUTHENTIK_ISSUER,
+    clientId: process.env.AUTHENTIK_CLIENT_ID,
+    clientSecret: process.env.AUTHENTIK_CLIENT_SECRET,
+    checks: ['pkce', 'state', 'nonce'],
+    authorization: { params: { scope: 'openid profile email' } },
+    profile: async profile => {
+      if (typeof profile.sub !== 'string' || !profile.sub) throw new Error('Invalid identity')
+      let user = await findUserByAuthentikSubject(profile.sub)
+      if (!user) {
+        const intent = verifyAuthentikLinkIntent((await cookies()).get(authentikLinkCookie)?.value, process.env.AUTH_SECRET ?? '')
+        if (!intent || profile.email_verified !== true || typeof profile.email !== 'string' ||
+            profile.email.trim().toLowerCase() !== intent.email) {
+          throw new Error('Authentik account is not linked')
+        }
+        user = await linkUserToAuthentikSubject(intent.userId, intent.authVersion, intent.email, profile.sub)
+      }
+      return { id: profile.sub, localUserId: user.id, authVersion: user.authVersion ?? 0 }
+    },
+  })
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
-  providers: [
-    Credentials({
-      credentials: {
-        username: {},
-        password: {},
-      },
-      authorize: async (credentials) => {
-        const { username, password } = await signInSchema.parseAsync(credentials)
-        
-        // Pass the plaintext password to getUser for verification
-        const user = await getUser(username, password)
- 
-        if (!user) {
-          throw new Error("Invalid credentials.")
-        }
- 
-        const safeUser: SessionUser = { id: user.id }
-        return safeUser
-      },
-    }),
-  ],
+  session: { strategy: 'jwt', maxAge: 24 * 60 * 60 },
+  providers,
   callbacks: {
-    jwt: async ({ token, user }) => {
+    jwt: async ({ token, user, account }) => {
       if (user) {
-        token.id = (user as SessionUser).id
+        const userId = account?.provider === 'authentik'
+          ? 'localUserId' in user ? user.localUserId : undefined
+          : user.id
+        if (typeof userId !== 'string') return null
+        const current = await findUserById(userId)
+        const authVersion = 'authVersion' in user ? user.authVersion : undefined
+        if (!current || typeof authVersion !== 'number' ||
+            (current.authVersion ?? 0) !== authVersion ||
+            (account?.provider === 'authentik' && current.authentikSubject !== account.providerAccountId)) return null
+        token.id = current.id
+        token.authVersion = current.authVersion ?? 0
+        return token
       }
-      return token
+      if (typeof token.id !== 'string' || typeof token.authVersion !== 'number') return null
+      const current = await findUserById(token.id)
+      return current && (current.authVersion ?? 0) === token.authVersion ? token : null
     },
     session: async ({ session, token }) => {
-      if (session?.user) {
-        session.user.id = token.id as string
+      if (session.user && typeof token.id === 'string') {
+        session.user.id = token.id
+        session.user.email = ''
+        session.user.name = null
+        session.user.image = null
       }
       return session
-    }
-  }
+    },
+  },
 })

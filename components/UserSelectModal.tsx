@@ -4,18 +4,73 @@ import { useState } from 'react';
 import PasswordEntryForm from './PasswordEntryForm';
 import UserForm from './UserForm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Crown, Plus, User as UserIcon, UserRoundPen } from 'lucide-react';
 
 
 import { useAtom } from 'jotai';
-import { usersAtom, currentUserAtom } from '@/lib/atoms';
-import { signIn } from '@/app/actions/user';
+import { usersAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms';
+import { signIn, signInWithAuthentik } from '@/app/actions/user';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/hooks/use-toast';
 import { Description } from '@radix-ui/react-dialog';
 import { SafeUser } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+export function AnonymousSignIn({ onSuccess, authentikEnabled, isDemo }: {
+  onSuccess: () => void;
+  authentikEnabled: boolean;
+  isDemo: boolean;
+}) {
+  const t = useTranslations('UserSelectModal');
+  const userForm = useTranslations('UserForm');
+  const passwordForm = useTranslations('PasswordEntryForm');
+  const accountText = useTranslations('AccountSecurity');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await signIn(username, password);
+      onSuccess();
+      window.location.reload();
+    } catch {
+      setError(t('errorInvalidPassword'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="login-username">{userForm('usernameLabel')}</Label>
+          <Input id="login-username" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="login-password">{passwordForm('passwordLabel')}</Label>
+          <Input id="login-password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required={!isDemo} />
+        </div>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Button type="submit" disabled={busy}>{passwordForm('loginButton')}</Button>
+      </form>
+      {authentikEnabled && (
+        <form action={signInWithAuthentik}>
+          <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik')}</Button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 
 function UserCard({
@@ -134,6 +189,7 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
   const [usersData, setUsersData] = useAtom(usersAtom);
   const users = usersData.users;
   const [currentUser] = useAtom(currentUserAtom);
+  const [serverSettings] = useAtom(serverSettingsAtom);
 
 
   const handleUserSelect = (userId: string) => {
@@ -173,7 +229,9 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          {!selectedUser && !isCreating && !isEditing ? (
+          {!currentUser ? (
+            <AnonymousSignIn onSuccess={onClose} authentikEnabled={serverSettings.authentikEnabled} isDemo={serverSettings.isDemo} />
+          ) : !selectedUser && !isCreating && !isEditing ? (
             <UserSelectionView
               users={users}
               currentUserFromHook={currentUser}

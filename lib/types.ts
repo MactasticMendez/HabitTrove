@@ -21,6 +21,7 @@ export type Permission = {
 
 export type SessionUser = {
   id: UserId
+  authVersion?: number
 }
 
 export type SafeUser = SessionUser & {
@@ -29,15 +30,20 @@ export type SafeUser = SessionUser & {
   permissions?: Permission[]
   isAdmin?: boolean
   hasPassword?: boolean
+  hasAuthentik?: boolean
 }
 
 export type User = SafeUser & {
-  password?: string // Optional: Allow users without passwords (e.g., initial setup)
+  password?: string
+  email?: string
+  authentikSubject?: string
+  authVersion?: number
   lastNotificationReadTimestamp?: string // UTC ISO date string
 }
 
-export type PublicUser = Omit<User, 'password'> & {
+export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'authVersion'> & {
   hasPassword: boolean
+  hasAuthentik: boolean
 }
 
 export type Habit = {
@@ -124,6 +130,7 @@ export const getDefaultPublicUsersData = (): PublicUserData => ({
   users: getDefaultUsersData().users.map(({ password, ...user }) => ({
     ...user,
     hasPassword: !!password,
+    hasAuthentik: false,
   })),
 });
 
@@ -156,7 +163,8 @@ export const getDefaultSettings = (): Settings => ({
 });
 
 export const getDefaultServerSettings = (): ServerSettings => ({
-  isDemo: false
+  isDemo: false,
+  authentikEnabled: false,
 })
 
 // Map of data types to their default values
@@ -214,6 +222,7 @@ export interface JotaiHydrateInitialValues {
 
 export interface ServerSettings {
   isDemo: boolean
+  authentikEnabled: boolean
 }
 
 export type ParsedResultType = DateTime<true> | RRule | string | null // null if invalid
