@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { ALLOWED_AVATAR_EXTENSIONS, AVATAR_CONTENT_TYPE } from '@/lib/avatar'
 import { getCurrentUser } from '@/lib/server-helpers'
+import { log } from '@/lib/logger'
 
 function sanitizePathSegments(pathSegments?: string[]): string[] | null {
   if (!pathSegments || pathSegments.length === 0) {
@@ -104,7 +105,7 @@ export async function GET(
       )
     }
 
-    console.error('Error reading avatar file:', error)
+    log('error', 'Error reading avatar file', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

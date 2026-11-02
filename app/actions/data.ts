@@ -37,6 +37,8 @@ import { z } from 'zod'
 import { MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
 import { validateHabit, validateSettings, validateWishlistItem } from '@/lib/security-validation'
+import { getActiveOidcConfig } from '@/lib/admin-config'
+import { log } from '@/lib/logger'
 
 
 
@@ -170,15 +172,15 @@ export async function triggerManualBackup(): Promise<{ success: boolean; message
     return { success: false, message: 'Permission denied.' }
   }
 
-  console.log('Manual backup trigger requested...')
+  log('info', 'Manual backup requested')
   try {
     // Import runBackup locally to avoid potential circular dependencies if moved
     const { runBackup } = await import('@/lib/backup')
     await runBackup()
-    console.log('Manual backup trigger completed successfully.')
+    log('info', 'Manual backup completed')
     return { success: true, message: 'Backup process completed successfully.' }
   } catch (error) {
-    console.error('Manual backup trigger failed:', error)
+    log('error', 'Manual backup failed', error)
     return {
       success: false,
       message: `Backup failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -241,7 +243,7 @@ async function calculateServerFreshnessToken(): Promise<string | null> {
     const serverToken = await generateCryptoHash(dataString);
     return serverToken;
   } catch (error) {
-    console.error("Error calculating server freshness token:", error);
+    log('error', 'Error calculating server freshness token', error);
     throw error;
   }
 }
@@ -629,7 +631,7 @@ export async function getChangelog(): Promise<string> {
     const changelogPath = path.join(process.cwd(), 'CHANGELOG.md')
     return await fs.readFile(changelogPath, 'utf8')
   } catch (error) {
-    console.error('Error loading changelog:', error)
+    log('error', 'Error loading changelog', error)
     return '# Changelog\n\nNo changelog available.'
   }
 }
@@ -655,6 +657,8 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   const avatarPath = validateAvatarPath(formData.get('avatarPath'));
   const email = validateEmail(formData.get('email'))
   const authentikSubject = validateAuthentikSubject(formData.get('authentikSubject'))
+  const oidcIssuer = authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
+  if (authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
   const isAdmin = formData.get('isAdmin') === 'true';
   const rawPermissions = formData.get('permissions')
   if (typeof rawPermissions === 'string' && rawPermissions.length > 4096) throw new Error('Invalid permissions')
@@ -672,7 +676,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     throw new Error('Administrator accounts require a password')
   }
   if (!hashedPassword && !authentikSubject && process.env.DEMO !== 'true') {
-    throw new Error('A password or Authentik subject is required')
+    throw new Error('A password or OIDC subject is required')
   }
 
   const newUser = await updateAuthData(data => {
@@ -680,13 +684,13 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     if (data.users.some(user => user.username === username)) throw new Error('Username already exists')
     if (email && data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already exists')
     if (authentikSubject && data.users.some(user => user.authentikSubject === authentikSubject)) {
-      throw new Error('Authentik identity is already linked')
+      throw new Error('OIDC identity is already linked')
     }
     const user: User = {
       id: uuid(), username, password: hashedPassword, permissions, isAdmin,
       ...(email && { email }),
       authVersion: 0,
-      ...(authentikSubject && { authentikSubject }),
+      ...(authentikSubject && { authentikSubject, oidcIssuer }),
       ...(avatarPath && { avatarPath }),
     }
     data.users.push(user)
@@ -695,7 +699,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   return sanitizeUserData({ users: [newUser] }, administrator.id, true).users[0]
 }
 
-export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password' | 'authVersion' | 'authentikSubject'>> & { authentikSubject?: string | null }): Promise<PublicUser> {
+export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password' | 'authVersion' | 'authentikSubject' | 'oidcIssuer'>> & { authentikSubject?: string | null }): Promise<PublicUser> {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new PermissionError('User not authenticated')
   if (process.env.DEMO === 'true') throw new PermissionError('Account changes are disabled in demo mode')
@@ -703,6 +707,8 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
       (currentUser.id !== userId || Object.keys(updates).some(key => key !== 'email'))) {
     throw new PermissionError('Email is required before using this account')
   }
+  const oidcIssuer = updates.authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
+  if (updates.authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
   return updateAuthData(data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     if (!actor) throw new PermissionError('User not authenticated')
@@ -743,14 +749,15 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     ...(actor.isAdmin && updates.isAdmin !== undefined && { isAdmin: z.boolean().parse(updates.isAdmin) }),
     ...(actor.isAdmin && updates.permissions !== undefined && { permissions: permissionSchema.parse(updates.permissions) }),
     ...(actor.isAdmin && updates.authentikSubject !== undefined && { authentikSubject: validateAuthentikSubject(updates.authentikSubject) }),
+    ...(actor.isAdmin && updates.authentikSubject !== undefined && { oidcIssuer }),
   }
 
   const subject = 'authentikSubject' in validatedUpdates ? validatedUpdates.authentikSubject : existingUser.authentikSubject
   if (subject && data.users.some(user => user.id !== userId && user.authentikSubject === subject)) {
-    throw new Error('Authentik identity is already linked')
+    throw new Error('OIDC identity is already linked')
   }
   if (!existingUser.password && !subject && process.env.DEMO !== 'true') {
-    throw new Error('A password or Authentik subject is required')
+    throw new Error('A password or OIDC subject is required')
   }
 
   // If username is being updated, check for duplicates
@@ -800,7 +807,7 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
       throw new Error('Administrator accounts require a password')
     }
     if (!target.authentikSubject && newPassword === undefined && process.env.DEMO !== 'true') {
-      throw new Error('A password or Authentik subject is required')
+      throw new Error('A password or OIDC subject is required')
     }
     data.users[userIndex] = {
       ...target,
@@ -913,7 +920,7 @@ export async function updateLastNotificationReadTimestamp(userId: string, timest
 export async function loadServerSettings(): Promise<ServerSettings> {
   return {
     isDemo: process.env.DEMO === 'true',
-    authentikEnabled: !!(process.env.AUTHENTIK_ISSUER && process.env.AUTHENTIK_CLIENT_ID && process.env.AUTHENTIK_CLIENT_SECRET),
+    authentikEnabled: !!(await getActiveOidcConfig()),
   }
 }
 
@@ -932,7 +939,7 @@ export async function checkDataFreshness(clientToken: string): Promise<{ isFresh
     const isFresh = clientToken === serverToken;
     return { isFresh };
   } catch (error) {
-    console.error("Error in checkDataFreshness:", error);
+    log('error', 'Error checking data freshness', error);
     // If server fails to determine its token, assume client might be stale to be safe,
     // or handle error reporting differently.
     return { isFresh: false };
