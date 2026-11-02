@@ -248,6 +248,10 @@ export function convertHumanReadableFrequencyToMachineReadable({ text, timezone,
   text = text.trim()
 
   if (!isRecurring) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      const date = DateTime.fromISO(text, { zone: timezone }).startOf('day')
+      return date.isValid ? { result: date, message: null } : { result: null, message: 'Invalid due date.' }
+    }
     if (DUE_MAP[text]) {
       text = DUE_MAP[text]
     }
@@ -273,6 +277,14 @@ export function convertHumanReadableFrequencyToMachineReadable({ text, timezone,
     } catch (error) {
       rrule = null
     }
+  }
+  if (rrule?.origOptions.freq === RRule.DAILY && (rrule.origOptions.interval ?? 1) > 1 && !rrule.origOptions.dtstart) {
+    const start = getNow({ timezone }).startOf('day')
+    rrule = new RRule({
+      ...rrule.origOptions,
+      dtstart: datetime(start.year, start.month, start.day),
+      tzid: timezone,
+    })
   }
   return validateRecurrenceRule(rrule);
 }
@@ -366,6 +378,15 @@ export function isHabitDue({
   const rrule = deserializeRRule(ruleText)
   if (!rrule) return false
   if (getUnsupportedRRuleReason(rrule)) return false
+  const interval = rrule.origOptions.interval ?? 1
+  if (rrule.origOptions.freq === RRule.DAILY && interval > 1) {
+    const start = rrule.origOptions.dtstart!
+    const firstDay = DateTime.fromObject({
+      year: start.getUTCFullYear(), month: start.getUTCMonth() + 1, day: start.getUTCDate(),
+    }, { zone: timezone }).startOf('day')
+    const days = Math.round(startOfDay.diff(firstDay, 'days').days)
+    return days >= 0 && days % interval === 0
+  }
   rrule.origOptions.tzid = timezone
   rrule.options.tzid = rrule.origOptions.tzid
   rrule.origOptions.dtstart = datetime(startOfDay.year, startOfDay.month, startOfDay.day, startOfDay.hour, startOfDay.minute, startOfDay.second)
@@ -447,8 +468,10 @@ export function getUnsupportedRRuleReason(rrule: RRule): string | null {
   if (freq === RRule.SECONDLY) {
     return 'Secondly frequency is not supported.';
   }
-  if (freq === RRule.DAILY && interval > 1) {
-    return 'Daily frequency with intervals greater than 1 is not supported.';
+  if (freq === RRule.DAILY && interval > 1 &&
+      (interval > 365 || !rrule.origOptions.dtstart || rrule.origOptions.count || rrule.origOptions.until ||
+        rrule.origOptions.byweekday || rrule.origOptions.bymonthday || rrule.origOptions.bymonth)) {
+    return 'Every-N-days rules need a start date, an interval at most 365, and no extra filters.';
   }
 
   return null; // Rule is supported

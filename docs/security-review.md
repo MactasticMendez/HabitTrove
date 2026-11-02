@@ -1,5 +1,11 @@
 # Security review
 
+## 2026-11-02 scheduling and organization update (v0.4.0)
+
+The task date picker writes an ISO day in the configured timezone. Every-other-day recurrence rules include a saved start day and are limited to 365-day intervals without additional filters; server validation rejects unanchored or malformed rules. Manual ordering uses a dedicated serialized server action that requires habit write permission, checks the exact set of visible active items, bounds IDs and list size, and reloads the latest data before changing positions. This prevents a reorder from overwriting a concurrent habit edit. Positions on shared items are visible to all assigned members. Compact and combined-view preferences remain in browser storage. No new dependency or external endpoint was added.
+
+The local demo was used to save and reopen a calendar-selected task date, move habits and confirm order persistence after reload, view compact cards, and show both tasks and habits in the combined Today list. Axe reported no WCAG 2 A/AA, 2.1 AA, or 2.2 AA violations on the checked dashboard, compact list, schedule dialog, and open task calendar after mobile-nav contrast, emoji-button name, and dialog-description fixes. Axe could not automatically resolve chart-label contrast and some Radix popover focus/ARIA references; these need manual review and do not establish full-app WCAG conformance. The existing four React hook lint warnings remain. Codex Security diff scan `e90035ce-f4c3-4a90-905d-f8bbeb6af9a7` reviewed all 25 changed source files and found no new security findings. That static scan did not test the live instance or OIDC provider.
+
 ## 2026-11-02 shared reward policy correction (v0.3.1)
 
 Future shared-habit completions credit only the member who records the target-reaching completion. Existing coin transactions are not rewritten. Undo still reads each completion's recorded recipients, so older awards to multiple members reverse against the original accounts. Focused regression tests cover recorder-only credits, ownership, target changes, concurrent submissions, and reversal of an older group award. The reward path remains serialized within one process and retains the separate-file crash-consistency risk described below. This change adds no UI controls; the earlier accessibility findings remain applicable.

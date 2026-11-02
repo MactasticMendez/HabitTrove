@@ -20,6 +20,7 @@ import DrawingDisplay from './DrawingDisplay'
 
 interface HabitItemProps {
   habit: Habit
+  compact?: boolean
   onEdit: () => void
   onDelete: () => void
 }
@@ -44,7 +45,7 @@ const renderUserAvatars = (habit: Habit, currentUser: User | null, usersData: { 
 };
 
 
-export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
+export default function HabitItem({ habit, compact = false, onEdit, onDelete }: HabitItemProps) {
   const { completeHabit, undoComplete, archiveHabit, unarchiveHabit, saveHabit } = useHabits()
   const [settings] = useAtom(settingsAtom)
   const [_, setPomo] = useAtom(pomodoroAtom)
@@ -84,9 +85,9 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
   return (
     <Card
       id={`habit-${habit.id}`}
-      className={`h-full flex flex-col transition-all duration-500 ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''} ${habit.archived ? 'opacity-75' : ''}`}
+      className={`transition-all duration-500 ${compact ? 'flex flex-wrap items-center gap-x-2 text-sm' : 'h-full flex flex-col'} ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''} ${habit.archived ? 'opacity-75' : ''}`}
     >
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className={compact ? 'min-w-0 flex-[1_1_12rem] p-2' : 'flex-shrink-0'}>
         <div className="flex justify-between items-start">
           <CardTitle className={`line-clamp-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''} flex items-center ${isTasksView ? 'w-full' : ''} justify-between`}>
             <div className="flex items-center gap-1">
@@ -103,7 +104,7 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
           </CardTitle>
           {renderUserAvatars(habit, currentUser as User, usersData)}
         </div>
-        {(habit.description || habit.drawing) && (
+        {!compact && (habit.description || habit.drawing) && (
           <div className={`flex gap-4 mt-2 ${!habit.description ? 'justify-end' : ''}`}>
             {habit.description && (
               <CardDescription className={`whitespace-pre-line flex-1 min-w-0 break-words ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>
@@ -123,9 +124,9 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
           </div>
         )}
       </CardHeader>
-      <CardContent className="flex-grow flex flex-col justify-end">
-        <div className="mt-auto">
-          <p className={`text-sm ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500'}`}>
+      <CardContent className={compact ? 'min-w-0 flex-[1_1_9rem] p-2' : 'flex-grow flex flex-col justify-end'}>
+        <div className={compact ? '' : 'mt-auto'}>
+          <p className={`text-sm ${compact ? 'line-clamp-1' : ''} ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500'}`}>
             {t('whenLabel', {
               frequency: convertMachineReadableFrequencyToHumanReadable({
                 frequency: habit.frequency,
@@ -134,13 +135,13 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
               })
             })}
           </p>
-          <div className="flex items-center mt-2">
+          <div className={`flex items-center ${compact ? 'mt-0.5' : 'mt-2'}`}>
             <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
             <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t('coinsPerCompletion', { count: habit.coinReward })}</span>
           </div>
         </div>
       </CardContent>
-      <CardFooter className="flex-shrink-0 flex justify-between gap-2">
+      <CardFooter className={compact ? 'flex-[0_1_auto] justify-between gap-2 p-2' : 'flex-shrink-0 flex justify-between gap-2'}>
         <div className="flex gap-2">
           <div className="relative">
             <Button

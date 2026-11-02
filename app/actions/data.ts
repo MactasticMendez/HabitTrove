@@ -348,6 +348,29 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
   })
 }
 
+export async function reorderHabitItems(orderedIds: string[], isTask: boolean): Promise<HabitsData> {
+  return withDataWriteLock(async () => {
+    const user = await verifyPermission('habit', 'write')
+    if (!Array.isArray(orderedIds) || orderedIds.length > 10_000 ||
+        orderedIds.some(id => typeof id !== 'string' || !id || id.length > 128) ||
+        new Set(orderedIds).size !== orderedIds.length || typeof isTask !== 'boolean') {
+      throw new Error('Invalid habit order')
+    }
+    const existing = await loadData<HabitsData>('habits')
+    const movable = existing.habits.filter(habit => !habit.archived && Boolean(habit.isTask) === isTask &&
+      (user.isAdmin || habit.userIds?.includes(user.id)))
+    const selected = new Set(orderedIds)
+    if (movable.length !== orderedIds.length || movable.some(habit => !selected.has(habit.id))) {
+      throw new PermissionError('Habit order is out of date or includes an inaccessible item')
+    }
+    const positions = new Map(orderedIds.map((id, index) => [id, index]))
+    const habits = existing.habits.map(habit => positions.has(habit.id)
+      ? { ...habit, position: positions.get(habit.id)! } : habit)
+    await saveData('habits', { habits })
+    return { habits: habits.filter(habit => user.isAdmin || habit.userIds?.includes(user.id)) }
+  })
+}
+
 function completionDay(timestamp: string, timezone: string): string {
   return DateTime.fromISO(timestamp, { setZone: true }).setZone(timezone).toISODate() ?? ''
 }

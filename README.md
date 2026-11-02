@@ -16,6 +16,8 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 ## Features
 
 - 🎯 Create and track daily habits
+- 📅 Choose repeat schedules and task dates from controls, with text entry for advanced schedules
+- ↕️ Arrange habits and tasks manually, switch to compact cards, and combine today's due items
 - 🏆 Earn coins for completing habits
 - 💰 Create a wishlist of rewards to redeem with earned coins
 - 📊 View your habit completion streaks and statistics
@@ -28,13 +30,15 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 
 ## Usage
 
-1. **Creating Habits**: Click the "Add Habit" button to create a new habit. Set a name, description, and coin reward.
+1. **Creating Habits**: Click the "Add Habit" button to create a new habit. Set a name, description, and coin reward. Choose daily, every other day, weekdays, or specific weekdays in the repeat menu. The text field remains available for other supported schedules; open Schedule help for examples. Every-other-day schedules begin on the day they are created or changed. A task's due date can be chosen in the calendar or entered as text.
 
 2. **Tracking Habits**: Mark habits as complete on your dashboard. When a daily target is reached, the member who records that completion earns the habit's coin reward, at most once per local day. Only the member who recorded the latest completion can undo it.
 
 3. **Wishlist**: Add rewards to your wishlist that you can redeem with earned coins.
 
 4. **Statistics**: View your progress through the heatmap and streak counters. The calendar uses the timezone selected in Settings, and the dashboard advances to the next day when that timezone reaches midnight.
+
+5. **Organizing**: Choose Manual order on the Habits or Tasks page to drag items or move them with the arrow buttons. Pinned items stay ahead of unpinned items. Manual positions are saved with the items and are visible to everyone who shares them; your chosen sort mode and compact view stay in this browser. On the dashboard, switch Today's Overview between separate sections and a combined list of due habits, due tasks, and overdue tasks.
 
 ## Docker Deployment
 

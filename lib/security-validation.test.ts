@@ -13,6 +13,12 @@ describe('shared data validation', () => {
     expect(() => validateDrawing('[{"color":"#000000","thickness":4,"points":null}]')).toThrow()
     const habit: Habit = { id: '1', name: 'Habit', description: '', frequency: 'FREQ=DAILY', coinReward: 1, completions: [] }
     expect(validateHabit(habit)).toEqual(habit)
+    expect(validateHabit({ ...habit, position: 2 }).position).toBe(2)
+    expect(() => validateHabit({ ...habit, position: -1 })).toThrow('Invalid habit position')
+    expect(() => validateHabit({ ...habit, position: Number.POSITIVE_INFINITY })).toThrow('Invalid habit position')
+    expect(() => validateHabit({ ...habit, frequency: 'FREQ=DAILY;INTERVAL=2' })).toThrow('Invalid recurrence rule')
+    expect(validateHabit({ ...habit, frequency: 'DTSTART:20260307T000000Z\nRRULE:FREQ=DAILY;INTERVAL=2' }).frequency)
+      .toContain('INTERVAL=2')
     expect(() => validateHabit({ ...habit, frequency: 'FREQ=SECONDLY' })).toThrow()
     expect(() => validateHabit({ ...habit, frequency: 'bad' })).toThrow()
     expect(() => validateHabit({ ...habit, completionRecords: [{ id: 'record', actorId: 'member' }] }))

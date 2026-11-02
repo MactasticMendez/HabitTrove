@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SmilePlus } from 'lucide-react'
 import data from '@emoji-mart/data'
 import Picker from '@emoji-mart/react'
+import { useTranslations } from 'next-intl'
 
 interface EmojiPickerButtonProps {
   onEmojiSelect: (emoji: string) => void
@@ -14,6 +15,7 @@ interface EmojiPickerButtonProps {
 
 export default function EmojiPickerButton({ onEmojiSelect, inputIdToFocus }: EmojiPickerButtonProps) {
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false)
+  const t = useTranslations('Common')
 
   return (
     <Popover modal={false} open={isEmojiPickerOpen} onOpenChange={setIsEmojiPickerOpen}>
@@ -22,6 +24,7 @@ export default function EmojiPickerButton({ onEmojiSelect, inputIdToFocus }: Emo
           type="button"
           variant="ghost"
           size="icon"
+          aria-label={t('chooseEmoji')}
           className="h-8 w-8" // Consistent sizing
         >
           <SmilePlus className="h-4 w-4" /> {/* Consistent icon size */}

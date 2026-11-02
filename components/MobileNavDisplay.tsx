@@ -48,7 +48,7 @@ export default function MobileNavDisplay({ navItems }: MobileNavDisplayProps) {
             <Link
               key={item.label} // Assuming labels are unique
               href={item.href}
-              className="flex flex-col items-center justify-center py-2 text-gray-600 dark:text-gray-300 hover:text-blue-500 dark:hover:text-blue-400"
+              className="flex flex-col items-center justify-center py-2 text-gray-600 dark:text-gray-300 hover:text-blue-700 dark:hover:text-blue-300"
             >
               <item.icon className="h-6 w-6" />
               <span className="text-[0.625rem] mt-1 text-center leading-tight">{item.label}</span>

@@ -42,9 +42,9 @@ interface ItemSectionProps {
   title: string;
   items: Habit[];
   emptyMessage: string;
-  isTask: boolean;
-  viewLink: string;
-  addNewItem: () => void;
+  isTask: boolean | null;
+  viewLink?: string;
+  addNewItem: (isTask: boolean) => void;
 }
 
 const ItemSection = ({
@@ -66,13 +66,13 @@ const ItemSection = ({
 
   const today = getTodayInTimezone(settings.system.timezone);
   const currentTodayCompletions = completedHabitsMap.get(today) || [];
-  const currentBadgeType = isTask ? 'tasks' : 'habits';
+  const currentBadgeType = isTask === null ? null : isTask ? 'tasks' : 'habits';
 
-  const currentExpanded = isTask ? browserSettings.expandedTasks : browserSettings.expandedHabits;
+  const currentExpanded = isTask === null ? browserSettings.expandedToday : isTask ? browserSettings.expandedTasks : browserSettings.expandedHabits;
   const setCurrentExpanded = (value: boolean) => {
     setBrowserSettings(prev => ({
       ...prev,
-      [isTask ? 'expandedTasks' : 'expandedHabits']: value
+      [isTask === null ? 'expandedToday' : isTask ? 'expandedTasks' : 'expandedHabits']: value
     }));
   };
 
@@ -102,15 +102,13 @@ const ItemSection = ({
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold">{title}</h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 rounded-full hover:bg-primary/10 hover:text-primary"
-            onClick={addNewItem}
-          >
-            <Plus className="h-4 w-4" />
-            <span className="sr-only">{t(isTask ? 'addTaskButtonLabel' : 'addHabitButtonLabel')}</span>
-          </Button>
+          {(isTask === null ? [true, false] : [isTask]).map(task => (
+            <Button key={String(task)} variant="ghost" size="sm"
+              className="h-7 w-7 rounded-full hover:bg-primary/10 hover:text-primary"
+              onClick={() => addNewItem(task)} aria-label={t(task ? 'addTaskButtonLabel' : 'addHabitButtonLabel')}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          ))}
         </div>
         <div className="text-center text-muted-foreground text-sm py-4">
           {emptyMessage}
@@ -126,16 +124,16 @@ const ItemSection = ({
           <h3 className="font-semibold">{title}</h3>
         </div>
         <div className="flex items-center gap-2">
-          <CompletionCountBadge type={currentBadgeType} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 rounded-full hover:bg-primary/10 hover:text-primary"
-            onClick={addNewItem}
-          >
-            <Plus className="h-4 w-4" />
-            <span className="sr-only">{t(isTask ? 'addTaskButtonLabel' : 'addHabitButtonLabel')}</span>
-          </Button>
+          {currentBadgeType ? <CompletionCountBadge type={currentBadgeType} /> : (
+            <><CompletionCountBadge type="tasks" /><CompletionCountBadge type="habits" /></>
+          )}
+          {(isTask === null ? [true, false] : [isTask]).map(task => (
+            <Button key={String(task)} variant="ghost" size="sm"
+              className="h-7 w-7 rounded-full hover:bg-primary/10 hover:text-primary"
+              onClick={() => addNewItem(task)} aria-label={t(task ? 'addTaskButtonLabel' : 'addHabitButtonLabel')}>
+              <Plus className="h-4 w-4" />
+            </Button>
+          ))}
         </div>
       </div>
       <ul className={`grid gap-2 transition-all duration-300 ease-in-out ${currentExpanded ? 'max-h-none' : 'max-h-[200px]'} overflow-hidden`}>
@@ -173,11 +171,12 @@ const ItemSection = ({
           })
           .slice(0, currentExpanded ? undefined : 5)
           .map((habit) => {
+            const itemIsTask = Boolean(habit.isTask)
             const completionsToday = habit.completions.filter(completion =>
               isSameDate(t2d({ timestamp: completion, timezone: settings.system.timezone }), t2d({ timestamp: d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }), timezone: settings.system.timezone }))
             ).length
             const target = habit.targetCompletions || 1
-            const isCompleted = completionsToday >= target || (isTask && habit.archived)
+            const isCompleted = completionsToday >= target || (itemIsTask && habit.archived)
             const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
             return (
               <li
@@ -233,13 +232,13 @@ const ItemSection = ({
                             href={`/habits?highlight=${habit.id}`}
                             className="flex items-center gap-1 hover:text-primary transition-colors"
                             onClick={() => {
-                              const newViewType = isTask ? 'tasks' : 'habits';
+                              const newViewType = itemIsTask ? 'tasks' : 'habits';
                               if (browserSettings.viewType !== newViewType) {
                                 setBrowserSettings(prev => ({ ...prev, viewType: newViewType }));
                               }
                             }}
                           >
-                            {isTask && isTaskOverdue(habit, settings.system.timezone) && !isCompleted && (
+                            {itemIsTask && isTaskOverdue(habit, settings.system.timezone) && !isCompleted && (
                               <TooltipProvider>
                                 <Tooltip delayDuration={0}>
                                   <TooltipTrigger asChild>
@@ -261,6 +260,9 @@ const ItemSection = ({
                               {habit.name}
                             </span>
                           </Link>
+                          {isTask === null && <Badge variant="outline" className="text-xs">
+                            {t(itemIsTask ? 'taskType' : 'habitType')}
+                          </Badge>}
                           {habit.drawing && (
                             <div className="ml-2 pr-2">
                               <DrawingDisplay
@@ -333,7 +335,7 @@ const ItemSection = ({
             </>
           )}
         </button>
-        <Link
+        {viewLink && <Link
           href={viewLink}
           className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
           onClick={() => {
@@ -343,18 +345,18 @@ const ItemSection = ({
             }
           }}
         >
-          View
+          {t('viewButton')}
           <ArrowRight className="h-3 w-3" />
-        </Link>
+        </Link>}
       </div>
       {habitToDelete && (
         <ConfirmDialog
           isOpen={isConfirmDeleteDialogOpen}
           onClose={() => setIsConfirmDeleteDialogOpen(false)}
           onConfirm={confirmDelete}
-          title={`Delete ${isTask ? 'Task' : 'Habit'}`}
-          message={`Are you sure you want to delete "${habitToDelete.name}"? This action cannot be undone.`}
-          confirmText="Delete"
+          title={t(habitToDelete.isTask ? 'deleteTaskDialogTitle' : 'deleteHabitDialogTitle')}
+          message={t('confirmDeleteDialogMessage', { name: habitToDelete.name })}
+          confirmText={t('deleteButton')}
         />
       )}
       {habitToEdit && (
@@ -430,32 +432,53 @@ export default function DailyOverview({
   return (
     <>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>{t('todaysOverviewTitle')}</CardTitle>
+          <div role="group" aria-label={t('todayLayoutLabel')} className="flex gap-1">
+            <Button type="button" size="sm" variant={browserSettings.combinedToday ? 'outline' : 'secondary'}
+              aria-pressed={!browserSettings.combinedToday}
+              onClick={() => setBrowserSettings(previous => ({ ...previous, combinedToday: false }))}>
+              {t('separateView')}
+            </Button>
+            <Button type="button" size="sm" variant={browserSettings.combinedToday ? 'secondary' : 'outline'}
+              aria-pressed={Boolean(browserSettings.combinedToday)}
+              onClick={() => setBrowserSettings(previous => ({ ...previous, combinedToday: true }))}>
+              {t('combinedView')}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            {/* Tasks Section */}
-            {hasTasks && (
+            {browserSettings.combinedToday ? (
               <ItemSection
-                title={t('dailyTasksTitle')}
-                items={dailyTasks}
-                emptyMessage={t('noTasksDueTodayMessage')}
-                isTask={true}
-                viewLink="/habits?view=tasks"
-                addNewItem={() => setModalConfig({ isOpen: true, isTask: true })}
+                title={t('allDueTodayTitle')}
+                items={[...dailyTasks, ...dailyHabits]}
+                emptyMessage={t('noItemsDueTodayMessage')}
+                isTask={null}
+                addNewItem={task => setModalConfig({ isOpen: true, isTask: task })}
               />
+            ) : (
+              <>
+                {hasTasks && (
+                  <ItemSection
+                    title={t('dailyTasksTitle')}
+                    items={dailyTasks}
+                    emptyMessage={t('noTasksDueTodayMessage')}
+                    isTask={true}
+                    viewLink="/habits?view=tasks"
+                    addNewItem={task => setModalConfig({ isOpen: true, isTask: task })}
+                  />
+                )}
+                <ItemSection
+                  title={t('dailyHabitsTitle')}
+                  items={dailyHabits}
+                  emptyMessage={t('noHabitsDueTodayMessage')}
+                  isTask={false}
+                  viewLink="/habits"
+                  addNewItem={task => setModalConfig({ isOpen: true, isTask: task })}
+                />
+              </>
             )}
-
-            {/* Habits Section */}
-            <ItemSection
-              title={t('dailyHabitsTitle')}
-              items={dailyHabits}
-              emptyMessage={t('noHabitsDueTodayMessage')}
-              isTask={false}
-              viewLink="/habits"
-              addNewItem={() => setModalConfig({ isOpen: true, isTask: false })}
-            />
 
             <div className="space-y-2">
               <div className="flex items-center justify-between mb-2">

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react' // Added useMemo, useEffect
-import { Plus, ArrowUpNarrowWide, ArrowDownWideNarrow, Search } from 'lucide-react' // Added sort icons, Search icon
+import { useState, useMemo } from 'react'
+import { Plus, ArrowUpNarrowWide, ArrowDownWideNarrow, Search, GripVertical, ArrowUp, ArrowDown, Rows3 } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { habitsAtom, browserSettingsAtom, settingsAtom } from '@/lib/atoms'
+import { habitsAtom, browserSettingsAtom, settingsAtom, currentUserAtom } from '@/lib/atoms'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import EmptyState from './EmptyState'
 import { Button } from '@/components/ui/button'
@@ -19,36 +19,40 @@ import { Input } from '@/components/ui/input' // Added
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select' // Added
 import { Label } from '@/components/ui/label' // Added
 import { DateTime } from 'luxon' // Added
-import { getHabitFreq } from '@/lib/utils' // Added
+import { getHabitFreq, hasPermission } from '@/lib/utils'
 
 export default function HabitList() {
   const t = useTranslations('HabitList');
-  const { saveHabit, deleteHabit } = useHabits()
+  const { saveHabit, deleteHabit, reorderHabits } = useHabits()
   const [habitsData] = useAtom(habitsAtom) // setHabitsData removed as it's not used
-  const [browserSettings] = useAtom(browserSettingsAtom)
+  const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom)
+  const [currentUser] = useAtom(currentUserAtom)
   const [settings] = useAtom(settingsAtom)
   useTodayInTimezone(settings.system.timezone)
   const isTasksView = browserSettings.viewType === 'tasks'
 
-  type SortableField = 'name' | 'coinReward' | 'dueDate' | 'frequency';
+  type SortableField = 'custom' | 'name' | 'coinReward' | 'dueDate' | 'frequency';
   type SortOrder = 'asc' | 'desc';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<SortableField>('name');
+  const sortBy: SortableField = isTasksView ? browserSettings.taskSortBy ?? 'name' : browserSettings.habitSortBy ?? 'name';
+  const setSortBy = (value: SortableField) => setBrowserSettings(previous => ({
+    ...previous, [isTasksView ? 'taskSortBy' : 'habitSortBy']: value,
+  }))
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-
-  useEffect(() => {
-    if (isTasksView && sortBy === 'frequency') {
-      setSortBy('name');
-    } else if (!isTasksView && sortBy === 'dueDate') {
-      setSortBy('name');
-    }
-  }, [isTasksView, sortBy]);
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [reordering, setReordering] = useState(false)
+  const [orderError, setOrderError] = useState('')
+  const canReorder = sortBy === 'custom' && !searchTerm.trim() && hasPermission(currentUser, 'habit', 'write')
+  const originalOrder = useMemo(() => new Map(habitsData.habits.map((habit, index) => [habit.id, index])), [habitsData.habits])
 
   const compareHabits = useMemo(() => {
     return (a: Habit, b: Habit, currentSortBy: SortableField, currentSortOrder: SortOrder, tasksView: boolean): number => {
       let comparison = 0;
       switch (currentSortBy) {
+        case 'custom':
+          comparison = (a.position ?? originalOrder.get(a.id) ?? 0) - (b.position ?? originalOrder.get(b.id) ?? 0);
+          break;
         case 'name':
           comparison = a.name.localeCompare(b.name);
           break;
@@ -74,9 +78,9 @@ export default function HabitList() {
           }
           break;
       }
-      return currentSortOrder === 'asc' ? comparison : -comparison;
+      return currentSortBy === 'custom' || currentSortOrder === 'asc' ? comparison : -comparison;
     };
-  }, []);
+  }, [originalOrder]);
 
   const allHabitsInView = useMemo(() => {
     return habitsData.habits.filter(habit =>
@@ -124,6 +128,24 @@ export default function HabitList() {
     habitId: null
   })
 
+  const moveHabit = async (fromIndex: number, toIndex: number) => {
+    if (!canReorder || reordering || fromIndex < 0 || toIndex < 0 ||
+        fromIndex >= activeHabits.length || toIndex >= activeHabits.length ||
+        Boolean(activeHabits[fromIndex].pinned) !== Boolean(activeHabits[toIndex].pinned)) return
+    const reordered = [...activeHabits]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    setReordering(true)
+    try {
+      await reorderHabits(reordered.map(habit => habit.id), isTasksView)
+      setOrderError('')
+    } catch {
+      setOrderError(t('reorderFailed'))
+    } finally {
+      setReordering(false)
+    }
+  }
+
 
   return (
     <div>
@@ -165,20 +187,29 @@ export default function HabitList() {
               <SelectValue placeholder={t('sortByLabel')} />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="custom">{t('sortByCustom')}</SelectItem>
               <SelectItem value="name">{t('sortByName')}</SelectItem>
               <SelectItem value="coinReward">{t('sortByCoinReward')}</SelectItem>
               {isTasksView && <SelectItem value="dueDate">{t('sortByDueDate')}</SelectItem>}
               {!isTasksView && <SelectItem value="frequency">{t('sortByFrequency')}</SelectItem>}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}>
+          <Button variant="outline" size="icon" disabled={sortBy === 'custom'}
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}>
             {sortOrder === 'asc' ? <ArrowUpNarrowWide className="h-4 w-4" /> : <ArrowDownWideNarrow className="h-4 w-4" />}
             <span className="sr-only">{t('toggleSortOrderAriaLabel')}</span>
           </Button>
+          <Button variant={browserSettings.compactItems ? 'secondary' : 'outline'}
+            aria-pressed={Boolean(browserSettings.compactItems)}
+            onClick={() => setBrowserSettings(previous => ({ ...previous, compactItems: !previous.compactItems }))}>
+            <Rows3 className="mr-2 h-4 w-4" />{t('compactView')}
+          </Button>
         </div>
       </div>
+      {sortBy === 'custom' && <p className="text-sm text-muted-foreground mb-3">{t('manualOrderHelp')}</p>}
+      {orderError && <p role="alert" className="text-sm text-destructive mb-3">{orderError}</p>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+      <div className={`grid grid-cols-1 gap-4 items-stretch ${browserSettings.compactItems ? '' : 'md:grid-cols-2'}`}>
         {activeHabits.length === 0 && searchTerm.trim() ? (
           <div className="col-span-2 text-center text-muted-foreground py-8">
             {t(isTasksView ? 'noTasksFoundMessage' : 'noHabitsFoundMessage')}
@@ -192,16 +223,49 @@ export default function HabitList() {
             />
           </div>
         ) : (
-          activeHabits.map((habit: Habit) => (
-            <HabitItem
-              key={habit.id}
-              habit={habit}
-              onEdit={() => {
-                setEditingHabit(habit)
-                setModalConfig({ isOpen: true, isTask: isTasksView })
-              }}
-              onDelete={() => setDeleteConfirmation({ isOpen: true, habitId: habit.id })}
-            />
+          activeHabits.map((habit: Habit, index) => (
+            <div key={habit.id} className="min-w-0" onDragOver={event => {
+              const from = activeHabits.find(item => item.id === draggedId)
+              if (from && Boolean(from.pinned) === Boolean(habit.pinned)) event.preventDefault()
+            }} onDrop={event => {
+              event.preventDefault()
+              const fromIndex = activeHabits.findIndex(item => item.id === draggedId)
+              setDraggedId(null)
+              void moveHabit(fromIndex, index)
+            }}>
+              {canReorder && (
+                <div className="flex items-center gap-1 mb-1">
+                  <button type="button" draggable={!reordering}
+                    aria-label={t('dragToReorder', { name: habit.name })}
+                    onDragStart={event => {
+                      setDraggedId(habit.id)
+                      event.dataTransfer.effectAllowed = 'move'
+                    }} onDragEnd={() => setDraggedId(null)}
+                    className="cursor-grab rounded p-2 text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+                    <GripVertical className="h-4 w-4" />
+                  </button>
+                  <Button type="button" variant="ghost" size="icon" disabled={reordering || index === 0 ||
+                    Boolean(activeHabits[index - 1]?.pinned) !== Boolean(habit.pinned)}
+                    aria-label={t('moveUp', { name: habit.name })} onClick={() => void moveHabit(index, index - 1)}>
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon" disabled={reordering || index === activeHabits.length - 1 ||
+                    Boolean(activeHabits[index + 1]?.pinned) !== Boolean(habit.pinned)}
+                    aria-label={t('moveDown', { name: habit.name })} onClick={() => void moveHabit(index, index + 1)}>
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              <HabitItem
+                habit={habit}
+                compact={Boolean(browserSettings.compactItems)}
+                onEdit={() => {
+                  setEditingHabit(habit)
+                  setModalConfig({ isOpen: true, isTask: isTasksView })
+                }}
+                onDelete={() => setDeleteConfirmation({ isOpen: true, habitId: habit.id })}
+              />
+            </div>
           ))
         )}
 
@@ -216,6 +280,7 @@ export default function HabitList() {
               <HabitItem
                 key={habit.id}
                 habit={habit}
+                compact={Boolean(browserSettings.compactItems)}
                 onEdit={() => {
                   setEditingHabit(habit)
                   setModalConfig({ isOpen: true, isTask: isTasksView })
