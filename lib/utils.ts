@@ -194,6 +194,12 @@ export function calculateTotalSpent(transactions: CoinTransaction[]): number {
   );
 }
 
+export function filterCoinTransactions(transactions: CoinTransaction[], filter: 'all' | 'redemptions'): CoinTransaction[] {
+  return filter === 'redemptions'
+    ? transactions.filter(transaction => transaction.type === 'WISH_REDEMPTION')
+    : transactions
+}
+
 export function calculateCoinsSpentToday(transactions: CoinTransaction[], timezone: string): number {
   const today = getTodayInTimezone(timezone);
   return Math.abs(

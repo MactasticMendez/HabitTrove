@@ -1,48 +1,33 @@
 'use client'
 
-import { Habit } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { d2s, getNow } from '@/lib/utils' // Removed getCompletedHabitsForDate
+import { DateTime } from 'luxon'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { settingsAtom, hasTasksAtom, completedHabitsMapAtom } from '@/lib/atoms' // Added completedHabitsMapAtom
+import { Flame } from 'lucide-react'
+import { settingsAtom, hasTasksAtom, completedHabitsMapAtom } from '@/lib/atoms'
+import { getActivityDays, getCurrentStreak } from '@/lib/activity'
+import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 
-interface HabitStreakProps {
-  habits: Habit[]
-}
-
-export default function HabitStreak({ habits }: HabitStreakProps) {
+export default function HabitStreak() {
   const t = useTranslations('HabitStreak');
   const [settings] = useAtom(settingsAtom)
   const [hasTasks] = useAtom(hasTasksAtom)
-  const [completedHabitsMap] = useAtom(completedHabitsMapAtom) // Use the atom
-
-  // Get the last 7 days of data
-  const dates = Array.from({ length: 7 }, (_, i) => {
-    const d = getNow({ timezone: settings.system.timezone });
-    return d2s({ dateTime: d.minus({ days: i }), format: 'yyyy-MM-dd', timezone: settings.system.timezone });
-  }).reverse()
-
-  const completions = dates.map(date => {
-    // Get completed habits for the date from the map
-    const completedOnDate = completedHabitsMap.get(date) || [];
-
-    // Filter the completed list to count habits and tasks
-    const completedHabitsCount = completedOnDate.filter(h => !h.isTask).length;
-    const completedTasksCount = completedOnDate.filter(h => h.isTask).length;
-
-    return {
-      date,
-      habits: completedHabitsCount,
-      tasks: completedTasksCount
-    };
-  });
+  const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
+  const today = useTodayInTimezone(settings.system.timezone)
+  const currentDay = DateTime.fromISO(today, { zone: settings.system.timezone })
+  const completions = getActivityDays(completedHabitsMap, currentDay, 7)
+  const currentStreak = getCurrentStreak(completedHabitsMap, currentDay)
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('dailyCompletionStreakTitle')}</CardTitle>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-label={t('currentStreak', { count: currentStreak })}>
+          <Flame className="h-4 w-4 text-orange-600 dark:text-orange-400" aria-hidden="true" />
+          {t('currentStreak', { count: currentStreak })}
+        </p>
       </CardHeader>
       <CardContent>
         <div className="w-full aspect-[2/1]">
@@ -59,10 +44,11 @@ export default function HabitStreak({ habits }: HabitStreakProps) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" tick={{ fill: 'hsl(var(--foreground))' }} />
               <YAxis allowDecimals={false} tick={{ fill: 'hsl(var(--foreground))' }} />
-              <Tooltip formatter={(value, name) => {
-                const translatedName = name === 'habits' ? t('tooltipHabitsLabel') : t('tooltipTasksLabel');
-                return [`${value} ${translatedName}`, t('tooltipCompletedLabel')];
-              }} />
+              <Tooltip
+                labelFormatter={label => DateTime.fromISO(String(label), { zone: settings.system.timezone })
+                  .setLocale(settings.system.language).toLocaleString(DateTime.DATE_FULL)}
+                formatter={(value, name) => [`${value} ${name}`, t('tooltipCompletedLabel')]}
+              />
               <Line
                 type="monotone"
                 name={t('tooltipHabitsLabel')}

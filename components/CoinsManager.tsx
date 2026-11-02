@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react' // Import useEffect, useRef
 import { useSearchParams } from 'next/navigation' // Import useSearchParams
-import { t2d, d2s } from '@/lib/utils'
+import { t2d, d2s, filterCoinTransactions } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { FormattedNumber } from '@/components/FormattedNumber'
 import { History } from 'lucide-react'
@@ -41,11 +41,14 @@ export default function CoinsManager() {
   const [amount, setAmount] = useState(DEFAULT_AMOUNT)
   const [pageSize, setPageSize] = useState(50)
   const [currentPage, setCurrentPage] = useState(1)
+  const [transactionFilter, setTransactionFilter] = useState<'all' | 'redemptions'>('all')
   const [note, setNote] = useState('')
   const searchParams = useSearchParams()
   const highlightId = searchParams.get('highlight')
   const userIdFromQuery = searchParams.get('user') // Get user ID from query
   const transactionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const visibleTransactions = filterCoinTransactions(transactions, transactionFilter)
+  const totalPages = Math.max(1, Math.ceil(visibleTransactions.length / pageSize))
 
   // Effect to set selected user from query param if admin
   useEffect(() => {
@@ -263,7 +266,19 @@ export default function CoinsManager() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+                <select
+                  aria-label={t('transactionHistoryTitle')}
+                  className="border rounded p-1 bg-background"
+                  value={transactionFilter}
+                  onChange={event => {
+                    setTransactionFilter(event.target.value as 'all' | 'redemptions')
+                    setCurrentPage(1)
+                  }}
+                >
+                  <option value="all">{t('allTransactionsLabel')}</option>
+                  <option value="redemptions">{t('transactionTypeWishRedemption')}</option>
+                </select>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">{t('showLabel')}</span>
                   <select
@@ -281,11 +296,11 @@ export default function CoinsManager() {
                   <span className="text-sm text-muted-foreground">{t('entriesSuffix')}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {t('showingEntries', { from: Math.min((currentPage - 1) * pageSize + 1, transactions.length), to: Math.min(currentPage * pageSize, transactions.length), total: transactions.length })}
+                  {t('showingEntries', { from: visibleTransactions.length === 0 ? 0 : Math.min((currentPage - 1) * pageSize + 1, visibleTransactions.length), to: Math.min(currentPage * pageSize, visibleTransactions.length), total: visibleTransactions.length })}
                 </div>
               </div>
 
-              {transactions.length === 0 ? (
+              {visibleTransactions.length === 0 ? (
                 <EmptyState
                   icon={History}
                   title={t('noTransactionsTitle')}
@@ -293,7 +308,7 @@ export default function CoinsManager() {
                 />
               ) : (
                 <>
-                  {transactions
+                  {visibleTransactions
                     .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                     .map((transaction) => {
                       const getBadgeStyles = () => {
@@ -396,21 +411,21 @@ export default function CoinsManager() {
                         <span className="text-sm font-medium">{t('pageLabel')}</span>
                         <span className="text-sm font-bold">{currentPage}</span>
                         <span className="text-sm font-medium">{t('ofLabel')}</span>
-                        <span className="text-sm font-bold">{Math.ceil(transactions.length / pageSize)}</span>
+                        <span className="text-sm font-bold">{totalPages}</span>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(transactions.length / pageSize), prev + 1))}
-                        disabled={currentPage >= Math.ceil(transactions.length / pageSize)}
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage >= totalPages}
                       >
                         ›
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setCurrentPage(Math.ceil(transactions.length / pageSize))}
-                        disabled={currentPage >= Math.ceil(transactions.length / pageSize)}
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={currentPage >= totalPages}
                       >
                         »
                       </Button>

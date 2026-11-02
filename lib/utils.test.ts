@@ -16,6 +16,7 @@ import {
   calculateCoinsEarnedToday,
   calculateTotalEarned,
   calculateTotalSpent,
+  filterCoinTransactions,
   calculateCoinsSpentToday,
   isHabitDueToday,
   isHabitDue,
@@ -509,6 +510,11 @@ describe('transaction calculations', () => {
   test('calculateTotalSpent should calculate total spent excluding undos', () => {
     const result = calculateTotalSpent(testTransactions)
     expect(result).toBe(15) // Only the 15 wish redemption (excluding the 5 undo)
+  })
+
+  test('redemption history excludes other debits and retains receipt order', () => {
+    expect(filterCoinTransactions(testTransactions, 'redemptions').map(transaction => transaction.id)).toEqual(['4'])
+    expect(filterCoinTransactions(testTransactions, 'all')).toBe(testTransactions)
   })
 
   test('calculateCoinsSpentToday should calculate today\'s spending excluding undos', () => {

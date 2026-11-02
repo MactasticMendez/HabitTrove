@@ -77,9 +77,15 @@
   },
   "HabitStreak": {
     "dailyCompletionStreakTitle": "일일 달성 연속 기록",
+    "currentStreak": "현재 연속 기록: {count}",
     "tooltipHabitsLabel": "습관",
     "tooltipTasksLabel": "할 일",
     "tooltipCompletedLabel": "완료됨"
+  },
+  "HabitHeatmap": {
+    "title": "활동 달력",
+    "summary": "최근 12주: {count}회 완료",
+    "dayActivity": "{date}: {count}회 완료"
   },
   "CoinBalance": {
     "coinBalanceTitle": "코인 잔액"
@@ -206,6 +212,7 @@
     "todaysSpentLabel": "오늘 사용 코인",
     "todaysTransactionsLabel": "오늘 거래 횟수",
     "transactionHistoryTitle": "거래 내역",
+    "allTransactionsLabel": "모든 거래",
     "showLabel": "표시:",
     "entriesSuffix": "개",
     "showingEntries": "{from}개부터 {to}개까지 총 {total}개 항목 표시",

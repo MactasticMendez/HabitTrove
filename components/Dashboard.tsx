@@ -4,6 +4,7 @@ import { useAtom } from 'jotai'
 import { wishlistAtom, habitsAtom, settingsAtom } from '@/lib/atoms'
 import DailyOverview from './DailyOverview'
 import HabitStreak from './HabitStreak'
+import HabitHeatmap from './HabitHeatmap'
 import CoinBalance from './CoinBalance'
 // import { useHabits } from '@/hooks/useHabits' // useHabits is not used
 import { useCoins } from '@/hooks/useCoins'
@@ -25,14 +26,14 @@ export default function Dashboard() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <CoinBalance coinBalance={balance} />
-        <HabitStreak habits={habits} />
+        <HabitStreak />
         <DailyOverview
           wishlistItems={wishlistItems}
           habits={habits}
           coinBalance={balance}
         />
 
-        {/* <HabitHeatmap habits={habits} /> */}
+        <HabitHeatmap />
       </div>
     </div>
   )
