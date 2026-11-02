@@ -3,7 +3,6 @@ import Credentials from 'next-auth/providers/credentials'
 import type { Provider } from 'next-auth/providers'
 import { authenticateLocalUser, findUserByAuthentikSubject, findUserById, linkUserToAuthentikSubject } from './lib/auth-store'
 import { signInSchema } from './lib/zod'
-import type { SessionUser } from './lib/types'
 import { cookies } from 'next/headers'
 import { authentikLinkCookie, verifyAuthentikLinkIntent } from './lib/authentik-link'
 
@@ -40,7 +39,7 @@ if (process.env.AUTHENTIK_ISSUER && process.env.AUTHENTIK_CLIENT_ID && process.e
         }
         user = await linkUserToAuthentikSubject(intent.userId, intent.authVersion, intent.email, profile.sub)
       }
-      return { id: user.id, authVersion: user.authVersion ?? 0 }
+      return { id: profile.sub, localUserId: user.id, authVersion: user.authVersion ?? 0 }
     },
   })
 }
@@ -50,10 +49,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: 'jwt', maxAge: 24 * 60 * 60 },
   providers,
   callbacks: {
-    jwt: async ({ token, user }) => {
+    jwt: async ({ token, user, account }) => {
       if (user) {
-        token.id = user.id
-        token.authVersion = (user as SessionUser).authVersion ?? 0
+        const userId = account?.provider === 'authentik'
+          ? 'localUserId' in user ? user.localUserId : undefined
+          : user.id
+        if (typeof userId !== 'string') return null
+        const current = await findUserById(userId)
+        const authVersion = 'authVersion' in user ? user.authVersion : undefined
+        if (!current || typeof authVersion !== 'number' ||
+            (current.authVersion ?? 0) !== authVersion ||
+            (account?.provider === 'authentik' && current.authentikSubject !== account.providerAccountId)) return null
+        token.id = current.id
+        token.authVersion = current.authVersion ?? 0
         return token
       }
       if (typeof token.id !== 'string' || typeof token.authVersion !== 'number') return null
