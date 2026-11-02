@@ -34,7 +34,7 @@ Want to try HabitTrove before installing? Visit the public [demo instance](https
 
 3. **Wishlist**: Add rewards to your wishlist that you can redeem with earned coins.
 
-4. **Statistics**: View your progress through the heatmap and streak counters.
+4. **Statistics**: View your progress through the heatmap and streak counters. The calendar uses the timezone selected in Settings, and the dashboard advances to the next day when that timezone reaches midnight.
 
 ## Docker Deployment
 

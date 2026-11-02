@@ -141,6 +141,7 @@ export function useHabits() {
     if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
     const storedHabit = habitsData.habits.find(item => item.id === habit.id)
     const newHabit = {
+      ...storedHabit,
       ...habit,
       id: habit.id || getNowInMilliseconds().toString(),
       ...(storedHabit?.completionRecords && { completionRecords: storedHabit.completionRecords }),

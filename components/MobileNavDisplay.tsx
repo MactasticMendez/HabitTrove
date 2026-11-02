@@ -14,6 +14,7 @@ interface MobileNavDisplayProps {
 
 // detect iOS: https://stackoverflow.com/a/9039885
 function iOS() {
+  if (typeof navigator === 'undefined' || typeof document === 'undefined') return false
   return [
     'iPad Simulator',
     'iPhone Simulator',
