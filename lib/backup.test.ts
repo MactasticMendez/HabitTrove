@@ -1,7 +1,9 @@
-import { expect, spyOn, test } from 'bun:test'
+import { expect, mock, spyOn, test } from 'bun:test'
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
+
+mock.module('server-only', () => ({}))
 
 test('creates a ZIP backup containing the data directory', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-backup-'))

@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { getCurrentUser } from '@/lib/server-helpers'
 import { authenticateLocalUser } from '@/lib/auth-store'
 import { authentikLinkCookie, createAuthentikLinkIntent } from '@/lib/authentik-link'
+import { getActiveOidcConfig } from '@/lib/admin-config'
 
 export async function signIn(username: string, password: string) {
   try {
@@ -31,15 +32,17 @@ export async function signOut() {
 }
 
 export async function signInWithAuthentik() {
-  if (!process.env.AUTHENTIK_ISSUER || !process.env.AUTHENTIK_CLIENT_ID || !process.env.AUTHENTIK_CLIENT_SECRET) {
-    throw new Error('Authentik sign-in is not configured')
+  const oidc = await getActiveOidcConfig()
+  if (!oidc) {
+    throw new Error('OIDC sign-in is not configured')
   }
-  await signInNextAuth('authentik', { redirectTo: '/' })
+  await signInNextAuth(oidc.providerId, { redirectTo: '/' })
 }
 
 export async function startAuthentikLink(_previous: { error: string }, formData: FormData): Promise<{ error: string }> {
-  if (!process.env.AUTHENTIK_ISSUER || !process.env.AUTHENTIK_CLIENT_ID || !process.env.AUTHENTIK_CLIENT_SECRET) {
-    return { error: 'Authentik sign-in is not configured' }
+  const oidc = await getActiveOidcConfig()
+  if (!oidc) {
+    return { error: 'OIDC sign-in is not configured' }
   }
   const user = await getCurrentUser()
   const password = formData.get('password')
@@ -54,9 +57,9 @@ export async function startAuthentikLink(_previous: { error: string }, formData:
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    path: '/api/auth/callback/authentik',
+    path: `/api/auth/callback/${oidc.providerId}`,
     maxAge: 300,
   })
-  await signInNextAuth('authentik', { redirectTo: '/settings' })
+  await signInNextAuth(oidc.providerId, { redirectTo: '/settings' })
   return { error: '' }
 }
