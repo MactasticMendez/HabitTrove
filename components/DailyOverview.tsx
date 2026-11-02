@@ -12,6 +12,7 @@ import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { pomodoroAtom, settingsAtom, completedHabitsMapAtom, browserSettingsAtom, hasTasksAtom, currentUserAtom } from '@/lib/atoms'
 import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue } from '@/lib/utils'
+import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -381,7 +382,7 @@ export default function DailyOverview({
   const [settings] = useAtom(settingsAtom)
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom)
-  const today = getTodayInTimezone(settings.system.timezone)
+  const today = useTodayInTimezone(settings.system.timezone)
   const todayCompletions = completedHabitsMap.get(today) || []
   const { saveHabit } = useHabits()
 

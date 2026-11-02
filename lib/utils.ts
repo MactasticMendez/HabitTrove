@@ -19,6 +19,20 @@ export function getTodayInTimezone(timezone: string): string {
   return getISODate({ dateTime: now, timezone });
 }
 
+export function millisecondsUntilNextDay(timezone: string, now: DateTime = DateTime.now()): number {
+  const zonedNow = now.setZone(timezone)
+  return zonedNow.plus({ days: 1 }).startOf('day').toMillis() - zonedNow.toMillis()
+}
+
+// DayPicker works with browser-local Date values; keep the configured calendar day as a floating date.
+export function toCalendarPickerDate(date: DateTime): Date {
+  return new Date(date.year, date.month - 1, date.day, 12)
+}
+
+export function fromCalendarPickerDate(date: Date, timezone: string): DateTime {
+  return DateTime.fromObject({ year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() }, { zone: timezone })
+}
+
 // round a number to the nearest integer
 export function roundToInteger(value: number): number {
   return Math.round(value);
