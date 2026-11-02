@@ -10,8 +10,8 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { pomodoroAtom, settingsAtom, completedHabitsMapAtom, browserSettingsAtom, hasTasksAtom } from '@/lib/atoms'
-import { getTodayInTimezone, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue } from '@/lib/utils'
+import { pomodoroAtom, settingsAtom, completedHabitsMapAtom, browserSettingsAtom, hasTasksAtom, currentUserAtom } from '@/lib/atoms'
+import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -55,10 +55,12 @@ const ItemSection = ({
   addNewItem,
 }: ItemSectionProps) => {
   const t = useTranslations('DailyOverview');
+  const tHabitItem = useTranslations('HabitItem');
   const { completeHabit, undoComplete, saveHabit, deleteHabit, archiveHabit, habitFreqMap } = useHabits();
   const [_, setPomo] = useAtom(pomodoroAtom);
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom);
   const [settings] = useAtom(settingsAtom);
+  const [currentUser] = useAtom(currentUserAtom);
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom);
 
   const today = getTodayInTimezone(settings.system.timezone);
@@ -175,6 +177,7 @@ const ItemSection = ({
             ).length
             const target = habit.targetCompletions || 1
             const isCompleted = completionsToday >= target || (isTask && habit.archived)
+            const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
             return (
               <li
                 className={`flex items-center justify-between text-sm p-2 rounded-md
@@ -187,6 +190,9 @@ const ItemSection = ({
                       <div className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
                         <div className="flex-shrink-0">
                           <button
+                            type="button"
+                            aria-label={`${tHabitItem(isCompleted ? 'undoButton' : 'completeButton')}: ${habit.name}`}
+                            disabled={isCompleted && undoIndex < 0}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();

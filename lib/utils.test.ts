@@ -16,6 +16,7 @@ import {
   calculateCoinsSpentToday,
   isHabitDueToday,
   isHabitDue,
+  getUndoableCompletionIndex,
   uuid,
   isTaskOverdue,
   deserializeRRule,
@@ -51,6 +52,20 @@ test('external popups reject unsafe schemes and isolate the opener', () => {
     if (original) Object.defineProperty(globalThis, 'window', original)
     else Reflect.deleteProperty(globalThis, 'window')
   }
+})
+
+test('shared completion undo is available only to its recorder', () => {
+  const timestamp = '2026-11-02T12:00:00.000Z'
+  const habit: Habit = {
+    id: 'shared', name: 'Shared', description: '', frequency: 'FREQ=DAILY', coinReward: 2,
+    completions: [timestamp], completionRecords: [{ id: 'event', actorId: 'member' }],
+    userIds: ['member', 'other'],
+  }
+  const date = DateTime.fromISO(timestamp)
+  expect(getUndoableCompletionIndex(habit, 'member', date, 'UTC')).toBe(0)
+  expect(getUndoableCompletionIndex(habit, 'other', date, 'UTC')).toBe(-1)
+  expect(getUndoableCompletionIndex({ ...habit, completionRecords: undefined }, 'member', date, 'UTC')).toBe(-1)
+  expect(getUndoableCompletionIndex({ ...habit, userIds: ['member'], completionRecords: undefined }, 'member', date, 'UTC')).toBe(0)
 })
 
 describe('cn utility', () => {
