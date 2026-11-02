@@ -47,6 +47,13 @@ export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssue
   hasAuthentik: boolean
 }
 
+export type HabitCompletionRecord = {
+  id: string
+  actorId: UserId
+  rewardedUserIds?: UserId[]
+  autoArchived?: boolean
+}
+
 export type Habit = {
   id: string
   name: string
@@ -55,6 +62,7 @@ export type Habit = {
   coinReward: number
   targetCompletions?: number // Optional field, default to 1
   completions: string[] // Array of UTC ISO date strings
+  completionRecords?: (HabitCompletionRecord | null)[] // Aligns with completions; null denotes a legacy completion without an actor
   isTask?: boolean // mark the habit as a task
   archived?: boolean // mark the habit as archived
   pinned?: boolean // mark the habit as pinned
@@ -88,6 +96,8 @@ export interface CoinTransaction {
   relatedItemId?: string;
   note?: string;
   userId?: UserId;
+  actorId?: UserId;
+  completionId?: string;
 }
 
 export interface UserData {

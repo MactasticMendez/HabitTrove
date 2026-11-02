@@ -1,7 +1,7 @@
 import { Habit, User } from '@/lib/types'
 import { useAtom } from 'jotai'
 import { settingsAtom, pomodoroAtom, browserSettingsAtom, usersAtom, currentUserAtom } from '@/lib/atoms'
-import { getCompletionsForToday, isTaskOverdue, convertMachineReadableFrequencyToHumanReadable } from '@/lib/utils'
+import { getCompletionsForToday, getNow, getUndoableCompletionIndex, isTaskOverdue, convertMachineReadableFrequencyToHumanReadable } from '@/lib/utils'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Coins, Edit, Check, Undo2, MoreVertical, Pin } from 'lucide-react'
@@ -57,6 +57,7 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
   const [currentUser] = useAtom(currentUserAtom)
   const canWrite = hasPermission(currentUser, 'habit', 'write')
   const canInteract = hasPermission(currentUser, 'habit', 'interact')
+  const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
   const [browserSettings] = useAtom(browserSettingsAtom)
   const isTasksView = browserSettings.viewType === 'tasks'
   const isRecurRule = !isTasksView
@@ -179,12 +180,13 @@ export default function HabitItem({ habit, onEdit, onDelete }: HabitItemProps) {
               )}
             </Button>
           </div>
-          {completionsToday > 0 && !habit.archived && (
+          {completionsToday > 0 && undoIndex >= 0 && (
             <Button
               variant="outline"
               size="sm"
+              aria-label={`${t('undoButton')}: ${habit.name}`}
               onClick={async () => await undoComplete(habit)}
-              disabled={!canWrite}
+              disabled={!canInteract}
               className="w-10 sm:w-auto"
             >
               <Undo2 className="h-4 w-4" />

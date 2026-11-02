@@ -1,7 +1,7 @@
 import { useAtom, atom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { habitsAtom, coinsAtom, settingsAtom, usersAtom, habitFreqMapAtom, currentUserAtom } from '@/lib/atoms'
-import { addCoins, removeCoins, saveHabitsData } from '@/app/actions/data'
+import { recordHabitCompletion, undoHabitCompletion, saveHabitsData } from '@/app/actions/data'
 import { Habit, Permission, SafeUser, User } from '@/lib/types'
 import { toast } from '@/hooks/use-toast'
 import { DateTime } from 'luxon'
@@ -9,6 +9,7 @@ import {
   getNowInMilliseconds,
   getTodayInTimezone,
   isSameDate,
+  getUndoableCompletionIndex,
   t2d,
   d2t,
   getNow,
@@ -56,7 +57,7 @@ export function useHabits() {
   const [usersData] = useAtom(usersAtom)
   const [currentUser] = useAtom(currentUserAtom)
   const [habitsData, setHabitsData] = useAtom(habitsAtom)
-  const [coins, setCoins] = useAtom(coinsAtom)
+  const [, setCoins] = useAtom(coinsAtom)
   const [settings] = useAtom(settingsAtom)
   const [habitFreqMap] = useAtom(habitFreqMapAtom)
 
@@ -64,16 +65,10 @@ export function useHabits() {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     const timezone = settings.system.timezone
     const today = getTodayInTimezone(timezone)
-
-    // Get current completions for today
     const completionsToday = getCompletionsForDate({
-      habit,
-      date: today,
-      timezone
+      habit, date: today, timezone
     })
     const target = habit.targetCompletions || 1
-
-    // Check if already completed
     if (completionsToday >= target) {
       toast({
         title: t("alreadyCompletedTitle"),
@@ -82,118 +77,35 @@ export function useHabits() {
       })
       return
     }
-
-    // Add new completion
-    const updatedHabit = {
-      ...habit,
-      completions: [...habit.completions, d2t({ dateTime: getNow({ timezone }) })],
-      // Archive the habit if it's a task and we're about to reach the target
-      archived: habit.isTask && completionsToday + 1 === target ? true : habit.archived
-    }
-
-    const updatedHabits = habitsData.habits.map(h =>
-      h.id === habit.id ? updatedHabit : h
-    )
-
-    await saveHabitsData({ habits: updatedHabits })
-
-    // Check if we've now reached the target
-    const isTargetReached = completionsToday + 1 === target
-    if (isTargetReached) {
-      const updatedCoins = await addCoins({
-        amount: habit.coinReward,
-        description: `Completed: ${habit.name}`,
-        type: habit.isTask ? 'TASK_COMPLETION' : 'HABIT_COMPLETION',
-        relatedItemId: habit.id,
-      })
-      isTargetReached && playSound()
+    try {
+      const result = await recordHabitCompletion(habit.id, d2t({ dateTime: getNow({ timezone }) }))
+      const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
+      setHabitsData({ habits: updatedHabits })
+      setCoins(result.coins)
+      if (result.targetReached) playSound()
       toast({
-        title: t("completedTitle"),
-        description: t("earnedCoinsDescription", { coinReward: habit.coinReward }),
-        action: <ToastAction altText={tCommon('undoButton')} className="gap-2" onClick={() => undoComplete(updatedHabit)}>
+        title: result.targetReached ? t("completedTitle") : t("progressTitle"),
+        description: result.rewarded
+          ? t("earnedCoinsDescription", { coinReward: habit.coinReward })
+          : t("progressDescription", { count: completionsToday + 1, target }),
+        action: <ToastAction altText={tCommon('undoButton')} className="gap-2"
+          onClick={() => undoComplete(result.habit, result.completionIndex, result.completionTimestamp)}>
           <Undo2 className="h-4 w-4" />{tCommon('undoButton')}
         </ToastAction>
       })
-      setCoins(updatedCoins)
-    } else {
-      toast({
-        title: t("progressTitle"),
-        description: t("progressDescription", { count: completionsToday + 1, target }),
-        action: <ToastAction altText={tCommon('undoButton')} className="gap-2" onClick={() => undoComplete(updatedHabit)}>
-          <Undo2 className="h-4 w-4" />{tCommon('undoButton')}
-        </ToastAction>
-      })
-    }
-    // move atom update at the end of function to improve UI responsiveness
-    setHabitsData({ habits: updatedHabits })
-
-    return {
-      updatedHabits,
-      newBalance: coins.balance,
-      newTransactions: coins.transactions
+      return { updatedHabits, newBalance: result.coins.balance, newTransactions: result.coins.transactions }
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: tCommon('permissionDeniedDescription', { action: 'interact', resource: 'habit' }), variant: 'destructive' })
     }
   }
 
-  const undoComplete = async (habit: Habit) => {
+  const undoComplete = async (habit: Habit, selectedIndex?: number, selectedTimestamp?: string) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     const timezone = settings.system.timezone
     const today = t2d({ timestamp: getTodayInTimezone(timezone), timezone })
-
-    // Get today's completions
-    const todayCompletions = habit.completions.filter(completion =>
-      isSameDate(t2d({ timestamp: completion, timezone }), today)
-    )
-
-    if (todayCompletions.length > 0) {
-      // Remove the most recent completion and unarchive if needed
-      const updatedHabit = {
-        ...habit,
-        completions: habit.completions.filter(
-          (_, index) => index !== habit.completions.length - 1
-        ),
-        archived: habit.isTask ? false : habit.archived // Unarchive if it's a task
-      }
-
-      const updatedHabits = habitsData.habits.map(h =>
-        h.id === habit.id ? updatedHabit : h
-      )
-
-      await saveHabitsData({ habits: updatedHabits })
-      setHabitsData({ habits: updatedHabits })
-
-      // If we were at the target, remove the coins
-      const target = habit.targetCompletions || 1
-      if (todayCompletions.length === target) {
-        const updatedCoins = await removeCoins({
-          amount: habit.coinReward,
-          description: `Undid completion: ${habit.name}`,
-          type: habit.isTask ? 'TASK_UNDO' : 'HABIT_UNDO',
-          relatedItemId: habit.id,
-        })
-        setCoins(updatedCoins)
-      }
-
-      toast({
-        title: t("completionUndoneTitle"),
-        description: t("completionUndoneDescription", {
-          count: getCompletionsForDate({
-            habit: updatedHabit,
-            date: today,
-            timezone
-          }),
-          target
-        }),
-        action: <ToastAction altText={tCommon('redoButton')} onClick={() => completeHabit(updatedHabit)}>
-          <Undo2 className="h-4 w-4" />{tCommon('redoButton')}
-        </ToastAction>
-      })
-
-      return {
-        updatedHabits,
-        newBalance: coins.balance,
-        newTransactions: coins.transactions
-      }
-    } else {
+    const index = selectedIndex ?? getUndoableCompletionIndex(habit, currentUser?.id, today, timezone)
+    const timestamp = selectedTimestamp ?? habit.completions[index]
+    if (index < 0 || !timestamp) {
       toast({
         title: t("noCompletionsToUndoTitle"),
         description: t("noCompletionsToUndoDescription"),
@@ -201,13 +113,37 @@ export function useHabits() {
       })
       return
     }
+    try {
+      const result = await undoHabitCompletion(habit.id, index, timestamp)
+      const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
+      setHabitsData({ habits: updatedHabits })
+      setCoins(result.coins)
+      const undoneDate = t2d({ timestamp, timezone })
+      toast({
+        title: t("completionUndoneTitle"),
+        description: t("completionUndoneDescription", {
+          count: getCompletionsForDate({ habit: result.habit, date: undoneDate, timezone }),
+          target: habit.targetCompletions || 1
+        }),
+        action: <ToastAction altText={tCommon('redoButton')}
+          onClick={() => isSameDate(undoneDate, today)
+            ? completeHabit(result.habit) : completePastHabit(result.habit, undoneDate)}>
+          <Undo2 className="h-4 w-4" />{tCommon('redoButton')}
+        </ToastAction>
+      })
+      return { updatedHabits, newBalance: result.coins.balance, newTransactions: result.coins.transactions }
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: tCommon('permissionDeniedDescription', { action: 'interact', resource: 'habit' }), variant: 'destructive' })
+    }
   }
 
   const saveHabit = async (habit: Omit<Habit, 'id'> & { id?: string }) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
+    const storedHabit = habitsData.habits.find(item => item.id === habit.id)
     const newHabit = {
       ...habit,
-      id: habit.id || getNowInMilliseconds().toString()
+      id: habit.id || getNowInMilliseconds().toString(),
+      ...(storedHabit?.completionRecords && { completionRecords: storedHabit.completionRecords }),
     }
     const updatedHabits = habit.id
       ? habitsData.habits.map(h => h.id === habit.id ? newHabit : h)
@@ -255,44 +191,24 @@ export function useHabits() {
       millisecond: now.millisecond
     })
     const completionTimestamp = d2t({ dateTime: completionDateTime })
-    const updatedHabit = {
-      ...habit,
-      completions: [...habit.completions, completionTimestamp]
-    }
-
-    const updatedHabits = habitsData.habits.map(h =>
-      h.id === habit.id ? updatedHabit : h
-    )
-
-    await saveHabitsData({ habits: updatedHabits })
-    setHabitsData({ habits: updatedHabits })
-
-    // Check if we've now reached the target
-    const isTargetReached = completionsOnDate + 1 === target
-    if (isTargetReached) {
-      const updatedCoins = await addCoins({
-        amount: habit.coinReward,
-        description: `Completed: ${habit.name} on ${d2s({ dateTime: date, timezone, format: 'yyyy-MM-dd' })}`,
-        type: habit.isTask ? 'TASK_COMPLETION' : 'HABIT_COMPLETION',
-        relatedItemId: habit.id,
+    try {
+      const result = await recordHabitCompletion(habit.id, completionTimestamp)
+      const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
+      setHabitsData({ habits: updatedHabits })
+      setCoins(result.coins)
+      toast({
+        title: result.targetReached ? t("completedTitle") : t("progressTitle"),
+        description: result.rewarded
+          ? t("earnedCoinsPastDateDescription", { coinReward: habit.coinReward, dateKey })
+          : t("progressPastDateDescription", { count: completionsOnDate + 1, target, dateKey }),
+        action: <ToastAction altText={tCommon('undoButton')} className="gap-2"
+          onClick={() => undoComplete(result.habit, result.completionIndex, result.completionTimestamp)}>
+          <Undo2 className="h-4 w-4" />{tCommon('undoButton')}
+        </ToastAction>
       })
-      setCoins(updatedCoins)
-    }
-
-    toast({
-      title: isTargetReached ? t("completedTitle") : t("progressTitle"),
-      description: isTargetReached
-        ? t("earnedCoinsPastDateDescription", { coinReward: habit.coinReward, dateKey })
-        : t("progressPastDateDescription", { count: completionsOnDate + 1, target, dateKey }),
-      action: <ToastAction altText={tCommon('undoButton')} className="gap-2" onClick={() => undoComplete(updatedHabit)}>
-        <Undo2 className="h-4 w-4" />{tCommon('undoButton')}
-      </ToastAction>
-    })
-
-    return {
-      updatedHabits,
-      newBalance: coins.balance,
-      newTransactions: coins.transactions
+      return { updatedHabits, newBalance: result.coins.balance, newTransactions: result.coins.transactions }
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: tCommon('permissionDeniedDescription', { action: 'interact', resource: 'habit' }), variant: 'destructive' })
     }
   }
 

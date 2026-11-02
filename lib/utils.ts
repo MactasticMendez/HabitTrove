@@ -100,6 +100,17 @@ export function getCompletionsForDate({
   ).length
 }
 
+export function getUndoableCompletionIndex(habit: Habit, userId: string | undefined, date: DateTime, timezone: string): number {
+  if (!userId) return -1
+  const day = date.setZone(timezone).toISODate()
+  const index = habit.completions.findLastIndex(timestamp =>
+    DateTime.fromISO(timestamp, { setZone: true }).setZone(timezone).toISODate() === day)
+  if (index < 0) return -1
+  const record = habit.completionRecords?.[index]
+  if (record) return record.actorId === userId ? index : -1
+  return habit.userIds?.length === 1 && habit.userIds[0] === userId ? index : -1
+}
+
 export function getCompletionsForToday({
   habit,
   timezone

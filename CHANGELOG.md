@@ -4,6 +4,7 @@
 
 ### Added
 
+* Record the member who adds each new habit completion and the members rewarded when its daily target is reached.
 * Add an administrator tab in Settings for generic OIDC setup and application log level.
 * Support standard OIDC providers through in-app settings or `OIDC_*` environment variables, while retaining legacy Authentik configuration and linked accounts.
 * Add local and Authentik OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
@@ -11,6 +12,7 @@
 
 ### Changed
 
+* Award shared habit coins to every assigned member at most once per local day and allow only the member who recorded the latest completion to undo it; administrators retain a recovery action.
 * Move existing system settings into the administrator tab; apply log level changes immediately and OIDC changes after a restart.
 * Require email for new accounts and first-use completion for existing accounts without one, while preserving account IDs and data.
 * Show a dedicated sign-in screen to signed-out visitors.
@@ -27,6 +29,7 @@
 
 ### Security
 
+* Enforce shared completion ownership and reward reversal in server actions; block direct edits to completion history and managed coin rewards, including stale administrator saves.
 * Bound concurrent local password verification and keep unknown usernames out of the account failure tracker; authenticated password confirmations have a separate 10-failure throttle from public sign-in.
 * Reject malformed or oversized coin transaction text and new completions on already archived habits.
 * Reject recurrence rules with more than 256 daily time combinations, including when evaluating older saved habits.
