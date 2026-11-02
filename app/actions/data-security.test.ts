@@ -15,7 +15,7 @@ mock.module('@/lib/server-helpers', () => ({
 mock.module('server-only', () => ({}))
 
 const actions = await import('./data')
-const { linkUserToAuthentikSubject } = await import('@/lib/auth-store')
+const { authenticateLocalUser, linkUserToAuthentikSubject } = await import('@/lib/auth-store')
 
 const admin: User = { id: 'admin', username: 'admin', email: 'admin@example.com', isAdmin: true, password: saltAndHashPassword('secret') }
 const member: User = {
@@ -65,6 +65,37 @@ describe('server action authorization', () => {
     expect((await fs.readdir(path.join(directory, 'data', 'avatars'))).filter(file => file.startsWith('member-'))).toHaveLength(3)
   })
 
+  test('removes generated avatars when their account is deleted', async () => {
+    const avatar = new FormData()
+    avatar.set('avatar', new File([new Uint8Array([137, 80, 78, 71])], 'avatar.png', { type: 'image/png' }))
+    const memberPath = await actions.uploadAvatar(avatar)
+    currentUser = other
+    const otherPath = await actions.uploadAvatar(avatar)
+    const avatarsDir = path.join(directory, 'data', 'avatars')
+    await fs.writeFile(path.join(avatarsDir, 'member-custom.png'), 'unrelated')
+    currentUser = admin
+    await actions.deleteUser('member')
+    expect((await fs.readdir(avatarsDir)).sort()).toEqual(['member-custom.png', path.basename(otherPath)].sort())
+    expect(memberPath).toContain('/data/avatars/member-')
+    currentUser = member
+    await expect(actions.uploadAvatar(avatar)).rejects.toThrow('User not authenticated')
+  })
+
+  test('keeps the account when avatar cleanup fails', async () => {
+    const avatar = new FormData()
+    avatar.set('avatar', new File([new Uint8Array([137, 80, 78, 71])], 'avatar.png', { type: 'image/png' }))
+    await actions.uploadAvatar(avatar)
+    const unlinkSpy = spyOn(fs, 'unlink').mockRejectedValue(new Error('EACCES'))
+    try {
+      currentUser = admin
+      await expect(actions.deleteUser(member.id)).rejects.toThrow('EACCES')
+      const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
+      expect(saved.users.some((user: User) => user.id === member.id)).toBe(true)
+    } finally {
+      unlinkSpy.mockRestore()
+    }
+  })
+
   test('prevents role escalation and changes to another account', async () => {
     await expect(actions.updateUser('member', { isAdmin: true })).rejects.toThrow('Cannot change account permissions')
     await expect(actions.updateUserPassword('other', 'newpass')).rejects.toThrow('Cannot change another user')
@@ -107,6 +138,16 @@ describe('server action authorization', () => {
     const auth = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
     expect(verifyPassword('new-strong-password', auth.users[1].password)).toBe(true)
     expect(auth.users[1].authVersion).toBe(1)
+  })
+
+  test('allows authenticated password confirmation during a public login lockout', async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      expect(await authenticateLocalUser(member.username, 'wrong-password')).toBeNull()
+    }
+    expect(await authenticateLocalUser(member.username, 'secret')).toBeNull()
+    await actions.updateUserPassword(member.id, 'replacement-password-123', 'secret')
+    const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
+    expect(verifyPassword('replacement-password-123', saved.users.find((user: User) => user.id === member.id).password)).toBe(true)
   })
 
   test('requires an administrator to add the first local password to an Authentik-only account', async () => {
@@ -210,6 +251,18 @@ describe('server action authorization', () => {
     expect(saved.transactions[0].amount).toBe(2)
   })
 
+  test('rejects malformed and oversized coin text before storing a transaction', async () => {
+    const coinFile = path.join(directory, 'data', 'coins.json')
+    const original = await fs.readFile(coinFile, 'utf8')
+    await expect(actions.addCoins({ amount: 1, description: { bad: true } as unknown as string })).rejects.toThrow('Invalid coin description')
+    await expect(actions.removeCoins({ amount: 1, description: { bad: true } as unknown as string })).rejects.toThrow('Invalid coin description')
+    await expect(actions.addCoins({ amount: 1, description: 'x'.repeat(501) })).rejects.toThrow('Invalid coin description')
+    await expect(actions.addCoins({ amount: 1, description: 'Valid', note: 'x'.repeat(10_001) })).rejects.toThrow('Invalid transaction note')
+    expect(await fs.readFile(coinFile, 'utf8')).toBe(original)
+    await actions.addCoins({ amount: 1, description: 'Valid adjustment' })
+    expect((await actions.loadCoinsData()).transactions[0].description).toBe('Valid adjustment')
+  })
+
   test('allows one reward per completed habit day and a matching undo', async () => {
     const shared = (await actions.loadHabitsData()).habits[0]
     await actions.saveHabitsData({ habits: [{
@@ -276,6 +329,51 @@ describe('server action authorization', () => {
     const shared = (await actions.loadHabitsData()).habits[0]
     await expect(actions.saveHabitsData({ habits: [{ ...shared, archived: true }] })).rejects.toThrow('Only one completion')
     await expect(actions.saveHabitsData({ habits: [{ ...shared, completions: [new Date().toISOString(), new Date().toISOString()] }] })).rejects.toThrow('Only one completion')
+  })
+
+  test('rejects new completions on already archived habits while preserving task rewards', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0].archived = true
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const archived = (await actions.loadHabitsData()).habits[0]
+    await expect(actions.saveHabitsData({ habits: [{ ...archived, completions: [new Date().toISOString()] }] }))
+      .rejects.toThrow('Cannot complete an archived habit')
+    currentUser = { ...member, permissions: [{ ...member.permissions![0], habit: { write: true, interact: true } }] }
+    await expect(actions.saveHabitsData({ habits: [{ ...archived, completions: [new Date().toISOString()] }] }))
+      .rejects.toThrow('Cannot complete an archived habit')
+    expect(JSON.parse(await fs.readFile(habitFile, 'utf8')).habits[0].completions).toEqual([])
+
+    stored.habits[0].completions = ['2026-11-01T12:00:00.000Z']
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const completedArchive = (await actions.loadHabitsData()).habits[0]
+    await expect(actions.saveHabitsData({ habits: [{ ...completedArchive, completions: ['2026-11-02T12:00:00.000Z'] }] }))
+      .rejects.toThrow('Cannot complete an archived habit')
+
+    stored.habits[0] = { ...stored.habits[0], id: 'task', isTask: true, archived: false, completions: [], frequency: new Date().toISOString(), targetCompletions: 1 }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    currentUser = member
+    const task = (await actions.loadHabitsData()).habits[0]
+    await actions.saveHabitsData({ habits: [{ ...task, completions: [new Date().toISOString()], archived: true }] })
+    await actions.addCoins({ amount: 2, description: 'Completed task', type: 'TASK_COMPLETION', relatedItemId: 'task' })
+    expect((await actions.loadCoinsData()).transactions[0].type).toBe('TASK_COMPLETION')
+  })
+
+  test('preserves unchanged legacy crowded schedules during another habit save', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    const crowdedTimes = `FREQ=DAILY;BYHOUR=${Array.from({ length: 24 }, (_, i) => i).join(',')};BYMINUTE=${Array.from({ length: 11 }, (_, i) => i).join(',')}`
+    stored.habits[0].frequency = crowdedTimes
+    stored.habits[1].userIds = ['member']
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const visible = (await actions.loadHabitsData()).habits
+    const updated = visible.map(habit => habit.id === 'foreign'
+      ? { ...habit, completions: [...habit.completions, new Date().toISOString()] } : habit)
+    await actions.saveHabitsData({ habits: updated })
+    expect(JSON.parse(await fs.readFile(habitFile, 'utf8')).habits[1].completions).toHaveLength(1)
+    await expect(actions.saveHabitsData({ habits: updated.map(habit => habit.id === 'shared'
+      ? { ...habit, frequency: `${crowdedTimes};BYSECOND=0,1` } : habit) }))
+      .rejects.toThrow('Invalid recurrence rule')
   })
 
   test('does not expose the household coin balance to members', async () => {

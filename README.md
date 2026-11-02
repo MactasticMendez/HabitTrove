@@ -129,11 +129,13 @@ The same Admin panel contains the existing system settings (timezone, week start
 
 To link an existing local account, sign in locally, add its email if needed, sign in again, then choose **Link OIDC account** from the profile menu. Confirm the local password and sign in to the OIDC account with the same verified email. The link is saved against the provider's stable subject and issuer; later OIDC sign-ins must match both. Email alone never signs into or links an account. Administrators may also pre-link an OIDC subject in the user editor after the provider is active, while keeping a local password on administrator accounts. The stored `authentikSubject` key is retained for compatibility with existing account data.
 
-Local sign-in throttling is process-local. Run one app instance against a data directory; the JSON store and throttle are not designed for multiple replicas. Retain a private backup and a local administrator recovery password.
+Local sign-in throttling is process-local. Password checks run asynchronously with a shared four-verification process limit; ten failures lock a known account's public sign-in for 15 minutes. Password-confirmed account actions have a separate 10-failure lockout. Run one app instance against a data directory; the JSON store and throttle are not designed for multiple replicas. Retain a private backup and a local administrator recovery password.
 
 The server accepts only HTTP(S) reward links, validates shared drawings and habit schedules, and checks reward limits and resource permissions during redemption. Interaction-only members may add or undo one completion at a time, dated within the past year. Habit completion remains self-reported; this app cannot independently prove that a real-world habit was performed.
 
 New data files, avatar uploads, and backup archives use owner-only permissions. Check and restrict permissions on files created by older versions before exposing a shared host volume. Demo mode is enabled only with `DEMO=true`; account and password mutations and system-setting changes are blocked in that mode.
+
+Backups are published only after archiving completes without warnings; failed attempts leave older archives in place. Generated avatar files are removed when their account is deleted. New habit recurrence rules may specify at most 256 times per day; older rules above that limit remain saved but are treated as not due until their schedule is updated.
 
 See [Security review](docs/security-review.md) for scan scope, validation, and remaining operational risks.
 
