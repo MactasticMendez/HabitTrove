@@ -62,6 +62,10 @@ test('calendar picker keeps the configured day independent of the browser timezo
   const pickerDate = toCalendarPickerDate(configuredDay)
   expect([pickerDate.getFullYear(), pickerDate.getMonth() + 1, pickerDate.getDate()]).toEqual([2026, 1, 2])
   expect(fromCalendarPickerDate(pickerDate, 'Pacific/Kiritimati').toISODate()).toBe('2026-01-02')
+  const parsed = convertHumanReadableFrequencyToMachineReadable({
+    text: '2026-11-05', timezone: 'Pacific/Kiritimati', isRecurring: false,
+  })
+  expect((parsed.result as DateTime).toISODate()).toBe('2026-11-05')
 })
 
 test('day rollover timer follows the configured timezone across daylight saving', () => {
@@ -69,6 +73,21 @@ test('day rollover timer follows the configured timezone across daylight saving'
   const fall = DateTime.fromISO('2026-11-01T00:00:00', { zone: 'America/New_York' })
   expect(millisecondsUntilNextDay('America/New_York', spring)).toBe(23 * 60 * 60 * 1000)
   expect(millisecondsUntilNextDay('America/New_York', fall)).toBe(25 * 60 * 60 * 1000)
+})
+
+test('every-second-day habits keep their local-day cadence across daylight saving', () => {
+  const habit: Habit = {
+    id: 'alternate', name: 'Alternate', description: '', coinReward: 1, completions: [],
+    frequency: new RRule({
+      freq: RRule.DAILY, interval: 2, dtstart: new Date('2026-03-07T00:00:00Z'),
+      tzid: 'America/New_York',
+    }).toString(),
+  }
+  const due = (day: number) => isHabitDue({
+    habit, timezone: 'America/New_York',
+    date: DateTime.fromObject({ year: 2026, month: 3, day }, { zone: 'America/New_York' }),
+  })
+  expect([due(6), due(7), due(8), due(9), due(10)]).toEqual([false, true, false, true, false])
 })
 
 test('shared completion undo is available only to its recorder', () => {
@@ -146,9 +165,12 @@ describe('getUnsupportedRRuleReason', () => {
     expect(getUnsupportedRRuleReason(rrule)).toBe('Secondly frequency is not supported.');
   });
 
-  test('should return message for DAILY frequency with interval > 1', () => {
+  test('requires an anchor for every-N-days schedules', () => {
     const rrule = new RRule({ freq: RRule.DAILY, interval: 2 });
-    expect(getUnsupportedRRuleReason(rrule)).toBe('Daily frequency with intervals greater than 1 is not supported.');
+    expect(getUnsupportedRRuleReason(rrule)).toContain('need a start date');
+    expect(getUnsupportedRRuleReason(new RRule({
+      freq: RRule.DAILY, interval: 2, dtstart: new Date('2026-03-07T00:00:00Z'),
+    }))).toBeNull();
   });
 
   test('should return null for DAILY frequency without interval', () => {
@@ -965,10 +987,11 @@ describe('convertHumanReadableFrequencyToMachineReadable', () => {
     expect(message).toBe('Hourly frequency is not supported.')
   })
 
-  test('should return specific error for unsupported daily interval', () => {
+  test('anchors every-second-day rules in the configured timezone', () => {
     const { result, message } = convertHumanReadableFrequencyToMachineReadable({ text: 'every 2 days', timezone, isRecurring: true })
-    expect(result).toBeInstanceOf(RRule) // RRule parses it, but our validation catches it
-    expect(message).toBe('Daily frequency with intervals greater than 1 is not supported.')
+    expect(message).toBeNull()
+    expect((result as RRule).origOptions.dtstart).toBeInstanceOf(Date)
+    expect((result as RRule).origOptions.tzid).toBe(timezone)
   })
 
   test('should handle predefined constants like "weekdays"', () => {

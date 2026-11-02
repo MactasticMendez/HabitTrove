@@ -33,6 +33,11 @@ export interface BrowserSettings {
   expandedHabits: boolean
   expandedTasks: boolean
   expandedWishlist: boolean
+  habitSortBy?: 'custom' | 'name' | 'coinReward' | 'frequency'
+  taskSortBy?: 'custom' | 'name' | 'coinReward' | 'dueDate'
+  compactItems?: boolean
+  combinedToday?: boolean
+  expandedToday?: boolean
 }
 
 export const browserSettingsAtom = atomWithStorage('browserSettings', {

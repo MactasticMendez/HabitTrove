@@ -234,11 +234,26 @@ describe('server action authorization', () => {
     const visible = await actions.loadHabitsData()
     const shared = visible.habits[0]
     await expect(actions.saveHabitsData({ habits: [{ ...shared, name: 'Changed' }] })).rejects.toThrow('Only interaction fields')
+    await expect(actions.saveHabitsData({ habits: [{ ...shared, position: 0 }] })).rejects.toThrow('Only interaction fields')
     await expect(actions.saveHabitsData({ habits: [{ ...shared, id: 'foreign' }] })).rejects.toThrow('another user')
     await actions.recordHabitCompletion('shared', new Date().toISOString())
     const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'habits.json'), 'utf8'))
     expect(saved.habits.find((habit: { id: string }) => habit.id === 'foreign').name).toBe('Foreign')
     expect(saved.habits.find((habit: { id: string }) => habit.id === 'shared').completions).toHaveLength(1)
+  })
+
+  test('saves a writer-controlled custom order without changing completions', async () => {
+    await expect(actions.reorderHabitItems(['shared'], false)).rejects.toThrow('write permission for habit')
+    currentUser = { ...member, permissions: [{ ...member.permissions![0], habit: { write: true, interact: true } }] }
+    await expect(actions.reorderHabitItems(['foreign'], false)).rejects.toThrow('inaccessible item')
+    currentUser = admin
+    const stored = JSON.parse(await fs.readFile(path.join(directory, 'data', 'habits.json'), 'utf8'))
+    stored.habits[0].name = 'Edited by another session'
+    await fs.writeFile(path.join(directory, 'data', 'habits.json'), JSON.stringify(stored))
+    await actions.reorderHabitItems(['foreign', 'shared'], false)
+    const saved = await actions.loadHabitsData()
+    expect(saved.habits.map(habit => [habit.id, habit.name, habit.position, habit.completions]))
+      .toEqual([['shared', 'Edited by another session', 1, []], ['foreign', 'Foreign', 0, []]])
   })
 
   test('preserves pin, task, and archive flags when an edit omits them', async () => {

@@ -66,6 +66,7 @@ export type Habit = {
   isTask?: boolean // mark the habit as a task
   archived?: boolean // mark the habit as archived
   pinned?: boolean // mark the habit as pinned
+  position?: number // order within the task or habit list
   userIds?: UserId[]
   drawing?: string // Optional JSON string of drawing data
 }

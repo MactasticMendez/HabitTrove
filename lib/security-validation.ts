@@ -66,6 +66,9 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   validateReward(habit.coinReward)
   if (habit.targetCompletions !== undefined && (!Number.isSafeInteger(habit.targetCompletions) ||
       habit.targetCompletions < 1 || habit.targetCompletions > 10_000)) throw new Error('Invalid completion target')
+  if (habit.position !== undefined && (!Number.isSafeInteger(habit.position) || habit.position < 0 || habit.position > 100_000)) {
+    throw new Error('Invalid habit position')
+  }
   if (habit.isTask) {
     if (!DateTime.fromISO(habit.frequency).isValid) throw new Error('Invalid task due date')
   } else {

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## Version 0.4.0
+
+### Added
+
+* Add repeat-schedule choices, weekday buttons, an inline schedule guide, and a task date picker ([upstream #116](https://github.com/dohsimpson/HabitTrove/issues/116), [#117](https://github.com/dohsimpson/HabitTrove/issues/117), [#114](https://github.com/dohsimpson/HabitTrove/issues/114)).
+* Add saved manual ordering with drag and keyboard-accessible move buttons, compact habit/task cards, and a combined Today view ([upstream #164](https://github.com/dohsimpson/HabitTrove/issues/164), [#70](https://github.com/dohsimpson/HabitTrove/issues/70), [#119](https://github.com/dohsimpson/HabitTrove/issues/119)).
+
+### Changed
+
+* Anchor every-other-day habits to their saved start day, including across daylight saving changes.
+
+### Fixed
+
+* Interpret typed ISO task dates in the configured timezone without shifting the selected day.
+* Improve mobile navigation hover text contrast found during the new view's accessibility check.
+* Give the shared emoji picker an accessible name and remove a dangling dialog description reference.
+
 ## Version 0.3.1
 
 ### Changed
