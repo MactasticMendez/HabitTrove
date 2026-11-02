@@ -78,6 +78,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
   const [boostMultiplier, setBoostMultiplier] = useState(habit?.coinBoost?.multiplier ?? 1)
   const [boostEndsOn, setBoostEndsOn] = useState(habit?.coinBoost?.until
     ? DateTime.fromISO(habit.coinBoost.until).setZone(settings.system.timezone).toISODate() ?? '' : '')
+  const unchangedBoost = habit?.coinBoost?.multiplier === boostMultiplier &&
+    boostEndsOn === DateTime.fromISO(habit.coinBoost.until).setZone(settings.system.timezone).toISODate()
   const isRecurRule = !isTask
   // Initialize ruleText with the actual frequency string or default, not the display text
   const initialRuleText = habit?.frequency ? convertMachineReadableFrequencyToHumanReadable({
@@ -174,10 +176,9 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
       reminderTime: reminderTime || undefined,
       requiresApproval: canConfigureApproval ? requiresApproval : habit?.requiresApproval,
       approverIds: canConfigureApproval ? (requiresApproval ? approverIds : []) : habit?.approverIds,
-      coinBoost: boostMultiplier > 1 && boostUntil ? {
+      coinBoost: boostMultiplier > 1 && boostUntil ? unchangedBoost ? habit?.coinBoost : {
         multiplier: boostMultiplier as 2 | 3,
-        startsAt: habit?.coinBoost?.multiplier === boostMultiplier && habit?.coinBoost?.until === boostUntil
-          ? habit.coinBoost.startsAt : DateTime.now().toUTC().toISO()!,
+        startsAt: DateTime.now().toUTC().toISO()!,
         until: boostUntil,
       } : undefined,
     })
@@ -507,7 +508,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                   {boostMultiplier > 1 && <>
                     <Label htmlFor="boost-until">{t('boostUntilLabel')}</Label>
                     <Input id="boost-until" type="date" className="w-40" required value={boostEndsOn}
-                      min={DateTime.now().setZone(settings.system.timezone).toISODate() ?? undefined}
+                      min={unchangedBoost ? undefined :
+                        DateTime.now().setZone(settings.system.timezone).toISODate() ?? undefined}
                       onChange={event => setBoostEndsOn(event.target.value)} />
                   </>}
                 </div>

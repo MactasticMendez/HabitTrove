@@ -161,7 +161,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
             <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
             <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t('coinsPerCompletion', { count: habit.coinReward })}</span>
           </div>
-          {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
+          {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
           {!habit.isTask && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
           {!habit.isTask && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
           {pendingToday && <p className="text-xs text-amber-700 dark:text-amber-300">{t('pendingApproval')}</p>}

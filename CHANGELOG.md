@@ -21,12 +21,17 @@
 * Keep rejected submissions out of completion counts and permit a corrected resubmission.
 * Improve approval form screen reader references and approval queue text contrast.
 * Make avatar route tests use isolated temporary files so the full Bun suite remains stable across test orderings.
+* Count completed scheduled dates toward recurring task goals, and keep one-off tasks overdue beyond a year.
+* Reverse an approval reward if undoing a later check-in drops the approved count below the target, while preserving awards made under an earlier target.
+* Keep completed archived tasks in calendar history and allow unrelated edits after a temporary boost expires.
+* Reassign approval to the creator or a remaining administrator when the last named approver is deleted; reject a deleted completer's pending submissions.
 
 ### Security
 
 * Restrict evidence viewing to the completing user, item creator, and designated approvers; store uploads as size-limited, metadata-free WebP files.
 * Restrict approval-setting edits to the recorded creator or an administrator and serialize approval rewards with other coin changes.
 * Limit approval responses to the submission outcome for designated approvers who are not assigned to the item.
+* Remove a deleted account's completion evidence and reject its unreviewable pending submissions.
 
 ## Version 0.5.0
 

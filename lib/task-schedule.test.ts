@@ -32,6 +32,22 @@ describe('recurring task dates', () => {
       ],
     })
     expect(getTaskMissedDates(item, DateTime.fromISO('2026-03-30'), 'UTC').map(day => day.toISODate())).toEqual(['2026-03-29'])
-    expect(getTaskProgress(item)).toBe(1)
+    expect(getTaskProgress(item, 'UTC')).toBe(1)
+  })
+
+  it('counts completed dates toward task goals only after the daily target', () => {
+    const item = task({ taskRepeat: 'daily', targetCompletions: 2,
+      completions: ['2026-03-28T09:00:00.000Z', '2026-03-28T10:00:00.000Z', '2026-03-29T09:00:00.000Z'],
+    })
+    expect(getTaskProgress(item, 'UTC')).toBe(1)
+    expect(getTaskMissedDates(item, DateTime.fromISO('2026-03-30'), 'UTC').map(day => day.toISODate()))
+      .toEqual(['2026-03-29'])
+  })
+
+  it('keeps an incomplete one-off task overdue beyond the recurring lookback', () => {
+    const item = task({ frequency: '2024-01-01T09:00:00.000Z', targetCompletions: 2,
+      completions: ['2024-01-01T09:00:00.000Z'] })
+    expect(getTaskMissedDates(item, DateTime.fromISO('2026-03-30'), 'UTC').map(day => day.toISODate()))
+      .toEqual(['2024-01-01'])
   })
 })

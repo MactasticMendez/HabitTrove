@@ -125,6 +125,8 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
           record.approval !== undefined && !['pending', 'approved', 'rejected'].includes(record.approval) ||
           record.rewardAmount !== undefined && (!Number.isSafeInteger(record.rewardAmount) ||
             record.rewardAmount < 0 || record.rewardAmount > MAX_COIN_LIMIT) ||
+          record.rewardTarget !== undefined && (!Number.isSafeInteger(record.rewardTarget) ||
+            record.rewardTarget < 1 || record.rewardTarget > 10_000) ||
           record.evidenceId !== undefined && (typeof record.evidenceId !== 'string' ||
             !/^[0-9a-f-]{36}$/i.test(record.evidenceId)) ||
           record.evidenceMime !== undefined && !['image/jpeg', 'image/png', 'image/webp'].includes(record.evidenceMime) ||

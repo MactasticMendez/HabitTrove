@@ -95,7 +95,8 @@ export default function HabitCalendar() {
                         .filter(habit => habit.isTask && isHabitDue({
                           habit,
                           timezone: settings.system.timezone,
-                          date: selectedDateTime
+                          date: selectedDateTime,
+                          includeArchivedCompletions: true,
                         }))
                         .map((habit) => {
                           const completions = getCompletionsForDate({ habit, date: selectedDateTime, timezone: settings.system.timezone })

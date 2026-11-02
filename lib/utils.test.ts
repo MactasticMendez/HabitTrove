@@ -91,6 +91,19 @@ test('every-second-day habits keep their local-day cadence across daylight savin
   expect([due(6), due(7), due(8), due(9), due(10)]).toEqual([false, true, false, true, false])
 })
 
+test('calendar history includes completed archived tasks without showing future dates', () => {
+  const completed = DateTime.fromISO('2026-11-01T12:00:00.000Z')
+  const task: Habit = {
+    id: 'one-off', name: 'Finished', description: '', isTask: true, archived: true,
+    frequency: completed.toISO()!, completions: [completed.toISO()!], coinReward: 1,
+  }
+  expect(isHabitDue({ habit: task, timezone: 'UTC', date: completed })).toBe(false)
+  expect(isHabitDue({ habit: task, timezone: 'UTC', date: completed,
+    includeArchivedCompletions: true })).toBe(true)
+  expect(isHabitDue({ habit: { ...task, taskRepeat: 'daily' }, timezone: 'UTC',
+    date: completed.plus({ days: 1 }), includeArchivedCompletions: true })).toBe(false)
+})
+
 test('shared completion undo is available only to its recorder', () => {
   const timestamp = '2026-11-02T12:00:00.000Z'
   const habit: Habit = {

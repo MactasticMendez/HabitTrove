@@ -438,6 +438,9 @@ const evidenceExtensions = {
 } as const
 
 function evidencePath(id: string, mime: keyof typeof evidenceExtensions): string {
+  if (!/^[0-9a-f-]{36}$/i.test(id) || !Object.prototype.hasOwnProperty.call(evidenceExtensions, mime)) {
+    throw new Error('Invalid evidence path')
+  }
   return path.join(process.cwd(), 'data', 'evidence', `${id}.${evidenceExtensions[mime]}`)
 }
 
@@ -513,7 +516,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     if (habit.taskRepeat && !isTaskScheduledOnDate(habit, DateTime.fromISO(timestamp, { setZone: true }), timezone)) {
       throw new PermissionError('Task is not scheduled for this day')
     }
-    if (habit.taskGoalOccurrences && getTaskProgress(habit) >= habit.taskGoalOccurrences) {
+    if (habit.taskGoalOccurrences && getTaskProgress(habit, timezone) >= habit.taskGoalOccurrences) {
       throw new PermissionError('Task goal is already complete')
     }
     const count = habit.completions.filter((value, index) =>
@@ -539,10 +542,11 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     const rewardAmount = boost && now >= DateTime.fromISO(boost.startsAt) && now <= DateTime.fromISO(boost.until) &&
       completionTime >= DateTime.fromISO(boost.startsAt) ? habit.coinReward * boost.multiplier : habit.coinReward
     const autoArchived = !pending && !!habit.isTask && targetReached &&
-      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(habit) + 1 >= habit.taskGoalOccurrences)
+      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(habit, timezone) + 1 >= habit.taskGoalOccurrences)
     const record: HabitCompletionRecord = {
       id: uuid(), actorId: user.id,
       ...(rewarded && { rewardedUserIds: recipients }),
+      ...(rewarded && { rewardTarget: target }),
       ...((targetReached || pending) && { rewardAmount }),
       ...(pending && { approval: 'pending' as const }),
       ...(photo && { evidenceMime: photo.mime }),
@@ -626,17 +630,37 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
       completionRecords: completionRecords.filter((_, index) => index !== completionIndex),
       archived: habit.isTask && (record?.autoArchived || !record && beforeCount === target) ? false : habit.archived,
     }
+    const approvedBefore = habit.completions.filter((value, index) =>
+      completionDay(value, timezone) === day && isApprovedCompletion(habit, index)).length
+    const approvedAfter = updatedHabit.completions.filter((value, index) =>
+      completionDay(value, timezone) === day && isApprovedCompletion(updatedHabit, index)).length
+    let rewardedRecord = record
+    if (!record?.rewardedUserIds && approvedBefore >= target && approvedAfter < target) {
+      rewardedRecord = completionRecords.find((candidate, index) =>
+        index !== completionIndex && completionDay(habit.completions[index], timezone) === day &&
+        candidate?.rewardTarget === target && candidate.rewardedUserIds?.length) ?? null
+      if (rewardedRecord) {
+        const rewardId = rewardedRecord.id
+        updatedHabit.completionRecords = updatedHabit.completionRecords?.map(candidate => {
+          if (candidate?.id !== rewardId) return candidate
+          const { rewardedUserIds: _recipients, rewardTarget: _rewardTarget,
+            autoArchived: _autoArchived, ...rest } = candidate
+          return rest
+        })
+        if (habit.isTask && rewardedRecord.autoArchived) updatedHabit.archived = false
+      }
+    }
     const coins = await loadData<CoinsData>('coins')
     const transactions: CoinTransaction[] = []
-    if (record?.rewardedUserIds) {
-      for (const recipientId of record.rewardedUserIds) {
-        const award = coins.transactions.find(tx => tx.completionId === record.id && tx.userId === recipientId &&
+    if (rewardedRecord?.rewardedUserIds) {
+      for (const recipientId of rewardedRecord.rewardedUserIds) {
+        const award = coins.transactions.find(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
           (tx.type === 'HABIT_COMPLETION' || tx.type === 'TASK_COMPLETION') && tx.amount > 0)
-        const alreadyReversed = coins.transactions.some(tx => tx.completionId === record.id && tx.userId === recipientId &&
+        const alreadyReversed = coins.transactions.some(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
           (tx.type === 'HABIT_UNDO' || tx.type === 'TASK_UNDO'))
         if (!award || alreadyReversed) continue
         transactions.push({
-          id: uuid(), userId: recipientId, actorId: user.id, completionId: record.id,
+          id: uuid(), userId: recipientId, actorId: user.id, completionId: rewardedRecord.id,
           amount: -award.amount, type: award.type === 'TASK_COMPLETION' ? 'TASK_UNDO' : 'HABIT_UNDO',
           relatedItemId: habit.id, description: `Undid completion: ${habit.name}`,
           timestamp: d2t({ dateTime: getNow({}) }),
@@ -736,9 +760,12 @@ export async function reviewHabitCompletion(
       (beforeRecords[position] === null || !!beforeRecords[position]?.rewardedUserIds?.length))
     const award = decision === 'approve' && approvedCount >= (habit.targetCompletions ?? 1) && !previouslyRewarded
     const amount = award ? reviewedRecord.rewardAmount ?? habit.coinReward : 0
-    if (award) reviewedRecord.rewardedUserIds = [record.actorId]
+    if (award) {
+      reviewedRecord.rewardedUserIds = [record.actorId]
+      reviewedRecord.rewardTarget = habit.targetCompletions ?? 1
+    }
     const autoArchived = award && !!habit.isTask &&
-      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(reviewedHabit) >= habit.taskGoalOccurrences)
+      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(reviewedHabit, timezone) >= habit.taskGoalOccurrences)
     if (autoArchived) reviewedRecord.autoArchived = true
     const updatedHabit: Habit = {
       ...reviewedHabit,
@@ -1307,6 +1334,13 @@ export async function deleteUser(userId: string): Promise<void> {
   if (process.env.DEMO === 'true') throw new PermissionError('Account deletion is disabled in demo mode')
   return withDataWriteLock(async () => {
     const currentUser = await requireUser()
+    const evidenceToRemove: string[] = []
+    const collectEvidence = (record: HabitCompletionRecord | null) => {
+      if (record?.evidenceId && record.evidenceMime && /^[0-9a-f-]{36}$/i.test(record.evidenceId) &&
+          Object.prototype.hasOwnProperty.call(evidenceExtensions, record.evidenceMime)) {
+        evidenceToRemove.push(evidencePath(record.evidenceId, record.evidenceMime))
+      }
+    }
     await updateAuthData(async authData => {
     const actor = authData.users.find(user => user.id === currentUser.id)
     if (!actor || (!actor.isAdmin && actor.id !== userId)) throw new PermissionError('Cannot delete another user')
@@ -1315,6 +1349,9 @@ export async function deleteUser(userId: string): Promise<void> {
     if (targetUser.isAdmin && authData.users.filter(user => user.isAdmin).length === 1) {
       throw new Error('Cannot delete the last administrator')
     }
+    const remainingUsers = authData.users.filter(user => user.id !== userId)
+    const fallbackAdmin = remainingUsers.find(user => user.isAdmin)?.id
+    if (!fallbackAdmin) throw new Error('An administrator is required for approval recovery')
     const avatarsDir = path.join(process.cwd(), 'data', 'avatars')
     const avatarFiles = await fs.readdir(avatarsDir).catch(error => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
@@ -1352,21 +1389,30 @@ export async function deleteUser(userId: string): Promise<void> {
 
     // Process Habits Data
     const updatedHabits = habitsData.habits.reduce((acc, habit) => {
-      if (habit.userIds?.includes(userId)) {
-        if (habit.userIds.length === 1) {
-          // Remove habit if this is the only user
-          return acc
-        } else {
-          // Remove userId from habit's userIds
-          acc.push({
-            ...habit,
-            userIds: habit.userIds.filter(id => id !== userId)
-          })
-        }
-      } else {
-        // Keep habit as is
-        acc.push(habit)
+      const deletedItem = habit.userIds?.length === 1 && habit.userIds[0] === userId
+      if (deletedItem) {
+        for (const record of habit.completionRecords ?? []) collectEvidence(record)
+        return acc
       }
+      const remainingApprovers = habit.approverIds?.filter(id => id !== userId)
+      const fallbackApprover = remainingUsers.some(user => user.id === habit.createdBy)
+        ? habit.createdBy! : fallbackAdmin
+      acc.push({
+        ...habit,
+        ...(habit.userIds?.includes(userId) && { userIds: habit.userIds.filter(id => id !== userId) }),
+        ...(habit.approverIds !== undefined && {
+          approverIds: habit.requiresApproval && !remainingApprovers?.length
+            ? [fallbackApprover] : remainingApprovers,
+        }),
+        ...(habit.completionRecords && { completionRecords: habit.completionRecords.map(record => {
+          if (!record || record.actorId !== userId) return record
+          collectEvidence(record)
+          const { evidenceId: _evidenceId, evidenceMime: _evidenceMime, ...withoutEvidence } = record
+          return record.approval === 'pending'
+            ? { ...withoutEvidence, approval: 'rejected' as const } : withoutEvidence
+        }),
+        }),
+      })
       return acc
     }, [] as HabitsData['habits'])
     habitsData.habits = updatedHabits
@@ -1396,6 +1442,10 @@ export async function deleteUser(userId: string): Promise<void> {
     ]
 
     })
+    for (const file of new Set(evidenceToRemove)) {
+      try { await fs.rm(file, { force: true }) }
+      catch (error) { log('error', 'Could not remove deleted account evidence', error) }
+    }
   })
 }
 

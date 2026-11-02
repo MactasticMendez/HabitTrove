@@ -361,15 +361,19 @@ export function convertMachineReadableFrequencyToHumanReadable({
 export function isHabitDue({
   habit,
   timezone,
-  date
+  date,
+  includeArchivedCompletions = false,
 }: {
   habit: Habit
   timezone: string
   date: DateTime
+  includeArchivedCompletions?: boolean
 }): boolean {
   // handle task
   if (habit.isTask) {
-    return !habit.archived && isTaskScheduledOnDate(habit, date, timezone)
+    return habit.archived
+      ? includeArchivedCompletions && getCompletionsForDate({ habit, date, timezone }) > 0
+      : isTaskScheduledOnDate(habit, date, timezone)
   }
 
   // handle habit

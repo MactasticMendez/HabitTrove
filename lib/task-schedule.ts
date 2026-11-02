@@ -27,22 +27,34 @@ export function isTaskScheduledOnDate(habit: Habit, date: DateTime, timezone: st
 
 export function getTaskMissedDates(habit: Habit, today: DateTime, timezone: string): DateTime[] {
   if (!habit.isTask || habit.archived) return []
-  if (!habit.taskRepeat && habit.completions.some((_, index) => isCountedCompletion(habit, index))) return []
   const todayStart = today.setZone(timezone).startOf('day')
   const anchor = DateTime.fromISO(habit.frequency, { setZone: true }).setZone(timezone).startOf('day')
   if (!anchor.isValid || anchor >= todayStart) return []
+  if (!habit.taskRepeat) {
+    return habit.completions.filter((_, index) => isCountedCompletion(habit, index)).length >=
+      (habit.targetCompletions ?? 1) ? [] : [anchor]
+  }
   const start = anchor > todayStart.minus({ days: 365 }) ? anchor : todayStart.minus({ days: 365 })
-  const completedDays = new Set(habit.completions.flatMap((value, index) =>
-    isCountedCompletion(habit, index)
-      ? [DateTime.fromISO(value, { setZone: true }).setZone(timezone).toISODate()]
-      : []))
+  const counts = new Map<string, number>()
+  habit.completions.forEach((value, index) => {
+    if (!isCountedCompletion(habit, index)) return
+    const day = DateTime.fromISO(value, { setZone: true }).setZone(timezone).toISODate()!
+    counts.set(day, (counts.get(day) ?? 0) + 1)
+  })
   const missed: DateTime[] = []
   for (let day = start; day < todayStart; day = day.plus({ days: 1 })) {
-    if (isTaskScheduledOnDate(habit, day, timezone) && !completedDays.has(day.toISODate())) missed.push(day)
+    if (isTaskScheduledOnDate(habit, day, timezone) &&
+        (counts.get(day.toISODate()!) ?? 0) < (habit.targetCompletions ?? 1)) missed.push(day)
   }
   return missed
 }
 
-export function getTaskProgress(habit: Habit): number {
-  return habit.completions.reduce((count, _, index) => count + Number(isApprovedCompletion(habit, index)), 0)
+export function getTaskProgress(habit: Habit, timezone: string): number {
+  const counts = new Map<string, number>()
+  habit.completions.forEach((value, index) => {
+    if (!isApprovedCompletion(habit, index)) return
+    const day = DateTime.fromISO(value, { setZone: true }).setZone(timezone).toISODate()!
+    counts.set(day, (counts.get(day) ?? 0) + 1)
+  })
+  return [...counts.values()].filter(count => count >= (habit.targetCompletions ?? 1)).length
 }

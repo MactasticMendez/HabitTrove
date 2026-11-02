@@ -54,6 +54,7 @@ export type HabitCompletionRecord = {
   autoArchived?: boolean
   approval?: 'pending' | 'approved' | 'rejected'
   rewardAmount?: number
+  rewardTarget?: number
   evidenceId?: string
   evidenceMime?: 'image/jpeg' | 'image/png' | 'image/webp'
   reviewedBy?: UserId
