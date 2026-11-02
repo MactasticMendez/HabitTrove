@@ -11,14 +11,16 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Zap, Brush } from 'lucide-react'
+import { CalendarDays, Brush } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Habit } from '@/lib/types'
 import EmojiPickerButton from './EmojiPickerButton'
 import ModalOverlay from './ModalOverlay' // Import the new component
 import DrawingModal from './DrawingModal'
 import DrawingDisplay from './DrawingDisplay'
-import { convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, serializeRRule } from '@/lib/utils'
+import { convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate } from '@/lib/utils'
 import { INITIAL_DUE, INITIAL_RECURRENCE_RULE, QUICK_DATES, MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
 
@@ -28,6 +30,34 @@ interface AddEditHabitModalProps {
   onSave: (habit: Omit<Habit, 'id'>) => Promise<void>
   habit?: Habit | null
   isTask: boolean
+}
+
+const weekdays = [
+  { key: 'MO', english: 'Monday' }, { key: 'TU', english: 'Tuesday' },
+  { key: 'WE', english: 'Wednesday' }, { key: 'TH', english: 'Thursday' },
+  { key: 'FR', english: 'Friday' }, { key: 'SA', english: 'Saturday' },
+  { key: 'SU', english: 'Sunday' },
+] as const
+
+type SchedulePreset = 'daily' | 'alternate' | 'weekdays' | 'chosenDays' | 'custom'
+
+function initialSchedule(frequency?: string): { preset: SchedulePreset; selectedDays: string[] } {
+  if (!frequency) return { preset: 'daily', selectedDays: ['MO'] }
+  const rule = deserializeRRule(frequency)
+  if (!rule) return { preset: 'custom', selectedDays: ['MO'] }
+  if (rule.origOptions.freq === RRule.DAILY && (rule.origOptions.interval ?? 1) === 1) {
+    return { preset: 'daily', selectedDays: ['MO'] }
+  }
+  if (rule.origOptions.freq === RRule.DAILY && (rule.origOptions.interval ?? 1) === 2) {
+    return { preset: 'alternate', selectedDays: ['MO'] }
+  }
+  const selectedDays = Array.isArray(rule.origOptions.byweekday)
+    ? rule.origOptions.byweekday.map(String) : []
+  if (rule.origOptions.freq === RRule.WEEKLY && selectedDays.length) {
+    const isWeekdays = ['MO', 'TU', 'WE', 'TH', 'FR'].every(day => selectedDays.includes(day)) && selectedDays.length === 5
+    return { preset: isWeekdays ? 'weekdays' : 'chosenDays', selectedDays }
+  }
+  return { preset: 'custom', selectedDays: ['MO'] }
 }
 
 export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: AddEditHabitModalProps) {
@@ -45,6 +75,10 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
     timezone: settings.system.timezone
   }) : (isRecurRule ? INITIAL_RECURRENCE_RULE : INITIAL_DUE);
   const [ruleText, setRuleText] = useState<string>(initialRuleText)
+  const initialScheduleChoice = initialSchedule(isRecurRule ? habit?.frequency : undefined)
+  const [schedulePreset, setSchedulePreset] = useState<SchedulePreset>(initialScheduleChoice.preset)
+  const [selectedWeekdays, setSelectedWeekdays] = useState(initialScheduleChoice.selectedDays)
+  const [pickedTaskDate, setPickedTaskDate] = useState<DateTime | null>(null)
   const [currentUser] = useAtom(currentUserAtom)
   const [isQuickDatesOpen, setIsQuickDatesOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null); // State for validation message
@@ -59,6 +93,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
       // If text hasn't changed and original frequency exists, return it
       return habit.frequency;
     }
+
+    if (isTask && pickedTaskDate) return d2t({ dateTime: pickedTaskDate, timezone: settings.system.timezone })
 
     const parsedResult = convertHumanReadableFrequencyToMachineReadable({
       text: ruleText,
@@ -76,6 +112,26 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
     } else {
       return 'invalid';
     }
+  }
+
+  const setPreset = (preset: SchedulePreset) => {
+    setSchedulePreset(preset)
+    if (preset === 'daily') setRuleText('every day')
+    if (preset === 'alternate') setRuleText('every 2 days')
+    if (preset === 'weekdays') setRuleText('weekdays')
+    if (preset === 'chosenDays') {
+      const selected = selectedWeekdays.length ? selectedWeekdays : ['MO']
+      setSelectedWeekdays(selected)
+      setRuleText(`every week on ${weekdays.filter(day => selected.includes(day.key)).map(day => day.english).join(', ')}`)
+    }
+  }
+
+  const toggleWeekday = (key: string) => {
+    const selected = selectedWeekdays.includes(key)
+      ? selectedWeekdays.filter(day => day !== key) : [...selectedWeekdays, key]
+    if (!selected.length) return
+    setSelectedWeekdays(selected)
+    setRuleText(`every week on ${weekdays.filter(day => selected.includes(day.key)).map(day => day.english).join(', ')}`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,7 +156,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
           onClose()
         }
       }} modal={false}>
-        <DialogContent> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
+        <DialogContent aria-describedby={undefined}> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
           <DialogHeader>
             <DialogTitle>
               {habit
@@ -149,35 +205,73 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                 </Label>
                 {/* date input (task) */}
                 <div className="col-span-3 space-y-2">
+                  {!isTask && (
+                    <>
+                      <Select value={schedulePreset} onValueChange={value => setPreset(value as SchedulePreset)}>
+                        <SelectTrigger aria-label={t('schedulePresetLabel')}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="daily">{t('scheduleDaily')}</SelectItem>
+                          <SelectItem value="alternate">{t('scheduleAlternate')}</SelectItem>
+                          <SelectItem value="weekdays">{t('scheduleWeekdays')}</SelectItem>
+                          <SelectItem value="chosenDays">{t('scheduleChosenDays')}</SelectItem>
+                          <SelectItem value="custom">{t('scheduleCustom')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {schedulePreset === 'chosenDays' && (
+                        <div role="group" aria-label={t('scheduleChosenDays')} className="flex flex-wrap gap-1">
+                          {weekdays.map((day, index) => {
+                            const date = new Date(Date.UTC(2026, 10, 2 + index))
+                            const label = new Intl.DateTimeFormat(settings.system.language, { weekday: 'long', timeZone: 'UTC' }).format(date)
+                            return (
+                              <Button key={day.key} type="button" variant={selectedWeekdays.includes(day.key) ? 'default' : 'outline'}
+                                size="sm" aria-label={label} aria-pressed={selectedWeekdays.includes(day.key)}
+                                onClick={() => toggleWeekday(day.key)}>
+                                {new Intl.DateTimeFormat(settings.system.language, { weekday: 'short', timeZone: 'UTC' }).format(date)}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="flex gap-2">
                     <Input
                       id="recurrence"
                       value={ruleText}
-                      onChange={(e) => setRuleText(e.target.value)}
+                      onChange={(e) => {
+                        setRuleText(e.target.value)
+                        if (isTask) setPickedTaskDate(null)
+                        else setSchedulePreset('custom')
+                      }}
                       required
                     />
                     {isTask && (
-                      <Popover open={isQuickDatesOpen} onOpenChange={setIsQuickDatesOpen}>
+                      <Popover modal open={isQuickDatesOpen} onOpenChange={setIsQuickDatesOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
+                            aria-label={t('chooseTaskDate')}
                           >
-                            <Zap className="h-4 w-4" />
+                            <CalendarDays className="h-4 w-4" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="p-3 w-[280px] max-h-[40vh] overflow-y-auto" align="start">
+                        <PopoverContent className="p-3 w-[min(360px,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto" align="start">
                           <div className="space-y-1">
                             <div className="grid grid-cols-2 gap-2">
                               {QUICK_DATES.map((date) => (
                                 <Button
                                   key={date.value}
+                                  type="button"
                                   variant="outline"
                                   className="justify-start h-9 px-3 hover:bg-primary hover:text-primary-foreground transition-colors"
                                   onClick={() => {
                                     setRuleText(date.value);
+                                    setPickedTaskDate(null)
                                     setIsQuickDatesOpen(false);
                                   }}
                                 >
@@ -185,11 +279,33 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                                 </Button>
                               ))}
                             </div>
+                            <Calendar
+                              mode="single"
+                              selected={(() => {
+                                const parsed = pickedTaskDate ?? convertHumanReadableFrequencyToMachineReadable({
+                                  text: ruleText, timezone: settings.system.timezone, isRecurring: false,
+                                }).result
+                                return parsed instanceof DateTime ? toCalendarPickerDate(parsed) : undefined
+                              })()}
+                              onSelect={date => {
+                                if (!date) return
+                                const selected = fromCalendarPickerDate(date, settings.system.timezone)
+                                setPickedTaskDate(selected)
+                                setRuleText(selected.toISODate() ?? '')
+                                setIsQuickDatesOpen(false)
+                              }}
+                              weekStartsOn={settings.system.weekStartDay}
+                              className="mx-auto"
+                            />
                           </div>
                         </PopoverContent>
                       </Popover>
                     )}
                   </div>
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer">{t('scheduleHelpTitle')}</summary>
+                    <p className="mt-1">{t(isTask ? 'taskScheduleHelp' : 'habitScheduleHelp')}</p>
+                  </details>
                 </div>
                 {/* rrule input (habit) */}
                 <div className="col-start-2 col-span-3 text-sm">

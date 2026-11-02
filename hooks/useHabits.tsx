@@ -1,7 +1,7 @@
 import { useAtom, atom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { habitsAtom, coinsAtom, settingsAtom, usersAtom, habitFreqMapAtom, currentUserAtom } from '@/lib/atoms'
-import { recordHabitCompletion, undoHabitCompletion, saveHabitsData } from '@/app/actions/data'
+import { recordHabitCompletion, undoHabitCompletion, saveHabitsData, reorderHabitItems } from '@/app/actions/data'
 import { Habit, Permission, SafeUser, User } from '@/lib/types'
 import { toast } from '@/hooks/use-toast'
 import { DateTime } from 'luxon'
@@ -144,6 +144,9 @@ export function useHabits() {
       ...storedHabit,
       ...habit,
       id: habit.id || getNowInMilliseconds().toString(),
+      position: storedHabit?.position ?? (habit.id ? habit.position :
+        Math.max(-1, ...habitsData.habits.filter(item => Boolean(item.isTask) === Boolean(habit.isTask))
+          .map((item, index) => item.position ?? index)) + 1),
       ...(storedHabit?.completionRecords && { completionRecords: storedHabit.completionRecords }),
     }
     const updatedHabits = habit.id
@@ -153,6 +156,12 @@ export function useHabits() {
     await saveHabitsData({ habits: updatedHabits })
     setHabitsData({ habits: updatedHabits })
     return updatedHabits
+  }
+
+  const reorderHabits = async (orderedIds: string[], isTask: boolean) => {
+    if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
+    const updated = await reorderHabitItems(orderedIds, isTask)
+    setHabitsData(updated)
   }
 
   const deleteHabit = async (id: string) => {
@@ -235,6 +244,7 @@ export function useHabits() {
     completeHabit,
     undoComplete,
     saveHabit,
+    reorderHabits,
     deleteHabit,
     completePastHabit,
     archiveHabit,
