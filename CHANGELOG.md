@@ -2,12 +2,14 @@
 
 ## Unreleased
 
+## Version 0.3.0
+
 ### Added
 
 * Record the member who adds each new habit completion and the members rewarded when its daily target is reached.
 * Add an administrator tab in Settings for generic OIDC setup and application log level.
 * Support standard OIDC providers through in-app settings or `OIDC_*` environment variables, while retaining legacy Authentik configuration and linked accounts.
-* Add local and Authentik OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
+* Add local and OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
 * Add a recovery script for assigning local passwords to legacy passwordless accounts.
 
 ### Changed
@@ -17,13 +19,15 @@
 * Require email for new accounts and first-use completion for existing accounts without one, while preserving account IDs and data.
 * Show a dedicated sign-in screen to signed-out visitors.
 * Build the fork's local image in the example Compose deployment.
+* Show system settings only to administrators; existing account data remains unchanged until users complete email setup or an administrator assigns credentials.
+* Declare the required emoji and linkification peer packages so production builds resolve.
 
 ### Fixed
 
 * Keep a habit's pinned, task, and archive state when editing its other details ([upstream #109](https://github.com/dohsimpson/HabitTrove/issues/109)).
 * Use the configured timezone for calendar day selection and refresh dashboard due items at local midnight ([upstream #13](https://github.com/dohsimpson/HabitTrove/issues/13), [#165](https://github.com/dohsimpson/HabitTrove/issues/165)).
 * Guard mobile navigation's browser-only iOS detection during server rendering ([upstream #130](https://github.com/dohsimpson/HabitTrove/issues/130)).
-* Restore Authentik sign-in for linked accounts by carrying the local account ID through Auth.js profile normalization.
+* Restore OIDC sign-in for linked accounts by carrying the local account ID through Auth.js profile normalization.
 * Update Linkify React to match LinkifyJS and prevent a client-side crash on the dashboard.
 * Improve chart label contrast and give the profile menu an accessible name.
 * Keep scheduled backups disabled when the backup setting is off, and fall back safely when old habit schedules or locale settings are malformed.
@@ -39,7 +43,7 @@
 * Discard incomplete backup archives on Archiver warnings before publication or rotation, and remove generated avatars when an account is deleted.
 * Use unique, owner-only files for concurrent data-directory permission checks.
 * Block disabling OIDC while linked accounts lack local passwords, and fail closed if the saved OIDC configuration cannot be read.
-* Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while Authentik accounts remain linked.
+* Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while linked accounts exist.
 * Require a fresh client secret when changing the OIDC issuer or client ID.
 * Bind OIDC account links to the issuer and reject a matching subject from a different provider; preserve legacy Authentik links for their original issuer.
 * Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
@@ -55,12 +59,6 @@
 * Enforce demo restrictions in server actions, require resource permissions for habit credits and wishlist redemption, and make redemption limits and task archive transitions server controlled.
 * Restrict new data and backup files to their owner, hide other users' coin balances, and require an administrator to add the first local password to an Authentik-only account.
 * Pin the demo deployment action to a fixed revision, publish only from upstream main, and validate release versions before shell use.
-
-### Changed
-
-* Show system settings only to administrators; existing account data remains unchanged until users complete email setup or an administrator assigns credentials.
-* Declare the required emoji and linkification peer packages so production builds resolve.
-* Allow interaction-only members to change one recent habit completion at a time; keep reward and archive management with writers.
 
 ## Version 0.2.31
 
