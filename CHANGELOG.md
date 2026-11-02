@@ -20,6 +20,7 @@
 
 * Keep rejected submissions out of completion counts and permit a corrected resubmission.
 * Improve approval form screen reader references and approval queue text contrast.
+* Make avatar route tests use isolated temporary files so the full Bun suite remains stable across test orderings.
 
 ### Security
 
