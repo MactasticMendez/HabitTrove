@@ -99,3 +99,26 @@ test('prevents an issuer change while existing Authentik identities are linked',
   })).rejects.toThrow('Unlink existing OIDC accounts')
   await expect(fs.stat(path.join(directory, 'data', 'admin-config.json'))).rejects.toThrow()
 })
+
+test('prevents disabling OIDC while a linked account has no local password', async () => {
+  await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
+    users: [admin, { id: 'oidc-only', username: 'oidc-only', email: 'oidc@example.test',
+      authentikSubject: 'subject-2', oidcIssuer: process.env.AUTHENTIK_ISSUER }],
+  }))
+  await expect(actions.updateOidcProvider({
+    enabled: false, issuer: '', clientId: '', clientSecret: '', currentPassword: 'current-password',
+  })).rejects.toThrow('Set local passwords for OIDC-only accounts')
+  expect((await actions.loadAdminPanelSettings()).oidcOnlyAccountCount).toBe(1)
+  await expect(fs.stat(path.join(directory, 'data', 'admin-config.json'))).rejects.toThrow()
+
+  await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
+    users: [admin, { id: 'oidc-only', username: 'oidc-only', email: 'oidc@example.test',
+      password: saltAndHashPassword('second-local-password'),
+      authentikSubject: 'subject-2', oidcIssuer: process.env.AUTHENTIK_ISSUER }],
+  }))
+  const summary = await actions.updateOidcProvider({
+    enabled: false, issuer: '', clientId: '', clientSecret: '', currentPassword: 'current-password',
+  })
+  expect(summary.oidc.enabled).toBe(false)
+  expect(summary.oidcOnlyAccountCount).toBe(0)
+})

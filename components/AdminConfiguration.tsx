@@ -27,6 +27,7 @@ export default function AdminConfiguration() {
   const [notice, setNotice] = useState('')
   const providerIdentityChanged = issuer.trim() !== summary?.oidc.issuer || clientId.trim() !== summary?.oidc.clientId
   const issuerChangedWithLinkedAccounts = !!summary?.linkedAccountCount && issuer.trim() !== summary.oidc.issuer
+  const disableWouldLockAccounts = !enabled && !!summary?.oidcOnlyAccountCount
 
   useEffect(() => {
     let mounted = true
@@ -87,6 +88,7 @@ export default function AdminConfiguration() {
             <Switch id="oidc-enabled" className="min-h-6" checked={enabled} onCheckedChange={setEnabled} disabled={!summary || savingOidc} />
             <Label htmlFor="oidc-enabled">{t('oidcEnabledLabel')}</Label>
           </div>
+          {disableWouldLockAccounts && <p role="alert" className="text-sm text-destructive">{t('oidcDisableAccountWarning')}</p>}
           <div className="space-y-2">
             <p className="text-sm font-medium">{t('oidcCallbackLabel')}</p>
             <code className="block break-all rounded bg-muted p-2 text-sm">{summary?.oidc.callbackUrl || t('oidcCallbackMissing')}</code>
@@ -110,7 +112,7 @@ export default function AdminConfiguration() {
             <Label htmlFor="oidc-current-password">{t('currentPasswordLabel')}</Label>
             <Input id="oidc-current-password" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required maxLength={128} autoComplete="current-password" />
           </div>
-          <Button type="submit" disabled={!summary || savingOidc || (enabled && (!summary.oidc.callbackUrl || issuerChangedWithLinkedAccounts))}>{savingOidc ? t('saving') : t('oidcSaveButton')}</Button>
+          <Button type="submit" disabled={!summary || savingOidc || disableWouldLockAccounts || (enabled && (!summary.oidc.callbackUrl || issuerChangedWithLinkedAccounts))}>{savingOidc ? t('saving') : t('oidcSaveButton')}</Button>
         </form>
         {summary?.oidc.restartRequired && <p role="status" className="mt-4 text-sm font-medium">{t('oidcRestartRequired')}</p>}
       </CardContent>

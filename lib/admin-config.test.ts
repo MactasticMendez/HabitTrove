@@ -44,6 +44,18 @@ test('uses the existing environment provider until an admin override is saved', 
   expect(config.getApplicationLogLevel()).toBe('info')
 })
 
+test('disables OIDC sign-in when saved configuration is damaged', async () => {
+  await fs.mkdir(path.join(directory, 'data'))
+  await fs.writeFile(path.join(directory, 'data', 'admin-config.json'), '{invalid json')
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(await config.readStartupOidcConfig()).toBeUndefined()
+    expect(error).toHaveBeenCalledWith('Saved OIDC configuration could not be loaded; OIDC sign-in is disabled')
+  } finally {
+    error.mockRestore()
+  }
+})
+
 test('encrypts the provider secret and keeps it out of the admin response', async () => {
   await config.saveOidcConfig({
     enabled: true,

@@ -15,7 +15,11 @@ async function requireAdministrator() {
 
 async function adminSummary() {
   const [settings, authData] = await Promise.all([getAdminConfigSummary(), readAuthData()])
-  return { ...settings, linkedAccountCount: authData.users.filter(account => account.authentikSubject).length }
+  return {
+    ...settings,
+    linkedAccountCount: authData.users.filter(account => account.authentikSubject).length,
+    oidcOnlyAccountCount: authData.users.filter(account => account.authentikSubject && !account.password).length,
+  }
 }
 
 export async function loadAdminPanelSettings() {
@@ -42,6 +46,9 @@ export async function updateOidcProvider(input: {
   }
   const verified = await authenticateLocalUser(user.username, input.currentPassword)
   if (!verified || verified.id !== user.id) throw new PermissionError('Current local password is incorrect')
+  if (!input.enabled && (await readAuthData()).users.some(account => account.authentikSubject && !account.password)) {
+    throw new PermissionError('Set local passwords for OIDC-only accounts before disabling OIDC sign-in')
+  }
   if (input.enabled) {
     const linkedAccounts = (await readAuthData()).users.filter(account => account.authentikSubject)
     const legacyIssuer = linkedAccounts.some(account => !account.oidcIssuer) ? await getLegacyOidcIssuer() : undefined

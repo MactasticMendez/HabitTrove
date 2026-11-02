@@ -384,6 +384,7 @@
     "oidcSecretRequired": "Enter the client secret to enable OIDC.",
     "oidcSecretNewIdentity": "Enter a new client secret when changing the issuer or client ID.",
     "oidcIssuerLinkedWarning": "Unlink existing OIDC accounts before changing the issuer URL.",
+    "oidcDisableAccountWarning": "Set a local password for every OIDC-only account before disabling OIDC sign-in.",
     "currentPasswordLabel": "Your current local password",
     "oidcSaveButton": "Save OIDC settings",
     "oidcSaved": "OIDC settings saved. Restart the container to apply them.",
