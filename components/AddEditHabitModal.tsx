@@ -11,6 +11,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import { CalendarDays, Brush } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
@@ -20,7 +21,7 @@ import EmojiPickerButton from './EmojiPickerButton'
 import ModalOverlay from './ModalOverlay' // Import the new component
 import DrawingModal from './DrawingModal'
 import DrawingDisplay from './DrawingDisplay'
-import { convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate } from '@/lib/utils'
+import { convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate, uuid } from '@/lib/utils'
 import { INITIAL_DUE, INITIAL_RECURRENCE_RULE, QUICK_DATES, MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
 
@@ -67,6 +68,16 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
   const [description, setDescription] = useState(habit?.description || '')
   const [coinReward, setCoinReward] = useState(habit?.coinReward || 1)
   const [targetCompletions, setTargetCompletions] = useState(habit?.targetCompletions || 1)
+  const [taskRepeat, setTaskRepeat] = useState(habit?.taskRepeat ?? 'none')
+  const [taskGoalOccurrences, setTaskGoalOccurrences] = useState(habit?.taskGoalOccurrences ?? 0)
+  const [checklist, setChecklist] = useState(habit?.checklist ?? [])
+  const [reminderTime, setReminderTime] = useState(habit?.reminderTime ?? '')
+  const [requiresApproval, setRequiresApproval] = useState(habit?.requiresApproval ?? false)
+  const [approverIds, setApproverIds] = useState<string[]>(habit?.approverIds ?? [])
+  const [approverQuery, setApproverQuery] = useState('')
+  const [boostMultiplier, setBoostMultiplier] = useState(habit?.coinBoost?.multiplier ?? 1)
+  const [boostEndsOn, setBoostEndsOn] = useState(habit?.coinBoost?.until
+    ? DateTime.fromISO(habit.coinBoost.until).setZone(settings.system.timezone).toISODate() ?? '' : '')
   const isRecurRule = !isTask
   // Initialize ruleText with the actual frequency string or default, not the display text
   const initialRuleText = habit?.frequency ? convertMachineReadableFrequencyToHumanReadable({
@@ -82,9 +93,15 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
   const [currentUser] = useAtom(currentUserAtom)
   const [isQuickDatesOpen, setIsQuickDatesOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null); // State for validation message
+  const [approvalError, setApprovalError] = useState('')
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>((habit?.userIds || []).filter(id => id !== currentUser?.id))
   const [usersData] = useAtom(usersAtom)
   const users = usersData.users
+  const canConfigureApproval = !habit || !!currentUser?.isAdmin || habit.createdBy === currentUser?.id
+  const suggestedApprovers = approverQuery.trim()
+    ? users.filter(user => !approverIds.includes(user.id) &&
+      user.username.toLocaleLowerCase().includes(approverQuery.trim().toLocaleLowerCase())).slice(0, 5)
+    : []
   const [drawing, setDrawing] = useState<string>(habit?.drawing || '')
   const [isDrawingModalOpen, setIsDrawingModalOpen] = useState(false)
 
@@ -136,6 +153,12 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (requiresApproval && approverIds.length === 0) {
+      setApprovalError(t('approverRequired'))
+      return
+    }
+    const boostUntil = boostEndsOn
+      ? DateTime.fromISO(boostEndsOn, { zone: settings.system.timezone }).endOf('day').toUTC().toISO() : null
     await onSave({
       name,
       description,
@@ -144,7 +167,19 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
       completions: habit?.completions || [],
       frequency: getFrequencyUpdate(),
       userIds: selectedUserIds.length > 0 ? selectedUserIds.concat(currentUser?.id || []) : (currentUser && [currentUser.id]),
-      drawing: drawing && drawing !== '[]' ? drawing : undefined
+      drawing: drawing && drawing !== '[]' ? drawing : undefined,
+      taskRepeat: isTask && taskRepeat !== 'none' ? taskRepeat as Habit['taskRepeat'] : undefined,
+      taskGoalOccurrences: isTask && taskRepeat !== 'none' && taskGoalOccurrences > 0 ? taskGoalOccurrences : undefined,
+      checklist: isTask && checklist.length ? checklist : undefined,
+      reminderTime: reminderTime || undefined,
+      requiresApproval: canConfigureApproval ? requiresApproval : habit?.requiresApproval,
+      approverIds: canConfigureApproval ? (requiresApproval ? approverIds : []) : habit?.approverIds,
+      coinBoost: boostMultiplier > 1 && boostUntil ? {
+        multiplier: boostMultiplier as 2 | 3,
+        startsAt: habit?.coinBoost?.multiplier === boostMultiplier && habit?.coinBoost?.until === boostUntil
+          ? habit.coinBoost.startsAt : DateTime.now().toUTC().toISO()!,
+        until: boostUntil,
+      } : undefined,
     })
   }
 
@@ -156,7 +191,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
           onClose()
         }
       }} modal={false}>
-        <DialogContent aria-describedby={undefined}> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
+        <DialogContent aria-describedby={undefined} className="max-h-[90vh] overflow-y-auto"> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
           <DialogHeader>
             <DialogTitle>
               {habit
@@ -413,6 +448,102 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                       {t('coinsSuffix')}
                     </span>
                   </div>
+                </div>
+              </div>
+              {isTask && <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="task-repeat" className="text-right">{t('taskRepeatLabel')}</Label>
+                <div className="col-span-3 flex flex-wrap gap-2">
+                  <Select value={taskRepeat} onValueChange={setTaskRepeat}>
+                    <SelectTrigger id="task-repeat" className="w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('taskRepeatNone')}</SelectItem>
+                      <SelectItem value="daily">{t('taskRepeatDaily')}</SelectItem>
+                      <SelectItem value="weekly">{t('taskRepeatWeekly')}</SelectItem>
+                      <SelectItem value="monthly">{t('taskRepeatMonthly')}</SelectItem>
+                      <SelectItem value="yearly">{t('taskRepeatYearly')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {taskRepeat !== 'none' && <div className="flex items-center gap-2">
+                    <Label htmlFor="task-goal">{t('taskGoalLabel')}</Label>
+                    <Input id="task-goal" type="number" min={0} max={1000} className="w-24"
+                      value={taskGoalOccurrences} onChange={event => setTaskGoalOccurrences(Number(event.target.value))} />
+                  </div>}
+                  {taskRepeat !== 'none' && <p className="w-full text-xs text-muted-foreground">{t('taskGoalHelp')}</p>}
+                </div>
+              </div>}
+              {isTask && <div className="grid grid-cols-4 items-start gap-4">
+                <Label className="text-right pt-2">{t('checklistLabel')}</Label>
+                <div className="col-span-3 space-y-2">
+                  {checklist.map((item, index) => <div key={item.id} className="flex gap-2">
+                    <Input value={item.text} maxLength={200} required aria-label={t('checklistItemLabel', { number: index + 1 })}
+                      onChange={event => setChecklist(previous => previous.map(step =>
+                        step.id === item.id ? { ...step, text: event.target.value } : step))} />
+                    <Button type="button" variant="outline" size="sm"
+                      aria-label={t('removeChecklistItem', { number: index + 1 })}
+                      onClick={() => setChecklist(previous => previous.filter(step => step.id !== item.id))}>−</Button>
+                  </div>)}
+                  <Button type="button" variant="outline" size="sm" disabled={checklist.length >= 30}
+                    onClick={() => setChecklist(previous => [...previous, { id: uuid(), text: '', completed: false }])}>
+                    {t('addChecklistItem')}
+                  </Button>
+                </div>
+              </div>}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="reminder-time" className="text-right">{t('reminderTimeLabel')}</Label>
+                <Input id="reminder-time" type="time" className="col-span-3" value={reminderTime}
+                  onChange={event => setReminderTime(event.target.value)} />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="boost-multiplier" className="text-right">{t('boostLabel')}</Label>
+                <div className="col-span-3 flex flex-wrap items-center gap-2">
+                  <Select value={String(boostMultiplier)} onValueChange={value => setBoostMultiplier(Number(value))}>
+                    <SelectTrigger id="boost-multiplier" className="w-28"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">{t('boostNone')}</SelectItem>
+                      <SelectItem value="2">2×</SelectItem>
+                      <SelectItem value="3">3×</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {boostMultiplier > 1 && <>
+                    <Label htmlFor="boost-until">{t('boostUntilLabel')}</Label>
+                    <Input id="boost-until" type="date" className="w-40" required value={boostEndsOn}
+                      min={DateTime.now().setZone(settings.system.timezone).toISODate() ?? undefined}
+                      onChange={event => setBoostEndsOn(event.target.value)} />
+                  </>}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="approval-toggle" className="text-right pt-1">{t('approvalLabel')}</Label>
+                <div className="col-span-3 space-y-2">
+                  <Switch id="approval-toggle" checked={requiresApproval} disabled={!canConfigureApproval}
+                    onCheckedChange={value => { setRequiresApproval(value); setApprovalError('') }} />
+                  {requiresApproval && <>
+                    <Label htmlFor="approver-search">{t('approversLabel')}</Label>
+                    <Input id="approver-search" value={approverQuery} disabled={!canConfigureApproval}
+                      placeholder={t('approverSearchPlaceholder')} autoComplete="off"
+                      aria-controls={suggestedApprovers.length > 0 ? 'approver-suggestions' : undefined}
+                      onChange={event => setApproverQuery(event.target.value)} />
+                    {suggestedApprovers.length > 0 && <ul id="approver-suggestions"
+                      className="rounded border bg-popover p-1">
+                      {suggestedApprovers.map(user => <li key={user.id}>
+                        <button type="button" className="w-full rounded px-2 py-1 text-left hover:bg-accent focus-visible:outline"
+                          onClick={() => { setApproverIds(previous => [...previous, user.id]); setApproverQuery(''); setApprovalError('') }}>
+                          {user.username}
+                        </button>
+                      </li>)}
+                    </ul>}
+                    <div className="flex flex-wrap gap-2">
+                      {approverIds.map(id => {
+                        const approver = users.find(user => user.id === id)
+                        return <span key={id} className="rounded border px-2 py-1 text-sm">
+                          {approver?.username ?? id}
+                          {canConfigureApproval && <button type="button" className="ml-2" aria-label={t('removeApprover', { name: approver?.username ?? id })}
+                            onClick={() => setApproverIds(previous => previous.filter(value => value !== id))}>×</button>}
+                        </span>
+                      })}
+                    </div>
+                    {approvalError && <p role="alert" className="text-sm text-destructive">{approvalError}</p>}
+                  </>}
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useAtom } from 'jotai'
-import { wishlistAtom, habitsAtom, settingsAtom } from '@/lib/atoms'
+import { wishlistAtom, habitsAtom, browserSettingsAtom } from '@/lib/atoms'
 import DailyOverview from './DailyOverview'
 import HabitStreak from './HabitStreak'
 import HabitHeatmap from './HabitHeatmap'
@@ -9,15 +9,33 @@ import CoinBalance from './CoinBalance'
 // import { useHabits } from '@/hooks/useHabits' // useHabits is not used
 import { useCoins } from '@/hooks/useCoins'
 import { useTranslations } from 'next-intl';
+import { ArrowUp, ArrowDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import Achievements from './Achievements'
+
+const defaultOrder = ['coins', 'streak', 'today', 'heatmap', 'achievements']
 
 export default function Dashboard() {
   const t = useTranslations('Dashboard');
   const [habitsData] = useAtom(habitsAtom)
   const habits = habitsData.habits
-  const [settings] = useAtom(settingsAtom)
+  const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom)
   const { balance } = useCoins()
   const [wishlist] = useAtom(wishlistAtom)
   const wishlistItems = wishlist.items
+  const order = [...new Set([...(browserSettings.dashboardOrder ?? []).filter(id => defaultOrder.includes(id)), ...defaultOrder])]
+  const move = (index: number, direction: -1 | 1) => {
+    const next = [...order]
+    ;[next[index], next[index + direction]] = [next[index + direction], next[index]]
+    setBrowserSettings(previous => ({ ...previous, dashboardOrder: next }))
+  }
+  const cards = {
+    coins: <CoinBalance coinBalance={balance} />,
+    streak: <HabitStreak />,
+    today: <DailyOverview wishlistItems={wishlistItems} habits={habits} coinBalance={balance} />,
+    heatmap: <HabitHeatmap />,
+    achievements: <Achievements />,
+  }
 
   return (
     <div>
@@ -25,15 +43,15 @@ export default function Dashboard() {
         <h1 className="text-xl xs:text-3xl font-bold">{t('title')}</h1>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <CoinBalance coinBalance={balance} />
-        <HabitStreak />
-        <DailyOverview
-          wishlistItems={wishlistItems}
-          habits={habits}
-          coinBalance={balance}
-        />
-
-        <HabitHeatmap />
+        {order.map((id, index) => <section key={id} className={id === 'heatmap' ? 'md:col-span-2 lg:col-span-3' : ''}>
+          <div className="mb-1 flex justify-end gap-1" role="group" aria-label={t('reorderSection', { name: t(id) })}>
+            <Button type="button" size="sm" variant="ghost" disabled={index === 0}
+              aria-label={t('moveUp', { name: t(id) })} onClick={() => move(index, -1)}><ArrowUp className="h-4 w-4" /></Button>
+            <Button type="button" size="sm" variant="ghost" disabled={index === order.length - 1}
+              aria-label={t('moveDown', { name: t(id) })} onClick={() => move(index, 1)}><ArrowDown className="h-4 w-4" /></Button>
+          </div>
+          {cards[id as keyof typeof cards]}
+        </section>)}
       </div>
     </div>
   )

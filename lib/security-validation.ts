@@ -69,6 +69,40 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   if (habit.position !== undefined && (!Number.isSafeInteger(habit.position) || habit.position < 0 || habit.position > 100_000)) {
     throw new Error('Invalid habit position')
   }
+  if (habit.taskRepeat !== undefined && (!habit.isTask || !['daily', 'weekly', 'monthly', 'yearly'].includes(habit.taskRepeat))) {
+    throw new Error('Invalid task recurrence')
+  }
+  if (habit.taskGoalOccurrences !== undefined && (!habit.isTask || !habit.taskRepeat ||
+      !Number.isSafeInteger(habit.taskGoalOccurrences) || habit.taskGoalOccurrences < 1 || habit.taskGoalOccurrences > 1000)) {
+    throw new Error('Invalid task goal')
+  }
+  if (habit.checklist !== undefined && (!habit.isTask || !Array.isArray(habit.checklist) || habit.checklist.length > 30 ||
+      new Set(habit.checklist.map(item => item?.id)).size !== habit.checklist.length ||
+      habit.checklist.some(item => !item || typeof item.id !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(item.id) ||
+        typeof item.text !== 'string' || !item.text.trim() || item.text.length > 200 || typeof item.completed !== 'boolean'))) {
+    throw new Error('Invalid task checklist')
+  }
+  if (habit.reminderTime !== undefined && (typeof habit.reminderTime !== 'string' ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(habit.reminderTime))) throw new Error('Invalid reminder time')
+  if (habit.requiresApproval !== undefined && typeof habit.requiresApproval !== 'boolean') {
+    throw new Error('Invalid approval setting')
+  }
+  if (habit.createdBy !== undefined && (typeof habit.createdBy !== 'string' || habit.createdBy.length > 128)) {
+    throw new Error('Invalid item creator')
+  }
+  if (habit.approverIds !== undefined && (!Array.isArray(habit.approverIds) || habit.approverIds.length > 20 ||
+      new Set(habit.approverIds).size !== habit.approverIds.length ||
+      habit.approverIds.some(id => typeof id !== 'string' || !id || id.length > 128))) {
+    throw new Error('Invalid approvers')
+  }
+  if (habit.requiresApproval && !habit.approverIds?.length) throw new Error('Choose at least one approver')
+  if (habit.coinBoost !== undefined && (!habit.coinBoost || ![2, 3].includes(habit.coinBoost.multiplier) ||
+      typeof habit.coinBoost.startsAt !== 'string' || habit.coinBoost.startsAt.length > 64 ||
+      !DateTime.fromISO(habit.coinBoost.startsAt, { setZone: true }).isValid ||
+      typeof habit.coinBoost.until !== 'string' || habit.coinBoost.until.length > 64 ||
+      !DateTime.fromISO(habit.coinBoost.until, { setZone: true }).isValid ||
+      DateTime.fromISO(habit.coinBoost.until) <= DateTime.fromISO(habit.coinBoost.startsAt) ||
+      habit.coinReward * habit.coinBoost.multiplier > MAX_COIN_LIMIT)) throw new Error('Invalid coin boost')
   if (habit.isTask) {
     if (!DateTime.fromISO(habit.frequency).isValid) throw new Error('Invalid task due date')
   } else {
@@ -88,6 +122,15 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
          (!record || typeof record !== 'object' || typeof record.id !== 'string' || record.id.length > 128 ||
           typeof record.actorId !== 'string' || record.actorId.length > 128 ||
           record.autoArchived !== undefined && typeof record.autoArchived !== 'boolean' ||
+          record.approval !== undefined && !['pending', 'approved', 'rejected'].includes(record.approval) ||
+          record.rewardAmount !== undefined && (!Number.isSafeInteger(record.rewardAmount) ||
+            record.rewardAmount < 0 || record.rewardAmount > MAX_COIN_LIMIT) ||
+          record.evidenceId !== undefined && (typeof record.evidenceId !== 'string' ||
+            !/^[0-9a-f-]{36}$/i.test(record.evidenceId)) ||
+          record.evidenceMime !== undefined && !['image/jpeg', 'image/png', 'image/webp'].includes(record.evidenceMime) ||
+          record.reviewedBy !== undefined && (typeof record.reviewedBy !== 'string' || record.reviewedBy.length > 128) ||
+          record.reviewedAt !== undefined && (typeof record.reviewedAt !== 'string' || record.reviewedAt.length > 64 ||
+            !DateTime.fromISO(record.reviewedAt).isValid) ||
           record.rewardedUserIds !== undefined &&
             (!Array.isArray(record.rewardedUserIds) || record.rewardedUserIds.length > 100 ||
              record.rewardedUserIds.some(id => typeof id !== 'string' || id.length > 128)))))) {

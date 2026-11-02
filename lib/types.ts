@@ -52,6 +52,34 @@ export type HabitCompletionRecord = {
   actorId: UserId
   rewardedUserIds?: UserId[]
   autoArchived?: boolean
+  approval?: 'pending' | 'approved' | 'rejected'
+  rewardAmount?: number
+  evidenceId?: string
+  evidenceMime?: 'image/jpeg' | 'image/png' | 'image/webp'
+  reviewedBy?: UserId
+  reviewedAt?: string
+}
+
+export type PendingApproval = {
+  habitId: string
+  habitName: string
+  isTask: boolean
+  completionId: string
+  actorId: UserId
+  submittedAt: string
+  evidenceId?: string
+}
+
+export type ChecklistItem = {
+  id: string
+  text: string
+  completed: boolean
+}
+
+export type CoinBoost = {
+  multiplier: 2 | 3
+  startsAt: string
+  until: string
 }
 
 export type Habit = {
@@ -69,6 +97,14 @@ export type Habit = {
   position?: number // order within the task or habit list
   userIds?: UserId[]
   drawing?: string // Optional JSON string of drawing data
+  taskRepeat?: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  taskGoalOccurrences?: number
+  checklist?: ChecklistItem[]
+  reminderTime?: string
+  requiresApproval?: boolean
+  approverIds?: UserId[]
+  createdBy?: UserId
+  coinBoost?: CoinBoost
 }
 
 

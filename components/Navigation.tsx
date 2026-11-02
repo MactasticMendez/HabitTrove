@@ -1,6 +1,6 @@
 'use client'
 
-import { Home, Calendar, Gift, Coins } from 'lucide-react'
+import { Home, Calendar, Gift, Coins, ClipboardCheck } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { browserSettingsAtom } from '@/lib/atoms'
 import { useEffect, useState, ElementType } from 'react'
@@ -41,6 +41,7 @@ export default function Navigation({ className, viewPort }: NavigationProps) {
     { icon: Calendar, label: t('calendar'), href: '/calendar', position: 'main' },
     { icon: Gift, label: t('wishlist'), href: '/wishlist', position: 'main' },
     { icon: Coins, label: t('coins'), href: '/coins', position: 'main' },
+    { icon: ClipboardCheck, label: t('approvals'), href: '/approvals', position: 'main' },
   ]
 
   useEffect(() => {

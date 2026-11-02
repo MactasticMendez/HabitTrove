@@ -1,8 +1,43 @@
 {
+  "Achievements": {
+    "title": "Achievements",
+    "firstCompletion": "First completion",
+    "tenCompletions": "10 completions",
+    "hundredCompletions": "100 completions",
+    "firstTask": "First task",
+    "firstRedemption": "First reward redeemed"
+  },
+  "Reminders": {
+    "title": "HabitTrove reminder",
+    "body": "{name} is due."
+  },
+  "ApprovalQueue": {
+    "title": "Completion approvals",
+    "description": "Review submitted task and habit completions. A listed approver may review their own submission.",
+    "loading": "Loading submissions…",
+    "empty": "No completions are waiting for your approval.",
+    "loadError": "Could not load submissions.",
+    "reviewError": "Could not save the review. Please try again.",
+    "submittedBy": "Submitted by {username}",
+    "unknownUser": "Unknown user",
+    "evidence": "Photo evidence",
+    "evidenceAlt": "Evidence for {name}",
+    "approve": "Approve",
+    "reject": "Reject"
+  },
   "Dashboard": {
+    "coins": "Coin balance",
+    "streak": "Streak",
+    "today": "Today",
+    "heatmap": "Completion calendar",
+    "achievements": "Achievements",
+    "reorderSection": "Reorder {name}",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
     "title": "Tableau de bord"
   },
   "HabitList": {
+    "hideNonDaily": "Daily only",
     "myTasks": "Mes tâches",
     "myHabits": "Mes habitudes",
     "addTaskButton": "Ajouter une tâche",
@@ -36,6 +71,9 @@
     "deleteButton": "Supprimer"
   },
   "DailyOverview": {
+    "graceUsed": "Grace used",
+    "hideNonDaily": "Daily only",
+    "individualProgress": "{streak} streak; {done} of {due} due days completed this week",
     "addTaskButtonLabel": "Ajouter une tâche",
     "addHabitButtonLabel": "Ajouter une habitude",
     "todaysOverviewTitle": "Aperçu du jour",
@@ -91,6 +129,27 @@
     "coinBalanceTitle": "Solde de pièces"
   },
   "AddEditHabitModal": {
+    "taskRepeatLabel": "Repeat task",
+    "taskRepeatNone": "Does not repeat",
+    "taskRepeatDaily": "Daily",
+    "taskRepeatWeekly": "Weekly",
+    "taskRepeatMonthly": "Monthly",
+    "taskRepeatYearly": "Yearly",
+    "taskGoalLabel": "Stop after",
+    "taskGoalHelp": "Leave blank to repeat until you archive this task.",
+    "checklistLabel": "Checklist",
+    "checklistItemLabel": "Checklist item {number}",
+    "removeChecklistItem": "Remove checklist item {number}",
+    "addChecklistItem": "Add checklist item",
+    "reminderTimeLabel": "Reminder time",
+    "boostLabel": "Temporary coin boost",
+    "boostNone": "No boost",
+    "boostUntilLabel": "Until",
+    "approvalLabel": "Require approval",
+    "approversLabel": "Approvers",
+    "approverSearchPlaceholder": "Search usernames",
+    "removeApprover": "Remove {name}",
+    "approverRequired": "Choose at least one approver.",
     "editTaskTitle": "Modifier une tâche",
     "editHabitTitle": "Modifier une habitude",
     "addNewTaskTitle": "Ajouter une nouvelle tâche",
@@ -146,6 +205,7 @@
     "addButton": "Ajouter une récompense"
   },
   "Navigation": {
+    "approvals": "Approvals",
     "dashboard": "Tableau de bord",
     "tasks": "Tâches",
     "habits": "Habitudes",
@@ -343,6 +403,15 @@
     "tasksLabel": "Tâches"
   },
   "HabitItem": {
+    "graceUsed": "Grace day used",
+    "invalidPhoto": "Choose a JPEG, PNG or WebP image smaller than 2 MB.",
+    "checklistProgress": "{done}/{total} steps complete",
+    "taskProgress": "Completed {count}/{goal} times",
+    "streakAndWeek": "{streak} streak · {done}/{due} this week",
+    "pendingApproval": "Awaiting approval",
+    "evidenceLabel": "Photo evidence (optional; JPEG, PNG or WebP, up to 2 MB)",
+    "catchUp": "Catch up",
+    "catchUpDate": "Complete missed date {date}",
     "overdue": "En retard",
     "whenLabel": "Quand : {frequency}",
     "coinsPerCompletion": "{count} pièces par complétion",
@@ -393,6 +462,11 @@
     "countCompleted": "{completedCount}/{totalCount} complété"
   },
   "SettingsPage": {
+    "remindersEnabled": "Pop-up reminders",
+    "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",
+    "reminderLead": "Remind me",
+    "reminderAtTime": "At the chosen time",
+    "reminderMinutes": "{count} minutes early",
     "sectionsLabel": "Settings sections",
     "preferencesTab": "Preferences",
     "adminTab": "Admin panel",
@@ -465,6 +539,9 @@
     "chooseEmoji": "Choisir un emoji"
   },
   "useHabits": {
+    "checklistUpdateFailed": "Could not update the checklist. Please try again.",
+    "pendingApprovalTitle": "Submitted for approval",
+    "pendingApprovalDescription": "Your approvers can review this completion. Coins are awarded after approval.",
     "alreadyCompletedTitle": "Déjà complété",
     "alreadyCompletedDescription": "Vous avez déjà complété cette habitude aujourd'hui.",
     "completedTitle": "Complété !",

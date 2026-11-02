@@ -12,7 +12,7 @@ import {
 import { DynamicTimeNoSSR } from '@/components/DynamicTimeNoSSR';
 import { useAtom } from 'jotai';
 import { useTranslations } from 'next-intl';
-import { settingsAtom, serverSettingsAtom, currentUserAtom } from '@/lib/atoms';
+import { settingsAtom, serverSettingsAtom, currentUserAtom, browserSettingsAtom } from '@/lib/atoms';
 import { Settings, WeekDay } from '@/lib/types'
 import { saveSettings } from '../actions/data'
 import { Info } from 'lucide-react';
@@ -23,6 +23,7 @@ import AdminConfiguration from '@/components/AdminConfiguration'
 export default function SettingsPage() {
   const t = useTranslations('SettingsPage');
   const [settings, setSettings] = useAtom(settingsAtom);
+  const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom);
   const [serverSettings] = useAtom(serverSettingsAtom);
   const [currentUser] = useAtom(currentUserAtom);
   const [activeTab, setActiveTab] = useState<'preferences' | 'admin'>('preferences');
@@ -77,6 +78,23 @@ export default function SettingsPage() {
             <CardTitle role="heading" aria-level={2}>{t('uiSettingsTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="flex items-center justify-between gap-4">
+              <div><Label htmlFor="reminders-enabled">{t('remindersEnabled')}</Label>
+                <p className="text-sm text-muted-foreground">{t('remindersHelp')}</p></div>
+              <Switch id="reminders-enabled" checked={Boolean(browserSettings.remindersEnabled)}
+                onCheckedChange={checked => setBrowserSettings(previous => ({ ...previous, remindersEnabled: checked }))} />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="reminder-lead">{t('reminderLead')}</Label>
+              <select id="reminder-lead" className="rounded-md border bg-background px-3 py-2"
+                value={browserSettings.reminderLeadMinutes ?? 0}
+                onChange={event => setBrowserSettings(previous => ({ ...previous, reminderLeadMinutes: Number(event.target.value) }))}>
+                <option value={0}>{t('reminderAtTime')}</option>
+                <option value={5}>{t('reminderMinutes', { count: 5 })}</option>
+                <option value={10}>{t('reminderMinutes', { count: 10 })}</option>
+                <option value={30}>{t('reminderMinutes', { count: 30 })}</option>
+              </select>
+            </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="number-formatting">{t('numberFormattingLabel')}</Label>

@@ -24,7 +24,7 @@ export default function HabitStreak() {
     <Card>
       <CardHeader>
         <CardTitle>{t('dailyCompletionStreakTitle')}</CardTitle>
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-label={t('currentStreak', { count: currentStreak })}>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Flame className="h-4 w-4 text-orange-600 dark:text-orange-400" aria-hidden="true" />
           {t('currentStreak', { count: currentStreak })}
         </p>

@@ -1,6 +1,6 @@
 {
   "name": "habittrove",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -62,6 +62,7 @@
     "react-markdown": "^9.0.1",
     "recharts": "^2.15.0",
     "rrule": "^2.8.1",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.0.5",
