@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## Version 0.6.0
+
+### Added
+
+* Add recurring tasks with optional occurrence goals, missed-date catch-up, and task checklists ([upstream #55](https://github.com/dohsimpson/HabitTrove/issues/55), [#115](https://github.com/dohsimpson/HabitTrove/issues/115), [#122](https://github.com/dohsimpson/HabitTrove/issues/122)).
+* Add per-habit streaks with a one-occurrence grace period, configured-week progress, and achievement badges ([upstream #65](https://github.com/dohsimpson/HabitTrove/issues/65), [#25](https://github.com/dohsimpson/HabitTrove/issues/25), [#10](https://github.com/dohsimpson/HabitTrove/issues/10)).
+* Add dashboard section ordering and a Daily only filter for the dashboard and item list ([upstream #71](https://github.com/dohsimpson/HabitTrove/issues/71), [#79](https://github.com/dohsimpson/HabitTrove/issues/79)).
+* Add optional per-item time reminders with browser-local controls and temporary 2× or 3× coin boosts ([upstream #123](https://github.com/dohsimpson/HabitTrove/issues/123), [#80](https://github.com/dohsimpson/HabitTrove/issues/80)).
+* Add creator-configured completion approval with multiple username-selected approvers, optional photo evidence, and an Approvals screen ([upstream #185](https://github.com/dohsimpson/HabitTrove/issues/185)).
+
+### Changed
+
+* Hold coins until a required completion is approved; a listed approver may approve their own submission. Existing completion and coin history is retained.
+
+### Fixed
+
+* Keep rejected submissions out of completion counts and permit a corrected resubmission.
+* Improve approval form screen reader references and approval queue text contrast.
+* Make avatar route tests use isolated temporary files so the full Bun suite remains stable across test orderings.
+* Count completed scheduled dates toward recurring task goals, and keep one-off tasks overdue beyond a year.
+* Reverse an approval reward if undoing a later check-in drops the approved count below the target, while preserving awards made under an earlier target.
+* Keep completed archived tasks in calendar history and allow unrelated edits after a temporary boost expires.
+* Reassign approval to the creator or a remaining administrator when the last named approver is deleted; reject a deleted completer's pending submissions.
+
+### Security
+
+* Restrict evidence viewing to the completing user, item creator, and designated approvers; store uploads as size-limited, metadata-free WebP files.
+* Restrict approval-setting edits to the recorded creator or an administrator and serialize approval rewards with other coin changes.
+* Limit approval responses to the submission outcome for designated approvers who are not assigned to the item.
+* Remove a deleted account's completion evidence and reject its unreviewable pending submissions.
+
 ## Version 0.5.0
 
 ### Added

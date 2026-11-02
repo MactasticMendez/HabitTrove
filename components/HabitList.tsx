@@ -43,7 +43,7 @@ export default function HabitList() {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [reordering, setReordering] = useState(false)
   const [orderError, setOrderError] = useState('')
-  const canReorder = sortBy === 'custom' && !searchTerm.trim() && hasPermission(currentUser, 'habit', 'write')
+  const canReorder = sortBy === 'custom' && !searchTerm.trim() && !browserSettings.hideNonDaily && hasPermission(currentUser, 'habit', 'write')
   const originalOrder = useMemo(() => new Map(habitsData.habits.map((habit, index) => [habit.id, index])), [habitsData.habits])
 
   const compareHabits = useMemo(() => {
@@ -84,9 +84,10 @@ export default function HabitList() {
 
   const allHabitsInView = useMemo(() => {
     return habitsData.habits.filter(habit =>
-      isTasksView ? habit.isTask : !habit.isTask
+      (isTasksView ? habit.isTask : !habit.isTask) &&
+      (!browserSettings.hideNonDaily || (habit.isTask ? !habit.taskRepeat || habit.taskRepeat === 'daily' : getHabitFreq(habit) === 'daily'))
     );
-  }, [habitsData.habits, isTasksView]);
+  }, [habitsData.habits, isTasksView, browserSettings.hideNonDaily]);
 
   const searchedHabits = useMemo(() => {
     if (!searchTerm.trim()) {
@@ -203,6 +204,11 @@ export default function HabitList() {
             aria-pressed={Boolean(browserSettings.compactItems)}
             onClick={() => setBrowserSettings(previous => ({ ...previous, compactItems: !previous.compactItems }))}>
             <Rows3 className="mr-2 h-4 w-4" />{t('compactView')}
+          </Button>
+          <Button type="button" variant={browserSettings.hideNonDaily ? 'secondary' : 'outline'}
+            aria-pressed={Boolean(browserSettings.hideNonDaily)}
+            onClick={() => setBrowserSettings(previous => ({ ...previous, hideNonDaily: !previous.hideNonDaily }))}>
+            {t('hideNonDaily')}
           </Button>
         </div>
       </div>

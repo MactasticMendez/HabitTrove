@@ -1,8 +1,43 @@
 {
+  "Achievements": {
+    "title": "Achievements",
+    "firstCompletion": "First completion",
+    "tenCompletions": "10 completions",
+    "hundredCompletions": "100 completions",
+    "firstTask": "First task",
+    "firstRedemption": "First reward redeemed"
+  },
+  "Reminders": {
+    "title": "HabitTrove reminder",
+    "body": "{name} is due."
+  },
+  "ApprovalQueue": {
+    "title": "Completion approvals",
+    "description": "Review submitted task and habit completions. A listed approver may review their own submission.",
+    "loading": "Loading submissions…",
+    "empty": "No completions are waiting for your approval.",
+    "loadError": "Could not load submissions.",
+    "reviewError": "Could not save the review. Please try again.",
+    "submittedBy": "Submitted by {username}",
+    "unknownUser": "Unknown user",
+    "evidence": "Photo evidence",
+    "evidenceAlt": "Evidence for {name}",
+    "approve": "Approve",
+    "reject": "Reject"
+  },
   "Dashboard": {
+    "coins": "Coin balance",
+    "streak": "Streak",
+    "today": "Today",
+    "heatmap": "Completion calendar",
+    "achievements": "Achievements",
+    "reorderSection": "Reorder {name}",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
     "title": "대시보드"
   },
   "HabitList": {
+    "hideNonDaily": "Daily only",
     "myTasks": "내 할 일",
     "myHabits": "내 습관",
     "addTaskButton": "할 일 추가",
@@ -36,6 +71,9 @@
     "deleteButton": "삭제"
   },
   "DailyOverview": {
+    "graceUsed": "Grace used",
+    "hideNonDaily": "Daily only",
+    "individualProgress": "{streak} streak; {done} of {due} due days completed this week",
     "addTaskButtonLabel": "할 일 추가",
     "addHabitButtonLabel": "습관 추가",
     "todaysOverviewTitle": "오늘의 개요",
@@ -91,6 +129,27 @@
     "coinBalanceTitle": "코인 잔액"
   },
   "AddEditHabitModal": {
+    "taskRepeatLabel": "Repeat task",
+    "taskRepeatNone": "Does not repeat",
+    "taskRepeatDaily": "Daily",
+    "taskRepeatWeekly": "Weekly",
+    "taskRepeatMonthly": "Monthly",
+    "taskRepeatYearly": "Yearly",
+    "taskGoalLabel": "Stop after",
+    "taskGoalHelp": "Leave blank to repeat until you archive this task.",
+    "checklistLabel": "Checklist",
+    "checklistItemLabel": "Checklist item {number}",
+    "removeChecklistItem": "Remove checklist item {number}",
+    "addChecklistItem": "Add checklist item",
+    "reminderTimeLabel": "Reminder time",
+    "boostLabel": "Temporary coin boost",
+    "boostNone": "No boost",
+    "boostUntilLabel": "Until",
+    "approvalLabel": "Require approval",
+    "approversLabel": "Approvers",
+    "approverSearchPlaceholder": "Search usernames",
+    "removeApprover": "Remove {name}",
+    "approverRequired": "Choose at least one approver.",
     "editTaskTitle": "할 일 수정",
     "editHabitTitle": "습관 수정",
     "addNewTaskTitle": "새 할 일 추가",
@@ -146,6 +205,7 @@
     "addButton": "보상 추가"
   },
   "Navigation": {
+    "approvals": "Approvals",
     "dashboard": "대시보드",
     "tasks": "할 일",
     "habits": "습관",
@@ -343,6 +403,15 @@
     "tasksLabel": "할 일"
   },
   "HabitItem": {
+    "graceUsed": "Grace day used",
+    "invalidPhoto": "Choose a JPEG, PNG or WebP image smaller than 2 MB.",
+    "checklistProgress": "{done}/{total} steps complete",
+    "taskProgress": "Completed {count}/{goal} times",
+    "streakAndWeek": "{streak} streak · {done}/{due} this week",
+    "pendingApproval": "Awaiting approval",
+    "evidenceLabel": "Photo evidence (optional; JPEG, PNG or WebP, up to 2 MB)",
+    "catchUp": "Catch up",
+    "catchUpDate": "Complete missed date {date}",
     "overdue": "기한이 지남",
     "whenLabel": "시기: {frequency}",
     "coinsPerCompletion": "완료당 {count} 코인",
@@ -393,6 +462,11 @@
     "countCompleted": "{completedCount}/{totalCount} 완료됨"
   },
   "SettingsPage": {
+    "remindersEnabled": "Pop-up reminders",
+    "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",
+    "reminderLead": "Remind me",
+    "reminderAtTime": "At the chosen time",
+    "reminderMinutes": "{count} minutes early",
     "sectionsLabel": "Settings sections",
     "preferencesTab": "Preferences",
     "adminTab": "Admin panel",
@@ -465,6 +539,9 @@
     "chooseEmoji": "이모지 선택"
   },
   "useHabits": {
+    "checklistUpdateFailed": "Could not update the checklist. Please try again.",
+    "pendingApprovalTitle": "Submitted for approval",
+    "pendingApprovalDescription": "Your approvers can review this completion. Coins are awarded after approval.",
     "alreadyCompletedTitle": "이미 완료됨",
     "alreadyCompletedDescription": "오늘 이미 이 습관을 완료했습니다.",
     "completedTitle": "완료!",

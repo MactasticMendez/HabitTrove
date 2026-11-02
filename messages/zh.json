@@ -1,8 +1,43 @@
 {
+  "Achievements": {
+    "title": "Achievements",
+    "firstCompletion": "First completion",
+    "tenCompletions": "10 completions",
+    "hundredCompletions": "100 completions",
+    "firstTask": "First task",
+    "firstRedemption": "First reward redeemed"
+  },
+  "Reminders": {
+    "title": "HabitTrove reminder",
+    "body": "{name} is due."
+  },
+  "ApprovalQueue": {
+    "title": "Completion approvals",
+    "description": "Review submitted task and habit completions. A listed approver may review their own submission.",
+    "loading": "Loading submissions…",
+    "empty": "No completions are waiting for your approval.",
+    "loadError": "Could not load submissions.",
+    "reviewError": "Could not save the review. Please try again.",
+    "submittedBy": "Submitted by {username}",
+    "unknownUser": "Unknown user",
+    "evidence": "Photo evidence",
+    "evidenceAlt": "Evidence for {name}",
+    "approve": "Approve",
+    "reject": "Reject"
+  },
   "Dashboard": {
+    "coins": "Coin balance",
+    "streak": "Streak",
+    "today": "Today",
+    "heatmap": "Completion calendar",
+    "achievements": "Achievements",
+    "reorderSection": "Reorder {name}",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
     "title": "仪表板"
   },
   "HabitList": {
+    "hideNonDaily": "Daily only",
     "myTasks": "我的任务",
     "myHabits": "我的习惯",
     "addTaskButton": "添加任务",
@@ -36,6 +71,9 @@
     "deleteButton": "删除"
   },
   "DailyOverview": {
+    "graceUsed": "Grace used",
+    "hideNonDaily": "Daily only",
+    "individualProgress": "{streak} streak; {done} of {due} due days completed this week",
     "addTaskButtonLabel": "添加任务",
     "addHabitButtonLabel": "添加习惯",
     "todaysOverviewTitle": "今日概览",
@@ -91,6 +129,27 @@
     "coinBalanceTitle": "金币余额"
   },
   "AddEditHabitModal": {
+    "taskRepeatLabel": "Repeat task",
+    "taskRepeatNone": "Does not repeat",
+    "taskRepeatDaily": "Daily",
+    "taskRepeatWeekly": "Weekly",
+    "taskRepeatMonthly": "Monthly",
+    "taskRepeatYearly": "Yearly",
+    "taskGoalLabel": "Stop after",
+    "taskGoalHelp": "Leave blank to repeat until you archive this task.",
+    "checklistLabel": "Checklist",
+    "checklistItemLabel": "Checklist item {number}",
+    "removeChecklistItem": "Remove checklist item {number}",
+    "addChecklistItem": "Add checklist item",
+    "reminderTimeLabel": "Reminder time",
+    "boostLabel": "Temporary coin boost",
+    "boostNone": "No boost",
+    "boostUntilLabel": "Until",
+    "approvalLabel": "Require approval",
+    "approversLabel": "Approvers",
+    "approverSearchPlaceholder": "Search usernames",
+    "removeApprover": "Remove {name}",
+    "approverRequired": "Choose at least one approver.",
     "editTaskTitle": "编辑任务",
     "editHabitTitle": "编辑习惯",
     "addNewTaskTitle": "添加新任务",
@@ -146,6 +205,7 @@
     "addButton": "添加奖励"
   },
   "Navigation": {
+    "approvals": "Approvals",
     "dashboard": "仪表板",
     "tasks": "任务",
     "habits": "习惯",
@@ -343,6 +403,15 @@
     "tasksLabel": "任务"
   },
   "HabitItem": {
+    "graceUsed": "Grace day used",
+    "invalidPhoto": "Choose a JPEG, PNG or WebP image smaller than 2 MB.",
+    "checklistProgress": "{done}/{total} steps complete",
+    "taskProgress": "Completed {count}/{goal} times",
+    "streakAndWeek": "{streak} streak · {done}/{due} this week",
+    "pendingApproval": "Awaiting approval",
+    "evidenceLabel": "Photo evidence (optional; JPEG, PNG or WebP, up to 2 MB)",
+    "catchUp": "Catch up",
+    "catchUpDate": "Complete missed date {date}",
     "overdue": "逾期",
     "whenLabel": "时间：{frequency}",
     "coinsPerCompletion": "{count} 金币每次完成",
@@ -393,6 +462,11 @@
     "countCompleted": "{completedCount}/{totalCount} 已完成"
   },
   "SettingsPage": {
+    "remindersEnabled": "Pop-up reminders",
+    "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",
+    "reminderLead": "Remind me",
+    "reminderAtTime": "At the chosen time",
+    "reminderMinutes": "{count} minutes early",
     "sectionsLabel": "Settings sections",
     "preferencesTab": "Preferences",
     "adminTab": "Admin panel",
@@ -465,6 +539,9 @@
     "chooseEmoji": "选择表情符号"
   },
   "useHabits": {
+    "checklistUpdateFailed": "Could not update the checklist. Please try again.",
+    "pendingApprovalTitle": "Submitted for approval",
+    "pendingApprovalDescription": "Your approvers can review this completion. Coins are awarded after approval.",
     "alreadyCompletedTitle": "已完成",
     "alreadyCompletedDescription": "您今天已经完成了这个习惯。",
     "completedTitle": "已完成！",

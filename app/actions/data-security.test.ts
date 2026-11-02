@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import type { User } from '@/lib/types'
 import { saltAndHashPassword, verifyPassword } from '@/lib/password'
+import sharp from 'sharp'
 
 let currentUser: User | undefined
 
@@ -254,6 +255,229 @@ describe('server action authorization', () => {
     const saved = await actions.loadHabitsData()
     expect(saved.habits.map(habit => [habit.id, habit.name, habit.position, habit.completions]))
       .toEqual([['shared', 'Edited by another session', 1, []], ['foreign', 'Foreign', 0, []]])
+  })
+
+  test('lets assigned members check off task steps without editing another task', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0] = {
+      ...stored.habits[0], isTask: true, frequency: new Date().toISOString(),
+      checklist: [{ id: 'step-1', text: 'Prepare', completed: false }],
+    }
+    stored.habits[1] = {
+      ...stored.habits[1], isTask: true, frequency: new Date().toISOString(),
+      checklist: [{ id: 'step-2', text: 'Private', completed: false }],
+    }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    expect((await actions.toggleTaskChecklistItem('shared', 'step-1', true)).checklist?.[0].completed).toBe(true)
+    await expect(actions.toggleTaskChecklistItem('foreign', 'step-2', true)).rejects.toThrow('not allowed')
+    await expect(actions.toggleTaskChecklistItem('shared', 'missing', true)).rejects.toThrow('not allowed')
+    expect((await actions.loadHabitsData()).habits[0].checklist?.[0].completed).toBe(true)
+  })
+
+  test('holds approval submissions and pays only the completing account after a chosen approver accepts', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['other', 'member'] } : item) })
+    const stored = (await actions.loadHabitsData()).habits.find(item => item.id === 'shared')!
+    expect(stored.createdBy).toBeUndefined()
+    currentUser = member
+    const form = new FormData()
+    const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } })
+      .withExif({ IFD0: { Copyright: 'secret-location-marker' } }).png().toBuffer()
+    expect(image.includes(Buffer.from('secret-location-marker'))).toBe(true)
+    form.set('evidence', new File([image], 'proof.png', { type: 'image/png' }))
+    const submitted = await actions.recordHabitCompletion('shared', new Date().toISOString(), form)
+    expect(submitted.pending).toBe(true)
+    expect(submitted.rewarded).toBe(false)
+    expect(submitted.coins.transactions.filter(tx => tx.type === 'HABIT_COMPLETION')).toHaveLength(0)
+    const completionId = submitted.habit.completionRecords![0]!.id
+    expect(await fs.readdir(path.join(directory, 'data', 'evidence'))).toEqual([`${completionId}.webp`])
+    const storedImage = await fs.readFile(path.join(directory, 'data', 'evidence', `${completionId}.webp`))
+    expect(storedImage.toString('ascii', 0, 4)).toBe('RIFF')
+    expect(storedImage.includes(Buffer.from('secret-location-marker'))).toBe(false)
+    expect(await actions.loadPendingApprovals()).toHaveLength(1)
+    currentUser = admin
+    expect(await actions.loadPendingApprovals()).toHaveLength(0)
+    await expect(actions.reviewHabitCompletion('shared', completionId, 'approve')).rejects.toThrow('Approval is not allowed')
+    currentUser = other
+    expect(await actions.loadPendingApprovals()).toHaveLength(1)
+    const reviewed = await actions.reviewHabitCompletion('shared', completionId, 'approve')
+    expect(reviewed.approved).toBe(true)
+    expect(reviewed.habit?.id).toBe('shared')
+    expect((await actions.loadPendingApprovals())).toHaveLength(0)
+    await expect(actions.reviewHabitCompletion('shared', completionId, 'approve')).rejects.toThrow('no longer pending')
+    const coins = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8'))
+    expect(coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2, completionId })
+  })
+
+  test('does not disclose a habit to an approver who is not assigned to it', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, description: 'Private notes', userIds: ['member'], requiresApproval: true,
+        approverIds: ['other'] } : item) })
+    currentUser = member
+    const submitted = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    const completionId = submitted.habit.completionRecords![0]!.id
+    currentUser = other
+    expect((await actions.loadHabitsData()).habits.some(item => item.id === 'shared')).toBe(false)
+    expect((await actions.loadPendingApprovals())[0].completionId).toBe(completionId)
+    const reviewed = await actions.reviewHabitCompletion('shared', completionId, 'approve')
+    expect(reviewed.approved).toBe(true)
+    expect(reviewed.habit).toBeNull()
+    const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'habits.json'), 'utf8'))
+    expect(saved.habits.find((item: { id: string }) => item.id === 'shared').completionRecords[0].approval).toBe('approved')
+    const coins = JSON.parse(await fs.readFile(path.join(directory, 'data', 'coins.json'), 'utf8'))
+    expect(coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2, completionId })
+  })
+
+  test('replaces a deleted sole approver so pending submissions can be reviewed', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['other'] } : item) })
+    currentUser = member
+    const submitted = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    const completionId = submitted.habit.completionRecords![0]!.id
+    currentUser = admin
+    await actions.deleteUser('other')
+    const shared = (await actions.loadHabitsData()).habits.find(item => item.id === 'shared')!
+    expect(shared.approverIds).toEqual(['admin'])
+    expect((await actions.loadPendingApprovals())[0].completionId).toBe(completionId)
+    await actions.saveHabitsData({ habits: (await actions.loadHabitsData()).habits.map(item =>
+      item.id === 'shared' ? { ...item, description: 'Edited after account deletion' } : item) })
+    const reviewed = await actions.reviewHabitCompletion('shared', completionId, 'approve')
+    expect(reviewed.approved).toBe(true)
+  })
+
+  test('prefers the item creator over an administrator as replacement approver', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0] = { ...stored.habits[0], createdBy: 'member', requiresApproval: true,
+      approverIds: ['other'] }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    currentUser = admin
+    await actions.deleteUser('other')
+    const shared = (await actions.loadHabitsData()).habits.find(item => item.id === 'shared')!
+    expect(shared.approverIds).toEqual(['member'])
+  })
+
+  test('rejects a deleted account’s pending submission so it no longer blocks the day', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['other'] } : item) })
+    currentUser = member
+    const evidence = new FormData()
+    const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } }).png().toBuffer()
+    evidence.set('evidence', new File([image], 'proof.png', { type: 'image/png' }))
+    await actions.recordHabitCompletion('shared', new Date().toISOString(), evidence)
+    currentUser = admin
+    await actions.deleteUser('member')
+    const shared = (await actions.loadHabitsData()).habits.find(item => item.id === 'shared')!
+    expect(shared.completionRecords?.[0]?.approval).toBe('rejected')
+    expect(shared.completionRecords?.[0]?.evidenceId).toBeUndefined()
+    expect(await fs.readdir(path.join(directory, 'data', 'evidence'))).toHaveLength(0)
+    currentUser = { ...other, permissions: member.permissions }
+    expect((await actions.loadPendingApprovals())).toHaveLength(0)
+    expect((await actions.recordHabitCompletion('shared', new Date().toISOString())).pending).toBe(true)
+  })
+
+  test('rejecting a submission allows resubmission without a coin award', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['member'] } : item) })
+    currentUser = member
+    const first = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    await actions.reviewHabitCompletion('shared', first.habit.completionRecords![0]!.id, 'reject')
+    expect((await actions.loadPendingApprovals())).toHaveLength(0)
+    const second = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    expect(second.pending).toBe(true)
+    expect(second.habit.completionRecords?.[0]?.approval).toBe('rejected')
+    expect(second.habit.completionRecords?.[1]?.approval).toBe('pending')
+  })
+
+  test('allows a listed approver to approve their own completion', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['member'] } : item) })
+    currentUser = member
+    const submitted = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    const reviewed = await actions.reviewHabitCompletion('shared', submitted.habit.completionRecords![0]!.id, 'approve')
+    expect(reviewed.approved).toBe(true)
+    expect(reviewed.coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2 })
+  })
+
+  test('reverses an earlier approval award when a later check-in is withdrawn', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, targetCompletions: 2, requiresApproval: true, approverIds: ['member'] } : item) })
+    currentUser = member
+    const first = await actions.recordHabitCompletion('shared', new Date(Date.now() - 1000).toISOString())
+    const second = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    const firstId = first.habit.completionRecords![0]!.id
+    const secondId = second.habit.completionRecords![1]!.id
+    await actions.reviewHabitCompletion('shared', secondId, 'approve')
+    const awarded = await actions.reviewHabitCompletion('shared', firstId, 'approve')
+    expect(awarded.coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2, completionId: firstId })
+    const withdrawn = await actions.undoHabitCompletion('shared', 1, second.completionTimestamp)
+    expect(withdrawn.rewardReversed).toBe(true)
+    expect(withdrawn.habit.completionRecords?.[0]?.rewardedUserIds).toBeUndefined()
+    expect(withdrawn.coins.transactions[0]).toMatchObject({ userId: 'member', amount: -2, completionId: firstId })
+    const replacement = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    const reapproved = await actions.reviewHabitCompletion('shared', replacement.habit.completionRecords![1]!.id, 'approve')
+    expect(reapproved.coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2 })
+  })
+
+  test('finishes a recurring task goal only after all check-ins for the occurrence', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0] = { ...stored.habits[0], isTask: true,
+      frequency: new Date(Date.now() - 86_400_000).toISOString(), taskRepeat: 'daily',
+      targetCompletions: 2, taskGoalOccurrences: 1 }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const first = await actions.recordHabitCompletion('shared', new Date(Date.now() - 1000).toISOString())
+    expect(first.habit.archived).toBeFalsy()
+    const second = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    expect(second.habit.archived).toBe(true)
+    expect(second.coins.transactions[0]).toMatchObject({ userId: 'member', amount: 2 })
+  })
+
+  test('keeps recurring tasks open until their occurrence goal and honors a temporary boost', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    stored.habits[0] = {
+      ...stored.habits[0], isTask: true, frequency: yesterday, taskRepeat: 'daily',
+      taskGoalOccurrences: 2, completions: [yesterday], completionRecords: [null],
+      coinBoost: { multiplier: 2, startsAt: '2000-01-01T00:00:00.000Z',
+        until: '2099-01-01T00:00:00.000Z' },
+    }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const result = await actions.recordHabitCompletion('shared', new Date().toISOString())
+    expect(result.habit.archived).toBe(true)
+    expect(result.rewardAmount).toBe(4)
+    expect(result.coins.transactions[0]).toMatchObject({ userId: 'member', amount: 4 })
+  })
+
+  test('rejects an invalid or oversized evidence image', async () => {
+    currentUser = admin
+    const existing = await actions.loadHabitsData()
+    await actions.saveHabitsData({ habits: existing.habits.map(item => item.id === 'shared'
+      ? { ...item, requiresApproval: true, approverIds: ['member'] } : item) })
+    currentUser = member
+    const invalid = new FormData()
+    invalid.set('evidence', new File(['<html>'], 'fake.png', { type: 'image/png' }))
+    await expect(actions.recordHabitCompletion('shared', new Date().toISOString(), invalid)).rejects.toThrow('Invalid evidence image')
+    const oversized = new FormData()
+    oversized.set('evidence', new File([new Uint8Array(2_000_001)], 'large.png', { type: 'image/png' }))
+    await expect(actions.recordHabitCompletion('shared', new Date().toISOString(), oversized)).rejects.toThrow('Invalid evidence image')
+    expect((await actions.loadHabitsData()).habits[0].completions).toHaveLength(0)
   })
 
   test('preserves pin, task, and archive flags when an edit omits them', async () => {
