@@ -322,8 +322,13 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
       ) {
         throw new PermissionError('Use the completion action to change habit history')
       }
-      return stored?.completionRecords && habit.completionRecords === undefined
-        ? { ...habit, completionRecords: stored.completionRecords } : habit
+      return stored ? {
+        ...habit,
+        ...(habit.pinned === undefined && stored.pinned !== undefined && { pinned: stored.pinned }),
+        ...(habit.isTask === undefined && stored.isTask !== undefined && { isTask: stored.isTask }),
+        ...(habit.archived === undefined && stored.archived !== undefined && { archived: stored.archived }),
+        ...(habit.completionRecords === undefined && stored.completionRecords !== undefined && { completionRecords: stored.completionRecords }),
+      } : habit
     })
     const habits = mergeOwnedItems(
       submitted.map(habit => validateHabit(habit, previous.get(habit.id)?.frequency)),

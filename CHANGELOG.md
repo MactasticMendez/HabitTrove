@@ -20,6 +20,9 @@
 
 ### Fixed
 
+* Keep a habit's pinned, task, and archive state when editing its other details ([upstream #109](https://github.com/dohsimpson/HabitTrove/issues/109)).
+* Use the configured timezone for calendar day selection and refresh dashboard due items at local midnight ([upstream #13](https://github.com/dohsimpson/HabitTrove/issues/13), [#165](https://github.com/dohsimpson/HabitTrove/issues/165)).
+* Guard mobile navigation's browser-only iOS detection during server rendering ([upstream #130](https://github.com/dohsimpson/HabitTrove/issues/130)).
 * Restore Authentik sign-in for linked accounts by carrying the local account ID through Auth.js profile normalization.
 * Update Linkify React to match LinkifyJS and prevent a client-side crash on the dashboard.
 * Improve chart label contrast and give the profile menu an accessible name.

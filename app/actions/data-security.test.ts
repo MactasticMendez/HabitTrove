@@ -241,6 +241,19 @@ describe('server action authorization', () => {
     expect(saved.habits.find((habit: { id: string }) => habit.id === 'shared').completions).toHaveLength(1)
   })
 
+  test('preserves pin, task, and archive flags when an edit omits them', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const stored = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    stored.habits[0] = { ...stored.habits[0], pinned: true, isTask: true, archived: true, frequency: new Date().toISOString() }
+    await fs.writeFile(habitFile, JSON.stringify(stored))
+    const { pinned, isTask, archived, ...edited } = stored.habits[0]
+    currentUser = { ...member, permissions: [{ ...member.permissions![0], habit: { write: true, interact: true } }] }
+    await actions.saveHabitsData({ habits: [{ ...edited, name: 'Renamed task' }] })
+    const saved = (await actions.loadHabitsData()).habits.find(habit => habit.id === 'shared')!
+    expect({ pinned: saved.pinned, isTask: saved.isTask, archived: saved.archived, name: saved.name })
+      .toEqual({ pinned: true, isTask: true, archived: true, name: 'Renamed task' })
+  })
+
   test('credits every assigned member and only the recorder can reverse their shared completion', async () => {
     const timestamp = new Date().toISOString()
     const completed = await actions.recordHabitCompletion('shared', timestamp)

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Calendar } from '@/components/ui/calendar'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import CompletionCountBadge from '@/components/CompletionCountBadge'
 import { Circle, CircleCheck } from 'lucide-react'
-import { d2s, getNow, isHabitDue, getISODate, getCompletionsForDate } from '@/lib/utils'
+import { d2s, getNow, isHabitDue, getCompletionsForDate, toCalendarPickerDate, fromCalendarPickerDate } from '@/lib/utils'
+import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { useHabits } from '@/hooks/useHabits'
@@ -16,6 +17,7 @@ import { Habit } from '@/lib/types'
 
 export default function HabitCalendar() {
   const t = useTranslations('HabitCalendar')
+  const tHabitItem = useTranslations('HabitItem')
   const { completePastHabit } = useHabits()
 
   const handleCompletePastHabit = useCallback(async (habit: Habit, date: DateTime) => {
@@ -26,7 +28,14 @@ export default function HabitCalendar() {
     }
   }, [completePastHabit, t])
   const [settings] = useAtom(settingsAtom)
-  const [selectedDateTime, setSelectedDateTime] = useState<DateTime>(getNow({ timezone: settings.system.timezone }))
+  const timezone = settings.system.timezone
+  const today = useTodayInTimezone(timezone)
+  const [selectedDateTime, setSelectedDateTime] = useState<DateTime>(getNow({ timezone }))
+  useEffect(() => {
+    setSelectedDateTime(previous => DateTime.fromObject({
+      year: previous.year, month: previous.month, day: previous.day,
+    }, { zone: timezone }))
+  }, [timezone])
   const selectedDate = selectedDateTime.toFormat("yyyy-MM-dd")
   const [habitsData] = useAtom(habitsAtom)
   const [hasTasks] = useAtom(hasTasksAtom)
@@ -35,11 +44,7 @@ export default function HabitCalendar() {
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
 
   // Get completed dates for calendar modifiers
-  const completedDates = useMemo(() => {
-    return new Set(Array.from(completedHabitsMap.keys()).map(date =>
-      getISODate({ dateTime: DateTime.fromISO(date), timezone: settings.system.timezone })
-    ))
-  }, [completedHabitsMap, settings.system.timezone])
+  const completedDates = useMemo(() => new Set(completedHabitsMap.keys()), [completedHabitsMap])
 
   return (
     <div>
@@ -52,17 +57,13 @@ export default function HabitCalendar() {
           <CardContent>
             <Calendar
               mode="single"
-              selected={selectedDateTime.toJSDate()}
-              onSelect={(e) => e && setSelectedDateTime(DateTime.fromJSDate(e))}
+              selected={toCalendarPickerDate(selectedDateTime)}
+              today={toCalendarPickerDate(DateTime.fromISO(today, { zone: timezone }))}
+              onSelect={(date) => date && setSelectedDateTime(fromCalendarPickerDate(date, timezone))}
               weekStartsOn={settings.system.weekStartDay}
               className="rounded-md border"
               modifiers={{
-                completed: (date) => completedDates.has(
-                  getISODate({
-                    dateTime: DateTime.fromJSDate(date),
-                    timezone: settings.system.timezone
-                  })!
-                )
+                completed: (date) => completedDates.has(fromCalendarPickerDate(date, timezone).toISODate() ?? '')
               }}
               modifiersClassNames={{
                 completed: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 font-medium rounded-md',
@@ -112,9 +113,11 @@ export default function HabitCalendar() {
                                     </span>
                                   )}
                                   <button
+                                    type="button"
+                                    aria-label={`${tHabitItem(isCompleted ? 'completedStatus' : 'completeButton')}: ${habit.name}`}
                                     onClick={() => handleCompletePastHabit(habit, selectedDateTime)}
                                     disabled={isCompleted}
-                                    className="relative h-4 w-4 hover:opacity-70 transition-opacity disabled:opacity-100"
+                                    className="relative h-8 w-8 inline-flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-100"
                                   >
                                     {isCompleted ? (
                                       <CircleCheck className="h-4 w-4 text-green-500" />
@@ -171,9 +174,11 @@ export default function HabitCalendar() {
                                   </span>
                                 )}
                                 <button
+                                  type="button"
+                                  aria-label={`${tHabitItem(isCompleted ? 'completedStatus' : 'completeButton')}: ${habit.name}`}
                                   onClick={() => handleCompletePastHabit(habit, selectedDateTime)}
                                   disabled={isCompleted}
-                                  className="relative h-4 w-4 hover:opacity-70 transition-opacity disabled:opacity-100"
+                                  className="relative h-8 w-8 inline-flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-100"
                                 >
                                   {isCompleted ? (
                                     <CircleCheck className="h-4 w-4 text-green-500" />

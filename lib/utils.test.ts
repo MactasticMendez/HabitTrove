@@ -2,6 +2,9 @@ import { expect, test, describe, beforeEach, spyOn } from "bun:test";
 import {
   cn,
   getTodayInTimezone,
+  millisecondsUntilNextDay,
+  toCalendarPickerDate,
+  fromCalendarPickerDate,
   getNow,
   getNowInMilliseconds,
   t2d,
@@ -52,6 +55,20 @@ test('external popups reject unsafe schemes and isolate the opener', () => {
     if (original) Object.defineProperty(globalThis, 'window', original)
     else Reflect.deleteProperty(globalThis, 'window')
   }
+})
+
+test('calendar picker keeps the configured day independent of the browser timezone', () => {
+  const configuredDay = DateTime.fromISO('2026-01-02T00:30:00', { zone: 'Pacific/Kiritimati' })
+  const pickerDate = toCalendarPickerDate(configuredDay)
+  expect([pickerDate.getFullYear(), pickerDate.getMonth() + 1, pickerDate.getDate()]).toEqual([2026, 1, 2])
+  expect(fromCalendarPickerDate(pickerDate, 'Pacific/Kiritimati').toISODate()).toBe('2026-01-02')
+})
+
+test('day rollover timer follows the configured timezone across daylight saving', () => {
+  const spring = DateTime.fromISO('2026-03-08T00:00:00', { zone: 'America/New_York' })
+  const fall = DateTime.fromISO('2026-11-01T00:00:00', { zone: 'America/New_York' })
+  expect(millisecondsUntilNextDay('America/New_York', spring)).toBe(23 * 60 * 60 * 1000)
+  expect(millisecondsUntilNextDay('America/New_York', fall)).toBe(25 * 60 * 60 * 1000)
 })
 
 test('shared completion undo is available only to its recorder', () => {

@@ -4,7 +4,8 @@ import { useState, useMemo, useEffect } from 'react' // Added useMemo, useEffect
 import { Plus, ArrowUpNarrowWide, ArrowDownWideNarrow, Search } from 'lucide-react' // Added sort icons, Search icon
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { habitsAtom, browserSettingsAtom } from '@/lib/atoms'
+import { habitsAtom, browserSettingsAtom, settingsAtom } from '@/lib/atoms'
+import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import EmptyState from './EmptyState'
 import { Button } from '@/components/ui/button'
 import HabitItem from './HabitItem'
@@ -25,8 +26,9 @@ export default function HabitList() {
   const { saveHabit, deleteHabit } = useHabits()
   const [habitsData] = useAtom(habitsAtom) // setHabitsData removed as it's not used
   const [browserSettings] = useAtom(browserSettingsAtom)
+  const [settings] = useAtom(settingsAtom)
+  useTodayInTimezone(settings.system.timezone)
   const isTasksView = browserSettings.viewType === 'tasks'
-  // const [settings] = useAtom(settingsAtom); // settingsAtom is not directly used in HabitList itself.
 
   type SortableField = 'name' | 'coinReward' | 'dueDate' | 'frequency';
   type SortOrder = 'asc' | 'desc';
