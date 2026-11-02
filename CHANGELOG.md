@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## Version 0.6.1
+
+### Fixed
+
+* Synchronize the npm lockfile with the Docker image's npm version so clean image builds succeed.
+
 ## Version 0.6.0
 
 ### Added
