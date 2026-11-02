@@ -6,6 +6,7 @@ const mockRealpath = mock()
 const mockLstat = mock()
 let currentUser: { id: string } | undefined = { id: 'test-user' }
 
+mock.module('server-only', () => ({}))
 mock.module('@/lib/server-helpers', () => ({ getCurrentUser: async () => currentUser }))
 
 mock.module('fs/promises', () => ({

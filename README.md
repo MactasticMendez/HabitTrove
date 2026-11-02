@@ -88,9 +88,9 @@ The application data will be persisted in the `data` directory in both cases.
 
 For a new installation, set `INITIAL_ADMIN_PASSWORD` (12–128 characters) and `INITIAL_ADMIN_EMAIL` before first start. The app stores the password hash and email in `data/auth.json`. These variables do not overwrite existing accounts. Set `AUTH_SECRET` to a random value of at least 32 characters and protect it as a credential.
 
-Every new account needs an email and either a local password or an Authentik subject. Administrator accounts always need a local password for recovery. Existing accounts without email can sign in, but must add an email before using the app; this retains their account IDs and data and requires signing in again. Local email entry is not email verification. New and changed local passwords must be 12–128 characters. Existing shorter passwords still work until changed. Passwordless accounts cannot use local sign-in; assign a password or link an Authentik subject.
+Every new account needs an email and either a local password or an OIDC subject. Administrator accounts always need a local password for recovery. Existing accounts without email can sign in, but must add an email before using the app; this retains their account IDs and data and requires signing in again. Local email entry is not email verification. New and changed local passwords must be 12–128 characters. Existing shorter passwords still work until changed. Passwordless accounts cannot use local sign-in; assign a password or link an OIDC subject.
 
-For an Authentik-only account, an administrator must set its first local password. Existing users can change their own local password after confirming the current one. Password, role, email, and identity-link changes invalidate existing sessions.
+For an OIDC-only account, an administrator must set its first local password. Existing users can change their own local password after confirming the current one. Password, role, email, and identity-link changes invalidate existing sessions.
 
 For a legacy passwordless administrator, stop the app and use the included recovery script. It makes a restricted backup of `auth.json` before changing a password:
 
@@ -106,20 +106,28 @@ docker compose up -d
 
 Repeat for other passwordless accounts if needed. The script must run while the app is stopped to avoid concurrent writes. Back up the full data directory separately before a deployment or migration.
 
-### Authentik sign-in
+### OIDC sign-in
 
-Create a confidential OAuth2/OIDC provider and application in Authentik. Use `https://YOUR-HABITTROVE-HOST/api/auth/callback/authentik` as the exact redirect URI and enable the `openid`, `profile`, and `email` scopes. Set these environment values in Compose or your container manager:
+Create a confidential OpenID Connect client with your identity provider. Register `https://YOUR-HABITTROVE-HOST/api/auth/callback/oidc` as the exact redirect URI and allow the `openid`, `profile`, and `email` scopes. Configure it in **Settings → Admin panel → OIDC setup**, or set these environment values:
 
 ```text
 AUTH_URL=https://YOUR-HABITTROVE-HOST
-AUTHENTIK_ISSUER=https://YOUR-AUTHENTIK-HOST/application/o/YOUR-PROVIDER-SLUG/
-AUTHENTIK_CLIENT_ID=YOUR_CLIENT_ID
-AUTHENTIK_CLIENT_SECRET=YOUR_CLIENT_SECRET
+OIDC_ISSUER=https://YOUR-IDENTITY-PROVIDER/ISSUER
+OIDC_CLIENT_ID=YOUR_CLIENT_ID
+OIDC_CLIENT_SECRET=YOUR_CLIENT_SECRET
 ```
 
-The Authentik provider must return `email_verified: true` for account linking. Authentik 2025.10 and newer return `false` from the default email mapping; [configure a verified-email mapping](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/verify-email-address/) backed by an actual verification process. Include the email claim in the ID token. Do not set `email_verified: true` for addresses that have not been verified.
+The issuer must use HTTPS in production and support standard OIDC discovery. Self-linking requires an `email_verified: true` claim and a matching email. Providers that omit or cannot verify that claim require an administrator to pre-link the subject in the user editor. Do not mark unverified addresses as verified. For Authentik 2025.10 and newer, [configure a verified-email mapping](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/verify-email-address/) backed by an actual verification process and include the email claim in the ID token.
 
-To link an existing local account, sign in locally, add its email if needed, sign in again, then choose **Link Authentik account** from the profile menu. Confirm the local password and sign in to the Authentik account with the same verified email. The link is saved against Authentik's stable subject; later Authentik sign-ins use that subject. Email alone never signs into or links an account. Administrators may also pre-link an Authentik subject in the user editor, while keeping a local password on administrator accounts.
+The previous `AUTHENTIK_ISSUER`, `AUTHENTIK_CLIENT_ID`, and `AUTHENTIK_CLIENT_SECRET` variables remain supported when no `OIDC_*` values or in-app override are present. They keep the existing `/api/auth/callback/authentik` redirect, so upgrading the app does not interrupt the current Authentik sign-in. Generic `OIDC_*` values take precedence when both complete sets are present. To move an existing Authentik connection to the generic setup, register the new `/api/auth/callback/oidc` URI in Authentik, save the same issuer and client in the Admin panel, then restart and verify sign-in. Existing linked subjects remain valid when the issuer stays the same. The first in-app save records the legacy issuer, so existing links remain bound to it even if the old environment variables are later removed.
+
+The current local password is required to save OIDC changes. The page shows the new callback URL and, during a legacy setup, the currently active callback. It never displays the saved client secret. Leaving the secret blank retains it only when the issuer and client ID stay the same; changing either requires a new secret. Existing linked accounts must be unlinked before changing the issuer, then linked again after the new provider is active. Some providers change pairwise subjects when the client ID changes, so those users may also need to relink. Before disabling OIDC, give every OIDC-only account a local password; the Admin panel blocks disabling while those accounts exist. OIDC changes take effect after restarting the container. Local sign-in remains available during this process.
+
+The first in-app OIDC save creates an override in `data/admin-config.json`; an explicit in-app disable also overrides the environment values. Until then, the complete `OIDC_*` set or legacy `AUTHENTIK_*` set remains active. The client secret is encrypted in that owner-only file using a key derived from `AUTH_SECRET`, so preserve `AUTH_SECRET` along with backups. If this file is damaged, OIDC sign-in stays disabled until it is repaired; local sign-in remains available. To discard the in-app override and return to the environment configuration, stop the app, back up and remove `data/admin-config.json`, then restart. This also resets the app log level to Info.
+
+The same Admin panel contains the existing system settings (timezone, week start, backups, and language) and an application log level (Debug, Info, Warn, or Error). Log level changes apply immediately to HabitTrove's server backup, scheduler, and data-action logs; framework and browser logs have their own settings. This setting does not change `NODE_ENV` or container logging controls.
+
+To link an existing local account, sign in locally, add its email if needed, sign in again, then choose **Link OIDC account** from the profile menu. Confirm the local password and sign in to the OIDC account with the same verified email. The link is saved against the provider's stable subject and issuer; later OIDC sign-ins must match both. Email alone never signs into or links an account. Administrators may also pre-link an OIDC subject in the user editor after the provider is active, while keeping a local password on administrator accounts. The stored `authentikSubject` key is retained for compatibility with existing account data.
 
 Local sign-in throttling is process-local. Run one app instance against a data directory; the JSON store and throttle are not designed for multiple replicas. Retain a private backup and a local administrator recovery password.
 

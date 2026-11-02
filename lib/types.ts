@@ -37,11 +37,12 @@ export type User = SafeUser & {
   password?: string
   email?: string
   authentikSubject?: string
+  oidcIssuer?: string
   authVersion?: number
   lastNotificationReadTimestamp?: string // UTC ISO date string
 }
 
-export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'authVersion'> & {
+export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssuer' | 'authVersion'> & {
   hasPassword: boolean
   hasAuthentik: boolean
 }

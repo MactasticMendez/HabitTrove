@@ -4,6 +4,7 @@ import path from 'path';
 import { ZipArchive } from 'archiver';
 import { DateTime } from 'luxon';
 import { getDefaultSettings, type Settings } from './types';
+import { log } from './logger';
 
 const backupDir = () => path.join(process.cwd(), 'backups');
 const dataDir = () => path.join(process.cwd(), 'data');
@@ -14,7 +15,7 @@ async function ensureBackupDir() {
     await fs.access(backupDir());
   } catch {
     await fs.mkdir(backupDir(), { recursive: true, mode: 0o700 });
-    console.log('Created backup directory:', backupDir());
+    log('info', 'Created backup directory', backupDir());
   }
 }
 
@@ -30,11 +31,11 @@ async function rotateBackups() {
       }));
 
     if (backupFiles.length <= MAX_BACKUPS) {
-      console.log(`Rotation check: ${backupFiles.length} backups found, less than or equal to max ${MAX_BACKUPS}. No rotation needed.`);
+      log('debug', `Rotation check: ${backupFiles.length} backups found, no rotation needed.`);
       return; // No rotation needed
     }
 
-    console.log(`Rotation check: ${backupFiles.length} backups found, exceeding max ${MAX_BACKUPS}. Starting rotation.`);
+    log('info', `Rotation check: ${backupFiles.length} backups found, starting rotation.`);
 
     // Get stats to sort by creation time (mtime as proxy)
     const fileStats = await Promise.all(
@@ -48,18 +49,18 @@ async function rotateBackups() {
     fileStats.sort((a, b) => a.stat.mtime.getTime() - b.stat.mtime.getTime());
 
     const filesToDelete = fileStats.slice(0, fileStats.length - MAX_BACKUPS);
-    console.log(`Identified ${filesToDelete.length} backups to delete.`);
+    log('debug', `Identified ${filesToDelete.length} backups to delete.`);
 
     for (const file of filesToDelete) {
       try {
         await fs.unlink(file.path);
-        console.log(`Rotated (deleted) old backup: ${file.name}`);
+        log('info', `Rotated old backup: ${file.name}`);
       } catch (err) {
-        console.error(`Error deleting old backup ${file.name}:`, err);
+        log('error', `Error deleting old backup ${file.name}`, err);
       }
     }
   } catch (error) {
-    console.error('Error during backup rotation:', error);
+    log('error', 'Error during backup rotation', error);
   }
 }
 
@@ -73,11 +74,11 @@ export async function runBackup() {
       settings = getDefaultSettings();
     }
     if (!settings.system.autoBackupEnabled) {
-      console.log('Auto backup is disabled in settings. Skipping backup.');
+      log('debug', 'Auto backup is disabled; skipping backup.');
       return;
     }
 
-    console.log('Starting daily backup...');
+    log('info', 'Starting daily backup');
     await ensureBackupDir();
 
     const timestamp = DateTime.now().toFormat('yyyy-MM-dd_HH-mm-ss');
@@ -92,12 +93,12 @@ export async function runBackup() {
 
     return new Promise<void>((resolve, reject) => {
       output.on('close', async () => {
-        console.log(`Backup created successfully: ${backupFileName} (${archive.pointer()} total bytes)`);
+        log('info', `Backup created: ${backupFileName} (${archive.pointer()} bytes)`);
         try {
           await rotateBackups(); // Rotate after successful backup
           resolve();
         } catch (rotationError) {
-          console.error("Error during post-backup rotation:", rotationError);
+          log('error', 'Error during post-backup rotation', rotationError);
           // Decide if backup failure should depend on rotation failure
           // For now, resolve even if rotation fails, as backup itself succeeded.
           resolve();
@@ -106,21 +107,21 @@ export async function runBackup() {
 
       // Handle stream finish event for better completion tracking
       output.on('finish', () => {
-        console.log('Backup file stream finished writing.');
+        log('debug', 'Backup file stream finished writing');
       });
 
       archive.on('warning', (err) => {
         if (err.code === 'ENOENT') {
           // Log specific warnings but don't necessarily reject
-          console.warn('Archiver warning (ENOENT):', err);
+          log('warn', 'Archiver warning (ENOENT)', err);
         } else {
           // Treat other warnings as potential issues, but maybe not fatal
-          console.warn('Archiver warning:', err);
+          log('warn', 'Archiver warning', err);
         }
       });
 
       archive.on('error', (err) => {
-        console.error('Archiver error:', err);
+        log('error', 'Archiver error', err);
         reject(err); // Reject the promise on critical archiver errors
       });
 
@@ -129,20 +130,20 @@ export async function runBackup() {
 
       // Append the entire data directory to the archive
       // The second argument specifies the path prefix inside the zip file (false means root)
-      console.log(`Archiving directory: ${dataDir()}`);
+      log('debug', 'Archiving directory', dataDir());
       archive.directory(dataDir(), false);
 
       // Finalize the archive (writes the central directory)
-      console.log('Finalizing archive...');
+      log('debug', 'Finalizing archive');
       archive.finalize().catch(err => {
         // Catch potential errors during finalization
-        console.error('Error during archive finalization:', err);
+        log('error', 'Error during archive finalization', err);
         reject(err);
       });
     });
 
   } catch (error) {
-    console.error('Failed to run backup:', error);
+    log('error', 'Failed to run backup', error);
     // Rethrow or handle as appropriate for the scheduler
     throw error;
   }
