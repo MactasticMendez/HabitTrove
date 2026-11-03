@@ -9,6 +9,10 @@
 * Add negative habits with optional coins for avoided days and optional balance-capped penalties for recorded slips ([upstream #153](https://github.com/dohsimpson/HabitTrove/issues/153)).
 * Add personal sick, travel, rest, and other status dates that pause streaks without creating completions or coins ([upstream #28](https://github.com/dohsimpson/HabitTrove/issues/28)).
 
+### Fixed
+
+* Keep the npm lockfile compatible with the Node 22 Docker build and GitHub Actions.
+
 ### Security
 
 * Store only hashes of invitation tokens, expire them after seven days, and consume each token once.
