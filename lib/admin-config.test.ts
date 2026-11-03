@@ -61,6 +61,22 @@ test('changes the sign-in button name without changing the OIDC provider', async
   expect(await config.getOidcDisplayName()).toBe('OIDC')
 })
 
+test('encrypts SMTP credentials and returns only safe admin settings', async () => {
+  await config.saveSmtpConfig({ enabled: true, host: 'mail.example.test', port: 587,
+    secure: false, from: 'invite@example.test', username: 'mailer', password: 'smtp-secret' })
+  const file = path.join(directory, 'data', 'admin-config.json')
+  const raw = await fs.readFile(file, 'utf8')
+  expect(raw).not.toContain('smtp-secret')
+  expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+  expect((await config.getAdminConfigSummary()).smtp).toMatchObject({
+    enabled: true, host: 'mail.example.test', passwordConfigured: true,
+  })
+  expect(JSON.stringify(await config.getAdminConfigSummary())).not.toContain('smtp-secret')
+  expect((await config.readSmtpConfig())?.password).toBe('smtp-secret')
+  await expect(config.saveSmtpConfig({ enabled: true, host: 'mail.example.test', port: 587,
+    secure: false, from: 'invite@example.test', username: 'another', password: '' })).rejects.toThrow()
+})
+
 test('disables OIDC sign-in when saved configuration is damaged', async () => {
   await fs.mkdir(path.join(directory, 'data'))
   await fs.writeFile(path.join(directory, 'data', 'admin-config.json'), '{invalid json')

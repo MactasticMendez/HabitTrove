@@ -4,7 +4,7 @@ import { DateTime } from 'luxon'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { completedHabitsMapAtom, settingsAtom } from '@/lib/atoms'
+import { completedHabitsMapAtom, settingsAtom, currentUserAtom } from '@/lib/atoms'
 import { getActivityDays } from '@/lib/activity'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 
@@ -18,8 +18,10 @@ const intensity = [
 
 export default function HabitHeatmap() {
   const t = useTranslations('HabitHeatmap')
+  const statusText = useTranslations('StatusDays')
   const [settings] = useAtom(settingsAtom)
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
+  const [currentUser] = useAtom(currentUserAtom)
   const today = useTodayInTimezone(settings.system.timezone)
   const currentDay = DateTime.fromISO(today, { zone: settings.system.timezone })
   const days = getActivityDays(completedHabitsMap, currentDay, 84)
@@ -37,7 +39,8 @@ export default function HabitHeatmap() {
             {days.map(day => {
               const date = DateTime.fromISO(day.date, { zone: settings.system.timezone })
                 .setLocale(settings.system.language).toLocaleString(DateTime.DATE_FULL)
-              const label = t('dayActivity', { date, count: day.total })
+              const status = currentUser?.statusDays?.find(entry => entry.date === day.date)?.status
+              const label = `${t('dayActivity', { date, count: day.total })}${status ? `; ${statusText(status)}` : ''}`
               return (
                 <span
                   key={day.date}
@@ -46,6 +49,7 @@ export default function HabitHeatmap() {
                   aria-label={label}
                   className={`group relative h-6 w-6 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${intensity[Math.min(day.total, 4)]}`}
                 >
+                  {status && <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-sm">⏸</span>}
                   <span aria-hidden="true" className="pointer-events-none absolute z-10 bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs text-popover-foreground shadow group-hover:block group-focus:block">
                     {label}
                   </span>

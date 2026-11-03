@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { loadAdminPanelSettings, updateApplicationLogLevel, updateOidcDisplayName, updateOidcProvider } from '@/app/actions/admin'
+import { loadAdminPanelSettings, updateApplicationLogLevel, updateOidcDisplayName, updateOidcProvider, updateSmtpSettings } from '@/app/actions/admin'
 import type { LogLevel } from '@/lib/admin-config'
 import { serverSettingsAtom } from '@/lib/atoms'
 
@@ -28,6 +28,15 @@ export default function AdminConfiguration() {
   const [savingLog, setSavingLog] = useState(false)
   const [savingOidc, setSavingOidc] = useState(false)
   const [savingDisplayName, setSavingDisplayName] = useState(false)
+  const [smtpEnabled, setSmtpEnabled] = useState(false)
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState(587)
+  const [smtpSecure, setSmtpSecure] = useState(false)
+  const [smtpFrom, setSmtpFrom] = useState('')
+  const [smtpUsername, setSmtpUsername] = useState('')
+  const [smtpPassword, setSmtpPassword] = useState('')
+  const [smtpCurrentPassword, setSmtpCurrentPassword] = useState('')
+  const [savingSmtp, setSavingSmtp] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const providerIdentityChanged = issuer.trim() !== summary?.oidc.issuer || clientId.trim() !== summary?.oidc.clientId
@@ -44,6 +53,12 @@ export default function AdminConfiguration() {
       setIssuer(value.oidc.issuer)
       setClientId(value.oidc.clientId)
       setDisplayName(value.oidc.displayName)
+      setSmtpEnabled(value.smtp.enabled)
+      setSmtpHost(value.smtp.host)
+      setSmtpPort(value.smtp.port)
+      setSmtpSecure(value.smtp.secure)
+      setSmtpFrom(value.smtp.from)
+      setSmtpUsername(value.smtp.username)
     }).catch(() => { if (mounted) setError(t('adminLoadError')) })
     return () => { mounted = false }
   }, [t])
@@ -96,6 +111,26 @@ export default function AdminConfiguration() {
       setError(t('adminSaveError'))
     } finally {
       setSavingDisplayName(false)
+    }
+  }
+
+  const saveSmtp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setSavingSmtp(true)
+    try {
+      const next = await updateSmtpSettings({ enabled: smtpEnabled, host: smtpHost, port: smtpPort,
+        secure: smtpSecure, from: smtpFrom, username: smtpUsername, password: smtpPassword,
+        currentPassword: smtpCurrentPassword })
+      setSummary(next)
+      setNotice(t('smtpSaved'))
+    } catch {
+      setError(t('adminSaveError'))
+    } finally {
+      setSmtpPassword('')
+      setSmtpCurrentPassword('')
+      setSavingSmtp(false)
     }
   }
 
@@ -164,6 +199,27 @@ export default function AdminConfiguration() {
             </select>
           </div>
           <Button type="submit" disabled={!summary || savingLog}>{savingLog ? t('saving') : t('logSaveButton')}</Button>
+        </form>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader><CardTitle role="heading" aria-level={2}>{t('smtpTitle')}</CardTitle></CardHeader>
+      <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">{t('smtpDescription')}</p>
+        <form onSubmit={saveSmtp} className="space-y-4">
+          <div className="flex items-center gap-3"><Switch id="smtp-enabled" checked={smtpEnabled} onCheckedChange={setSmtpEnabled} disabled={!summary || savingSmtp} />
+            <Label htmlFor="smtp-enabled">{t('smtpEnabled')}</Label></div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label htmlFor="smtp-host">{t('smtpHost')}</Label><Input id="smtp-host" value={smtpHost} onChange={event => setSmtpHost(event.target.value)} required={smtpEnabled} disabled={!smtpEnabled || savingSmtp} maxLength={253} autoComplete="off" /></div>
+            <div className="space-y-2"><Label htmlFor="smtp-port">{t('smtpPort')}</Label><Input id="smtp-port" type="number" min={1} max={65535} value={smtpPort} onChange={event => setSmtpPort(Number(event.target.value))} required={smtpEnabled} disabled={!smtpEnabled || savingSmtp} /></div>
+            <div className="space-y-2"><Label htmlFor="smtp-from">{t('smtpFrom')}</Label><Input id="smtp-from" type="email" value={smtpFrom} onChange={event => setSmtpFrom(event.target.value)} required={smtpEnabled} disabled={!smtpEnabled || savingSmtp} maxLength={254} /></div>
+            <div className="space-y-2"><Label htmlFor="smtp-username">{t('smtpUsername')}</Label><Input id="smtp-username" value={smtpUsername} onChange={event => setSmtpUsername(event.target.value)} disabled={!smtpEnabled || savingSmtp} maxLength={255} autoComplete="off" /></div>
+            <div className="space-y-2"><Label htmlFor="smtp-password">{t('smtpPassword')}</Label><Input id="smtp-password" type="password" value={smtpPassword} onChange={event => setSmtpPassword(event.target.value)} disabled={!smtpEnabled || savingSmtp} required={smtpEnabled && !!smtpUsername && (!summary?.smtp.passwordConfigured || smtpUsername !== summary.smtp.username)} maxLength={4096} autoComplete="new-password" />
+              <p className="text-sm text-muted-foreground">{t('smtpPasswordHelp')}</p></div>
+            <div className="flex items-center gap-3"><Switch id="smtp-secure" checked={smtpSecure} onCheckedChange={setSmtpSecure} disabled={!smtpEnabled || savingSmtp} /><Label htmlFor="smtp-secure">{t('smtpSecure')}</Label></div>
+          </div>
+          <div className="space-y-2"><Label htmlFor="smtp-current-password">{t('currentPasswordLabel')}</Label><Input id="smtp-current-password" type="password" value={smtpCurrentPassword} onChange={event => setSmtpCurrentPassword(event.target.value)} required maxLength={128} autoComplete="current-password" /></div>
+          <Button type="submit" disabled={!summary || savingSmtp}>{savingSmtp ? t('saving') : t('smtpSave')}</Button>
         </form>
       </CardContent>
     </Card>

@@ -3,7 +3,7 @@ import type { Habit } from './types'
 import { isHabitDue } from './utils'
 import { isCountedCompletion } from './task-schedule'
 
-export function getPerHabitProgress(habit: Habit, today: DateTime, timezone: string, weekStartDay = 1): {
+export function getPerHabitProgress(habit: Habit, today: DateTime, timezone: string, weekStartDay = 1, pausedDates: ReadonlySet<string> = new Set()): {
   streak: number
   weeklyDone: number
   weeklyDue: number
@@ -28,6 +28,7 @@ export function getPerHabitProgress(habit: Habit, today: DateTime, timezone: str
   for (let offset = 0; offset < 365; offset++) {
     if (offset >= 7 && !streakOpen) break
     const date = day.minus({ days: offset })
+    if (pausedDates.has(date.toISODate()!)) continue
     const due = isHabitDue({ habit: { ...habit, archived: false }, date, timezone })
     if (!due) continue
     const completed = (counts.get(date.toISODate()!) ?? 0) >= target

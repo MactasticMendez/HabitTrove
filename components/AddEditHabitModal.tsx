@@ -16,21 +16,23 @@ import { CalendarDays, Brush } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Habit } from '@/lib/types'
+import { Habit, PersonalFolder } from '@/lib/types'
 import EmojiPickerButton from './EmojiPickerButton'
 import ModalOverlay from './ModalOverlay' // Import the new component
 import DrawingModal from './DrawingModal'
 import DrawingDisplay from './DrawingDisplay'
-import { convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate, uuid } from '@/lib/utils'
+import { checkPermission, convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate, uuid } from '@/lib/utils'
 import { INITIAL_DUE, INITIAL_RECURRENCE_RULE, QUICK_DATES, MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
 
 
 interface AddEditHabitModalProps {
   onClose: () => void
-  onSave: (habit: Omit<Habit, 'id'>) => Promise<void>
+  onSave: (habit: Omit<Habit, 'id'>, folderId?: string) => Promise<void>
   habit?: Habit | null
   isTask: boolean
+  folders?: PersonalFolder[]
+  folderId?: string
 }
 
 const weekdays = [
@@ -61,12 +63,14 @@ function initialSchedule(frequency?: string): { preset: SchedulePreset; selected
   return { preset: 'custom', selectedDays: ['MO'] }
 }
 
-export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: AddEditHabitModalProps) {
+export default function AddEditHabitModal({ onClose, onSave, habit, isTask, folders, folderId }: AddEditHabitModalProps) {
   const t = useTranslations('AddEditHabitModal');
   const [settings] = useAtom(settingsAtom)
   const [name, setName] = useState(habit?.name || '')
   const [description, setDescription] = useState(habit?.description || '')
-  const [coinReward, setCoinReward] = useState(habit?.coinReward || 1)
+  const [coinReward, setCoinReward] = useState(habit?.coinReward ?? 1)
+  const [isNegative, setIsNegative] = useState(habit?.isNegative ?? false)
+  const [coinPenalty, setCoinPenalty] = useState(habit?.coinPenalty ?? 0)
   const [targetCompletions, setTargetCompletions] = useState(habit?.targetCompletions || 1)
   const [taskRepeat, setTaskRepeat] = useState(habit?.taskRepeat ?? 'none')
   const [taskGoalOccurrences, setTaskGoalOccurrences] = useState(habit?.taskGoalOccurrences ?? 0)
@@ -93,6 +97,11 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
   const [selectedWeekdays, setSelectedWeekdays] = useState(initialScheduleChoice.selectedDays)
   const [pickedTaskDate, setPickedTaskDate] = useState<DateTime | null>(null)
   const [currentUser] = useAtom(currentUserAtom)
+  const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
+    checkPermission(currentUser.permissions, 'habit', 'write') ||
+    !!currentUser.managedUserIds?.includes(userId))
+  const [includeSelf, setIncludeSelf] = useState(!habit || !!habit.userIds?.includes(currentUser?.id ?? ''))
+  const [negativeOwnerId, setNegativeOwnerId] = useState(habit?.userIds?.[0] ?? currentUser?.id ?? '')
   const [isQuickDatesOpen, setIsQuickDatesOpen] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null); // State for validation message
   const [approvalError, setApprovalError] = useState('')
@@ -106,6 +115,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
     : []
   const [drawing, setDrawing] = useState<string>(habit?.drawing || '')
   const [isDrawingModalOpen, setIsDrawingModalOpen] = useState(false)
+  const [selectedFolderId, setSelectedFolderId] = useState(folderId ?? '')
+  const [saveError, setSaveError] = useState(false)
 
   function getFrequencyUpdate() {
     if (ruleText === initialRuleText && habit?.frequency) {
@@ -155,33 +166,40 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (requiresApproval && approverIds.length === 0) {
+    if (!isNegative && !includeSelf && !selectedUserIds.length) {
+      setSaveError(true)
+      return
+    }
+    if (!isNegative && requiresApproval && approverIds.length === 0) {
       setApprovalError(t('approverRequired'))
       return
     }
     const boostUntil = boostEndsOn
       ? DateTime.fromISO(boostEndsOn, { zone: settings.system.timezone }).endOf('day').toUTC().toISO() : null
-    await onSave({
+    try { await onSave({
       name,
       description,
       coinReward,
-      targetCompletions: targetCompletions > 1 ? targetCompletions : undefined,
+      isNegative: !isTask && isNegative || undefined,
+      coinPenalty: !isTask && isNegative ? coinPenalty : undefined,
+      targetCompletions: !isNegative && targetCompletions > 1 ? targetCompletions : undefined,
       completions: habit?.completions || [],
       frequency: getFrequencyUpdate(),
-      userIds: selectedUserIds.length > 0 ? selectedUserIds.concat(currentUser?.id || []) : (currentUser && [currentUser.id]),
+      userIds: isNegative ? [negativeOwnerId] : [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
       drawing: drawing && drawing !== '[]' ? drawing : undefined,
       taskRepeat: isTask && taskRepeat !== 'none' ? taskRepeat as Habit['taskRepeat'] : undefined,
       taskGoalOccurrences: isTask && taskRepeat !== 'none' && taskGoalOccurrences > 0 ? taskGoalOccurrences : undefined,
       checklist: isTask && checklist.length ? checklist : undefined,
       reminderTime: reminderTime || undefined,
-      requiresApproval: canConfigureApproval ? requiresApproval : habit?.requiresApproval,
-      approverIds: canConfigureApproval ? (requiresApproval ? approverIds : []) : habit?.approverIds,
-      coinBoost: boostMultiplier > 1 && boostUntil ? unchangedBoost ? habit?.coinBoost : {
+      requiresApproval: isNegative ? false : canConfigureApproval ? requiresApproval : habit?.requiresApproval,
+      approverIds: isNegative ? [] : canConfigureApproval ? (requiresApproval ? approverIds : []) : habit?.approverIds,
+      coinBoost: !isNegative && boostMultiplier > 1 && boostUntil ? unchangedBoost ? habit?.coinBoost : {
         multiplier: boostMultiplier as 2 | 3,
         startsAt: DateTime.now().toUTC().toISO()!,
         until: boostUntil,
       } : undefined,
-    })
+    }, selectedFolderId)
+    } catch { setSaveError(true) }
   }
 
   return (
@@ -366,7 +384,14 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                   })()}
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
+              {!isTask && <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="negative-habit" className="text-right">{t('negativeHabitLabel')}</Label>
+                <div className="col-span-3 space-y-1"><Switch id="negative-habit" checked={isNegative}
+                  disabled={!!habit?.completions.length || !!habit?.slips?.length}
+                  onCheckedChange={setIsNegative} />
+                  <p className="text-xs text-muted-foreground">{t('negativeHabitHelp')}</p></div>
+              </div>}
+              {!isNegative && <div className="grid grid-cols-4 items-center gap-4">
                 <div className="flex items-center gap-2 justify-end">
                   <Label htmlFor="targetCompletions">
                     {t('completeLabel')}
@@ -407,7 +432,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                     </span>
                   </div>
                 </div>
-              </div>
+              </div>}
               <div className="grid grid-cols-4 items-center gap-4">
                 <div className="flex items-center gap-2 justify-end">
                   <Label htmlFor="coinReward">
@@ -451,6 +476,11 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                   </div>
                 </div>
               </div>
+              {isNegative && <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="coin-penalty" className="text-right">{t('coinPenaltyLabel')}</Label>
+                <Input id="coin-penalty" type="number" className="col-span-3" min={0} max={MAX_COIN_LIMIT}
+                  value={coinPenalty} onChange={event => setCoinPenalty(Number(event.target.value))} required />
+              </div>}
               {isTask && <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="task-repeat" className="text-right">{t('taskRepeatLabel')}</Label>
                 <div className="col-span-3 flex flex-wrap gap-2">
@@ -494,7 +524,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                 <Input id="reminder-time" type="time" className="col-span-3" value={reminderTime}
                   onChange={event => setReminderTime(event.target.value)} />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
+              {!isNegative && <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="boost-multiplier" className="text-right">{t('boostLabel')}</Label>
                 <div className="col-span-3 flex flex-wrap items-center gap-2">
                   <Select value={String(boostMultiplier)} onValueChange={value => setBoostMultiplier(Number(value))}>
@@ -513,8 +543,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                       onChange={event => setBoostEndsOn(event.target.value)} />
                   </>}
                 </div>
-              </div>
-              <div className="grid grid-cols-4 items-start gap-4">
+              </div>}
+              {!isNegative && <div className="grid grid-cols-4 items-start gap-4">
                 <Label htmlFor="approval-toggle" className="text-right pt-1">{t('approvalLabel')}</Label>
                 <div className="col-span-3 space-y-2">
                   <Switch id="approval-toggle" checked={requiresApproval} disabled={!canConfigureApproval}
@@ -547,7 +577,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                     {approvalError && <p role="alert" className="text-sm text-destructive">{approvalError}</p>}
                   </>}
                 </div>
-              </div>
+              </div>}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label className="text-right">
                   {t('drawingLabel')}
@@ -580,16 +610,28 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                   </div>
                 </div>
               </div>
-              {users && users.length > 1 && (
+              {isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="negative-assignee" className="text-right">{t('negativeAssignee')}</Label>
+                <select id="negative-assignee" className="col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={negativeOwnerId} onChange={event => setNegativeOwnerId(event.target.value)}>
+                  {users.filter(user => user.id === currentUser.id || canAssignUser(user.id))
+                    .map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
+                </select>
+              </div>}
+              {!isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="col-span-3 col-start-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
+                {t('includeSelf')}
+              </label>}
+              {!isNegative && users && users.length > 1 && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <div className="flex items-center justify-end gap-2">
                     <Label htmlFor="sharing-toggle">{t('shareLabel')}</Label>
                   </div>
                   <div className="col-span-3">
                     <div className="flex flex-wrap gap-2">
-                      {users.filter((u) => u.id !== currentUser?.id).map(user => (
-                        <Avatar
-                          key={user.id}
+                      {users.filter(user => user.id !== currentUser?.id && canAssignUser(user.id)).map(user => (
+                        <button type="button" key={user.id} aria-label={t('assignUser', { username: user.username })}
+                          aria-pressed={selectedUserIds.includes(user.id)}
                           className={`h-8 w-8 border-2 cursor-pointer
                           ${selectedUserIds.includes(user.id)
                               ? 'border-primary'
@@ -604,15 +646,26 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask }: Ad
                             )
                           }}
                         >
+                          <Avatar className="h-7 w-7">
                           <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
                           <AvatarFallback>{user.username[0]}</AvatarFallback>
-                        </Avatar>
+                          </Avatar>
+                        </button>
                       ))}
                     </div>
                   </div>
                 </div>
               )}
+              {folders && <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="item-folder" className="text-right">{t('folderLabel')}</Label>
+                <select id="item-folder" className="col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedFolderId} onChange={event => setSelectedFolderId(event.target.value)}>
+                  <option value="">{t('noFolder')}</option>
+                  {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+              </div>}
             </div>
+            {saveError && <p role="alert" className="text-sm text-destructive">{t('saveFailed')}</p>}
             <DialogFooter>
               <Button type="submit" disabled={!!errorMessage}>
                 {habit

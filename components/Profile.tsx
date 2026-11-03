@@ -15,6 +15,7 @@ import { signOut } from "@/app/actions/user"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from 'next-intl'
 import AuthentikLinkForm from './AuthentikLinkForm'
+import { DateTime } from 'luxon'
 
 export function Profile() {
   const t = useTranslations('Profile');
@@ -28,6 +29,9 @@ export function Profile() {
   const [serverSettings] = useAtom(serverSettingsAtom)
   const [open, setOpen] = useState(false)
   const [isLinking, setIsLinking] = useState(false)
+  const statusText = useTranslations('StatusDays')
+  const todayStatus = user?.statusDays?.find(day => day.date === DateTime.now().setZone(settings.system.timezone).toISODate())?.status
+  const statusEmoji = todayStatus ? { sick: '🤒', travel: '✈️', rest: '😌', other: '💛' }[todayStatus] : undefined
 
   const handleSignOut = async () => {
     try {
@@ -57,6 +61,7 @@ export function Profile() {
                 <User className="h-4 w-4" />
               </AvatarFallback>
             </Avatar>
+            {todayStatus && <span role="img" aria-label={statusText(todayStatus)} title={statusText(todayStatus)}>{statusEmoji}</span>}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-[200px] p-2">

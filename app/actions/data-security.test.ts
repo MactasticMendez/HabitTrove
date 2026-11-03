@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:
 import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import type { User } from '@/lib/types'
+import type { Habit, User } from '@/lib/types'
 import { saltAndHashPassword, verifyPassword } from '@/lib/password'
 import sharp from 'sharp'
+import { DateTime } from 'luxon'
 
 let currentUser: User | undefined
 
@@ -45,6 +46,90 @@ beforeEach(async () => {
   ] }))
   cwdSpy = spyOn(process, 'cwd').mockImplementation(() => directory)
   currentUser = member
+})
+
+describe('family and negative-habit security', () => {
+  test('keeps folders and status dates private to their owner', async () => {
+    await expect(actions.savePersonalFolders([{ id: 'private', name: 'Morning', itemIds: ['foreign'] }]))
+      .rejects.toThrow('inaccessible')
+    await actions.savePersonalFolders([{ id: 'private', name: 'Morning', itemIds: ['shared'] }])
+    await actions.saveStatusDays([{ date: DateTime.now().toISODate()!, status: 'sick' }])
+    const mine = await actions.loadUsersPublicData()
+    expect(mine.users.find((user: User) => user.id === 'member')?.personalFolders?.[0].name).toBe('Morning')
+    currentUser = other
+    const theirs = await actions.loadUsersPublicData()
+    expect(theirs.users.find((user: User) => user.id === 'member')?.personalFolders).toBeUndefined()
+    expect(theirs.users.find((user: User) => user.id === 'member')?.statusDays).toBeUndefined()
+  })
+
+  test('uses one-use, expiring invitations and assigns a family manager', async () => {
+    await expect(actions.createFamilyInvite('new@example.test')).rejects.toThrow('Administrator access required')
+    currentUser = admin
+    const invite = await actions.createFamilyInvite('new@example.test', 'member')
+    expect(invite.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect((await actions.listFamilyInvites())[0].email).toBe('new@example.test')
+    expect(JSON.stringify(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))).not.toContain(invite.token)
+    currentUser = undefined
+    await actions.acceptFamilyInvite(invite.token, 'newmember', 'a-strong-password')
+    await expect(actions.acceptFamilyInvite(invite.token, 'anothername', 'a-strong-password')).rejects.toThrow()
+    const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
+    const created = saved.users.find((user: User) => user.username === 'newmember')
+    expect(created.email).toBe('new@example.test')
+    expect(verifyPassword('a-strong-password', created.password)).toBe(true)
+    expect(saved.users.find((user: User) => user.id === 'member').managedUserIds).toContain(created.id)
+  })
+
+  test('caps slip penalties at the member balance and prevents forged history', async () => {
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    await fs.writeFile(habitFile, JSON.stringify({ habits: [{ id: 'negative', name: 'No smoking', description: '',
+      frequency: 'FREQ=DAILY', coinReward: 0, coinPenalty: 5, isNegative: true,
+      completions: [], userIds: ['member'] }] }))
+    const timestamp = new Date().toISOString()
+    const result = await actions.recordHabitSlip('negative', timestamp)
+    expect(result.penalty).toBe(2)
+    expect(result.coins.balance).toBe(0)
+    await expect(actions.recordHabitSlip('negative', timestamp)).rejects.toThrow('already recorded')
+    await expect(actions.recordHabitCompletion('negative', timestamp)).rejects.toThrow('slip is already recorded')
+    await expect(actions.saveHabitsData({ habits: [{ ...result.habit, slips: [] }] }))
+      .rejects.toThrow('Use the completion action')
+    const undone = await actions.undoHabitSlip('negative', result.habit.slips![0].id)
+    expect(undone.coins.balance).toBe(2)
+    await expect(actions.undoHabitSlip('negative', result.habit.slips![0].id)).rejects.toThrow()
+    await actions.recordHabitCompletion('negative', timestamp)
+    await expect(actions.recordHabitSlip('negative', timestamp)).rejects.toThrow('already recorded')
+  })
+
+  test('limits manager edits to managed members while keeping unrelated shared items read-only', async () => {
+    currentUser = { ...member, managedUserIds: ['other'] }
+    const authFile = path.join(directory, 'data', 'auth.json')
+    const auth = JSON.parse(await fs.readFile(authFile, 'utf8'))
+    auth.users.push({ id: 'stranger', username: 'stranger', email: 'stranger@example.com' })
+    await fs.writeFile(authFile, JSON.stringify(auth))
+    const habitFile = path.join(directory, 'data', 'habits.json')
+    const habits = JSON.parse(await fs.readFile(habitFile, 'utf8'))
+    habits.habits.push({ id: 'outsider', name: 'Outsider', description: '', frequency: 'FREQ=DAILY',
+      coinReward: 1, completions: [], userIds: ['member', 'stranger'] })
+    await fs.writeFile(habitFile, JSON.stringify(habits))
+    const visible = await actions.loadHabitsData()
+    expect(visible.habits.map((habit: { id: string }) => habit.id)).toContain('foreign')
+    await actions.saveHabitsData({ habits: visible.habits.map((habit: Habit) =>
+      habit.id === 'foreign' ? { ...habit, name: 'Managed' } : habit) })
+    await expect(actions.saveHabitsData({ habits: visible.habits.map((habit: Habit) =>
+      habit.id === 'outsider' ? { ...habit, name: 'Not allowed' } : habit) }))
+      .rejects.toThrow('Only interaction fields')
+    const wishlistFile = path.join(directory, 'data', 'wishlist.json')
+    await fs.writeFile(wishlistFile, JSON.stringify({ items: [
+      { id: 'managed-reward', name: 'Managed reward', description: '', coinCost: 2, userIds: ['other'] },
+      { id: 'outside-reward', name: 'Outside reward', description: '', coinCost: 2, userIds: ['member', 'stranger'] },
+    ] }))
+    const rewards = await actions.loadWishlistData()
+    expect(rewards.items.map(item => item.id)).toContain('managed-reward')
+    await actions.saveWishlistItems({ items: rewards.items.map(item =>
+      item.id === 'managed-reward' ? { ...item, name: 'Updated reward' } : item) })
+    await expect(actions.saveWishlistItems({ items: rewards.items.map(item =>
+      item.id === 'outside-reward' ? { ...item, name: 'Not allowed' } : item) }))
+      .rejects.toThrow('Only interaction fields')
+  })
 })
 
 afterEach(async () => {

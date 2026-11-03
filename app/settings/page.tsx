@@ -19,6 +19,8 @@ import { Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast'
 import { useState, type KeyboardEvent } from 'react'
 import AdminConfiguration from '@/components/AdminConfiguration'
+import StatusDaysSettings from '@/components/StatusDaysSettings'
+import FamilyInvites from '@/components/FamilyInvites'
 
 export default function SettingsPage() {
   const t = useTranslations('SettingsPage');
@@ -136,6 +138,7 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+        <StatusDaysSettings />
         </div>
 
         {currentUser?.isAdmin && <div id="settings-panel-admin" role="tabpanel" aria-labelledby="settings-tab-admin" tabIndex={0} hidden={activeTab !== 'admin'}>
@@ -289,6 +292,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
         <AdminConfiguration />
+        <FamilyInvites />
         </div>}
 
       </div >

@@ -21,6 +21,24 @@ export interface OidcConfig {
   clientSecret: string
 }
 
+export interface SmtpConfig {
+  host: string
+  port: number
+  secure: boolean
+  from: string
+  username: string
+  password: string
+}
+
+const smtpSchema = z.object({
+  host: z.string().trim().min(1).max(253).regex(/^[a-zA-Z0-9.:-]+$/),
+  port: z.number().int().min(1).max(65535),
+  secure: z.boolean(),
+  from: z.email().max(254),
+  username: z.string().max(255),
+  password: z.string().max(4096),
+}).strict().refine(value => !!value.username === !!value.password, 'SMTP username and password must be set together')
+
 const oidcSchema = z.object({
   issuer: z.string().trim().min(1).max(2048).url(),
   clientId: z.string().trim().min(1).max(255),
@@ -44,6 +62,10 @@ const storedSchema = z.object({
     clientId: z.string(),
     encryptedClientSecret: z.string(),
   }).strict(), z.null()]).optional(),
+  smtpOverride: z.union([z.object({
+    host: z.string(), port: z.number(), secure: z.boolean(), from: z.string(),
+    username: z.string(), encryptedPassword: z.string(),
+  }).strict(), z.null()]).optional(),
 }).strict()
 
 type StoredAdminConfig = z.infer<typeof storedSchema>
@@ -57,20 +79,26 @@ function secretKey(): Buffer {
   return Buffer.from(hkdfSync('sha256', authSecret, 'HabitTrove admin config v1', 'OIDC client secret', 32))
 }
 
-function encryptSecret(secret: string): string {
+function smtpSecretKey(): Buffer {
+  const authSecret = process.env.AUTH_SECRET
+  if (!authSecret || authSecret.length < 32) throw new Error('AUTH_SECRET is required for SMTP configuration')
+  return Buffer.from(hkdfSync('sha256', authSecret, 'HabitTrove admin config v1', 'SMTP password', 32))
+}
+
+function encryptSecret(secret: string, key = secretKey()): string {
   const iv = randomBytes(12)
-  const cipher = createCipheriv('aes-256-gcm', secretKey(), iv)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
   const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
   return [iv, cipher.getAuthTag(), encrypted].map(part => part.toString('base64url')).join('.')
 }
 
-function decryptSecret(value: string): string {
+function decryptSecret(value: string, key = secretKey()): string {
   const parts = value.split('.')
   if (parts.length !== 3) throw new Error('Invalid OIDC configuration')
   try {
     const [iv, tag, encrypted] = parts.map(part => Buffer.from(part, 'base64url'))
     if (iv.length !== 12 || tag.length !== 16) throw new Error('Invalid encrypted secret')
-    const decipher = createDecipheriv('aes-256-gcm', secretKey(), iv)
+    const decipher = createDecipheriv('aes-256-gcm', key, iv)
     decipher.setAuthTag(tag)
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
   } catch {
@@ -158,6 +186,15 @@ export async function getAdminConfigSummary() {
     : undefined
   return {
     logLevel: stored?.logLevel ?? 'info',
+    smtp: {
+      enabled: !!stored?.smtpOverride,
+      host: stored?.smtpOverride?.host ?? '',
+      port: stored?.smtpOverride?.port ?? 587,
+      secure: stored?.smtpOverride?.secure ?? false,
+      from: stored?.smtpOverride?.from ?? '',
+      username: stored?.smtpOverride?.username ?? '',
+      passwordConfigured: !!stored?.smtpOverride?.encryptedPassword,
+    },
     oidc: {
       enabled: !!oidc,
       displayName: stored?.oidcDisplayName || defaultOidcDisplayName,
@@ -170,6 +207,35 @@ export async function getAdminConfigSummary() {
       activeCallbackUrl,
     },
   }
+}
+
+export async function readSmtpConfig(): Promise<SmtpConfig | undefined> {
+  const stored = (await readStoredConfig())?.smtpOverride
+  if (!stored) return undefined
+  const { encryptedPassword, ...publicFields } = stored
+  return smtpSchema.parse({ ...publicFields,
+    password: encryptedPassword ? decryptSecret(encryptedPassword, smtpSecretKey()) : '',
+  })
+}
+
+export async function saveSmtpConfig(input: { enabled: boolean; host: string; port: number; secure: boolean;
+  from: string; username: string; password: string }): Promise<void> {
+  if (typeof input?.enabled !== 'boolean') throw new Error('Invalid SMTP settings')
+  await updateStoredConfig(current => {
+    if (!input.enabled) return { ...current, smtpOverride: null }
+    const prior = current.smtpOverride || undefined
+    if (input.username !== prior?.username && input.username && !input.password) {
+      throw new Error('A new SMTP password is required when changing the username')
+    }
+    const config = smtpSchema.parse({ host: input.host, port: input.port, secure: input.secure,
+      from: input.from, username: input.username,
+      password: input.password || (input.username && prior?.encryptedPassword ? decryptSecret(prior.encryptedPassword, smtpSecretKey()) : '') })
+    return { ...current, smtpOverride: {
+      host: config.host, port: config.port, secure: config.secure, from: config.from,
+      username: config.username,
+      encryptedPassword: config.password ? encryptSecret(config.password, smtpSecretKey()) : '',
+    } }
+  })
 }
 
 async function updateStoredConfig(update: (current: StoredAdminConfig) => StoredAdminConfig): Promise<void> {
