@@ -15,6 +15,7 @@
 ### Fixed
 
 * Keep compact task and habit columns and action buttons aligned when Undo appears after a completion.
+* Give habit action menus an accessible name and improve the manual-order hint contrast.
 
 ## Version 0.6.1
 

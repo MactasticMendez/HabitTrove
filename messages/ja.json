@@ -422,7 +422,8 @@
     "completeButtonCount": "完了（{completed}/{target}）",
     "completeButtonCountMobile": "{completed}/{target}",
     "undoButton": "取り消し",
-    "editButton": "編集"
+    "editButton": "編集",
+    "moreActions": "More actions for {name}"
   },
   "TransactionNoteEditor": {
     "noteTooLongTitle": "メモが長すぎます",
