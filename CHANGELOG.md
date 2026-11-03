@@ -11,6 +11,8 @@
 
 ### Fixed
 
+* Restore the task and habit editor layout, stack fields on narrow screens, and keep controls inside the dialog. Add descriptive names to completion and reward stepper buttons.
+
 * Allow an administrator to designate their own account as the family manager when inviting a member, and clarify that administrator access remains available when no manager is chosen.
 * Keep the npm lockfile compatible with the Node 22 Docker build and GitHub Actions.
 * Place the OIDC sign-in button name save action below its field and help text.

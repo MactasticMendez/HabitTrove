@@ -210,7 +210,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
           onClose()
         }
       }} modal={false}>
-        <DialogContent aria-describedby={undefined} className="max-h-[90vh] overflow-y-auto"> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
+        <DialogContent aria-describedby={undefined} className="max-h-[90dvh] w-[calc(100vw_-_2rem)] max-w-xl overflow-y-auto"> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
           <DialogHeader>
             <DialogTitle>
               {habit
@@ -218,15 +218,16 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                 : t(isTask ? 'addNewTaskTitle' : 'addNewHabitTitle')}
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
+          <form onSubmit={handleSubmit} className="min-w-0">
+            <div className="flex min-w-0 flex-col gap-5 py-4">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="name" className="sm:text-right">
                   {t('nameLabel')}
                 </Label>
-                <div className='flex col-span-3 gap-2'>
+                <div className='flex min-w-0 sm:col-span-3 gap-2'>
                   <Input
                     id="name"
+                    className="min-w-0"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
@@ -242,23 +243,23 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="description" className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="description" className="sm:text-right">
                   {t('descriptionLabel')}
                 </Label>
                 <Textarea
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="col-span-3"
+                  className="min-w-0 sm:col-span-3"
                 />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="recurrence" className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="recurrence" className="sm:text-right">
                   {t('whenLabel')}
                 </Label>
                 {/* date input (task) */}
-                <div className="col-span-3 space-y-2">
+                <div className="min-w-0 sm:col-span-3 space-y-2">
                   {!isTask && (
                     <>
                       <Select value={schedulePreset} onValueChange={value => setPreset(value as SchedulePreset)}>
@@ -293,6 +294,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   <div className="flex gap-2">
                     <Input
                       id="recurrence"
+                      className="min-w-0"
                       value={ruleText}
                       onChange={(e) => {
                         setRuleText(e.target.value)
@@ -308,7 +310,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-9 w-9 shrink-0"
                             aria-label={t('chooseTaskDate')}
                           >
                             <CalendarDays className="h-4 w-4" />
@@ -362,7 +364,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </details>
                 </div>
                 {/* rrule input (habit) */}
-                <div className="col-start-2 col-span-3 text-sm">
+                <div className="sm:col-start-2 min-w-0 sm:col-span-3 text-sm">
                   {(() => {
                     let displayText = '';
                     const { result, message } = convertHumanReadableFrequencyToMachineReadable({ text: ruleText, timezone: settings.system.timezone, isRecurring: isRecurRule });
@@ -384,24 +386,25 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   })()}
                 </div>
               </div>
-              {!isTask && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="negative-habit" className="text-right">{t('negativeHabitLabel')}</Label>
-                <div className="col-span-3 space-y-1"><Switch id="negative-habit" checked={isNegative}
+              {!isTask && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="negative-habit" className="sm:text-right">{t('negativeHabitLabel')}</Label>
+                <div className="min-w-0 sm:col-span-3 space-y-1"><Switch id="negative-habit" checked={isNegative}
                   disabled={!!habit?.completions.length || !!habit?.slips?.length}
                   onCheckedChange={setIsNegative} />
                   <p className="text-xs text-muted-foreground">{t('negativeHabitHelp')}</p></div>
               </div>}
-              {!isNegative && <div className="grid grid-cols-4 items-center gap-4">
-                <div className="flex items-center gap-2 justify-end">
+              {!isNegative && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <div className="flex items-center gap-2 sm:justify-end">
                   <Label htmlFor="targetCompletions">
                     {t('completeLabel')}
                   </Label>
                 </div>
-                <div className="col-span-3">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center border rounded-lg overflow-hidden">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex shrink-0 items-center overflow-hidden rounded-lg border">
                       <button
                         type="button"
+                        aria-label={t('decreaseValue', { field: t('completeLabel') })}
                         onClick={() => setTargetCompletions(prev => Math.max(1, prev - 1))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -421,6 +424,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                       />
                       <button
                         type="button"
+                        aria-label={t('increaseValue', { field: t('completeLabel') })}
                         onClick={() => setTargetCompletions(prev => Math.min(10, prev + 1))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -433,17 +437,18 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               </div>}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <div className="flex items-center gap-2 justify-end">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <div className="flex items-center gap-2 sm:justify-end">
                   <Label htmlFor="coinReward">
                     {t('rewardLabel')}
                   </Label>
                 </div>
-                <div className="col-span-3">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center border rounded-lg overflow-hidden">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex shrink-0 items-center overflow-hidden rounded-lg border">
                       <button
                         type="button"
+                        aria-label={t('decreaseValue', { field: t('rewardLabel') })}
                         onClick={() => setCoinReward(prev => Math.max(0, prev - 1))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -464,6 +469,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                       />
                       <button
                         type="button"
+                        aria-label={t('increaseValue', { field: t('rewardLabel') })}
                         onClick={() => setCoinReward(prev => Math.min(prev + 1, MAX_COIN_LIMIT))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -476,14 +482,14 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               </div>
-              {isNegative && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="coin-penalty" className="text-right">{t('coinPenaltyLabel')}</Label>
-                <Input id="coin-penalty" type="number" className="col-span-3" min={0} max={MAX_COIN_LIMIT}
+              {isNegative && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="coin-penalty" className="sm:text-right">{t('coinPenaltyLabel')}</Label>
+                <Input id="coin-penalty" type="number" className="min-w-0 sm:col-span-3" min={0} max={MAX_COIN_LIMIT}
                   value={coinPenalty} onChange={event => setCoinPenalty(Number(event.target.value))} required />
               </div>}
-              {isTask && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="task-repeat" className="text-right">{t('taskRepeatLabel')}</Label>
-                <div className="col-span-3 flex flex-wrap gap-2">
+              {isTask && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="task-repeat" className="sm:text-right">{t('taskRepeatLabel')}</Label>
+                <div className="min-w-0 sm:col-span-3 flex flex-wrap gap-2">
                   <Select value={taskRepeat} onValueChange={setTaskRepeat}>
                     <SelectTrigger id="task-repeat" className="w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -502,9 +508,9 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   {taskRepeat !== 'none' && <p className="w-full text-xs text-muted-foreground">{t('taskGoalHelp')}</p>}
                 </div>
               </div>}
-              {isTask && <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="text-right pt-2">{t('checklistLabel')}</Label>
-                <div className="col-span-3 space-y-2">
+              {isTask && <div className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label className="sm:text-right pt-2">{t('checklistLabel')}</Label>
+                <div className="min-w-0 sm:col-span-3 space-y-2">
                   {checklist.map((item, index) => <div key={item.id} className="flex gap-2">
                     <Input value={item.text} maxLength={200} required aria-label={t('checklistItemLabel', { number: index + 1 })}
                       onChange={event => setChecklist(previous => previous.map(step =>
@@ -519,14 +525,14 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </Button>
                 </div>
               </div>}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="reminder-time" className="text-right">{t('reminderTimeLabel')}</Label>
-                <Input id="reminder-time" type="time" className="col-span-3" value={reminderTime}
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="reminder-time" className="sm:text-right">{t('reminderTimeLabel')}</Label>
+                <Input id="reminder-time" type="time" className="min-w-0 sm:col-span-3" value={reminderTime}
                   onChange={event => setReminderTime(event.target.value)} />
               </div>
-              {!isNegative && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="boost-multiplier" className="text-right">{t('boostLabel')}</Label>
-                <div className="col-span-3 flex flex-wrap items-center gap-2">
+              {!isNegative && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="boost-multiplier" className="sm:text-right">{t('boostLabel')}</Label>
+                <div className="min-w-0 sm:col-span-3 flex flex-wrap items-center gap-2">
                   <Select value={String(boostMultiplier)} onValueChange={value => setBoostMultiplier(Number(value))}>
                     <SelectTrigger id="boost-multiplier" className="w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -544,13 +550,13 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </>}
                 </div>
               </div>}
-              {!isNegative && <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="approval-toggle" className="text-right pt-1">{t('approvalLabel')}</Label>
-                <div className="col-span-3 space-y-2">
+              {!isNegative && <div className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="approval-toggle" className="sm:text-right pt-1">{t('approvalLabel')}</Label>
+                <div className="min-w-0 sm:col-span-3 space-y-2">
                   <Switch id="approval-toggle" checked={requiresApproval} disabled={!canConfigureApproval}
                     onCheckedChange={value => { setRequiresApproval(value); setApprovalError('') }} />
                   {requiresApproval && <>
-                    <Label htmlFor="approver-search">{t('approversLabel')}</Label>
+                    <Label htmlFor="approver-search" className="block">{t('approversLabel')}</Label>
                     <Input id="approver-search" value={approverQuery} disabled={!canConfigureApproval}
                       placeholder={t('approverSearchPlaceholder')} autoComplete="off"
                       aria-controls={suggestedApprovers.length > 0 ? 'approver-suggestions' : undefined}
@@ -567,7 +573,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                     <div className="flex flex-wrap gap-2">
                       {approverIds.map(id => {
                         const approver = users.find(user => user.id === id)
-                        return <span key={id} className="rounded border px-2 py-1 text-sm">
+                        return <span key={id} className="max-w-full break-words rounded border px-2 py-1 text-sm">
                           {approver?.username ?? id}
                           {canConfigureApproval && <button type="button" className="ml-2" aria-label={t('removeApprover', { name: approver?.username ?? id })}
                             onClick={() => setApproverIds(previous => previous.filter(value => value !== id))}>×</button>}
@@ -578,12 +584,12 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </>}
                 </div>
               </div>}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label className="sm:text-right">
                   {t('drawingLabel')}
                 </Label>
-                <div className="col-span-3">
-                  <div className="flex gap-4 items-center">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Button
                       type="button"
                       variant="outline"
@@ -610,25 +616,25 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               </div>
-              {isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="negative-assignee" className="text-right">{t('negativeAssignee')}</Label>
-                <select id="negative-assignee" className="col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              {isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="negative-assignee" className="sm:text-right">{t('negativeAssignee')}</Label>
+                <select id="negative-assignee" className="min-w-0 sm:col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={negativeOwnerId} onChange={event => setNegativeOwnerId(event.target.value)}>
                   {users.filter(user => user.id === currentUser.id || canAssignUser(user.id))
                     .map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
                 </select>
               </div>}
-              {!isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="col-span-3 col-start-2 flex items-center gap-2 text-sm">
+              {!isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
                 {t('includeSelf')}
               </label>}
               {!isNegative && users && users.length > 1 && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <Label htmlFor="sharing-toggle">{t('shareLabel')}</Label>
+                <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <Label id="sharing-label">{t('shareLabel')}</Label>
                   </div>
-                  <div className="col-span-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="min-w-0 sm:col-span-3">
+                    <div role="group" aria-labelledby="sharing-label" className="flex flex-wrap gap-2">
                       {users.filter(user => user.id !== currentUser?.id && canAssignUser(user.id)).map(user => (
                         <button type="button" key={user.id} aria-label={t('assignUser', { username: user.username })}
                           aria-pressed={selectedUserIds.includes(user.id)}
@@ -656,9 +662,9 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               )}
-              {folders && <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="item-folder" className="text-right">{t('folderLabel')}</Label>
-                <select id="item-folder" className="col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              {folders && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="item-folder" className="sm:text-right">{t('folderLabel')}</Label>
+                <select id="item-folder" className="min-w-0 sm:col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={selectedFolderId} onChange={event => setSelectedFolderId(event.target.value)}>
                   <option value="">{t('noFolder')}</option>
                   {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
