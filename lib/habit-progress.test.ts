@@ -23,4 +23,10 @@ describe('per-item progress', () => {
     const missed = { ...task, completions: ['2026-03-06T12:00:00Z'] }
     expect(getPerHabitProgress(missed, DateTime.fromISO('2026-03-09T12:00:00Z'), 'UTC', 5).streak).toBe(0)
   })
+  test('status dates do not count as due or break the streak', () => {
+    const progress = getPerHabitProgress(task, DateTime.fromISO('2026-03-09T12:00:00Z'), 'UTC', 5,
+      new Set(['2026-03-06']))
+    expect(progress.weeklyDue).toBe(3)
+    expect(progress.streak).toBe(2)
+  })
 })

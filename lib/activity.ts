@@ -22,13 +22,19 @@ export function getActivityDays(
   })
 }
 
-export function getCurrentStreak(completions: ReadonlyMap<string, Habit[]>, today: DateTime): number {
+export function getCurrentStreak(completions: ReadonlyMap<string, Habit[]>, today: DateTime, pausedDates: ReadonlySet<string> = new Set()): number {
   let date = today
-  if (!completions.get(date.toISODate()!)?.length) date = date.minus({ days: 1 })
+  if (!completions.get(date.toISODate()!)?.length && !pausedDates.has(date.toISODate()!)) date = date.minus({ days: 1 })
 
   let streak = 0
-  while (completions.get(date.toISODate()!)?.length) {
-    streak += 1
+  for (let days = 0; days < 365; days++) {
+    const key = date.toISODate()!
+    if (pausedDates.has(key)) {
+      date = date.minus({ days: 1 })
+      continue
+    }
+    if (!completions.get(key)?.length) break
+    streak++
     date = date.minus({ days: 1 })
   }
   return streak

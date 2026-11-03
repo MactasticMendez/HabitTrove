@@ -1,8 +1,8 @@
-import { useAtom, atom } from 'jotai'
+import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { habitsAtom, coinsAtom, settingsAtom, usersAtom, habitFreqMapAtom, currentUserAtom } from '@/lib/atoms'
-import { recordHabitCompletion, undoHabitCompletion, saveHabitsData, reorderHabitItems, toggleTaskChecklistItem } from '@/app/actions/data'
-import { Habit, Permission, SafeUser, User } from '@/lib/types'
+import { recordHabitCompletion, undoHabitCompletion, recordHabitSlip, undoHabitSlip, saveHabitsData, reorderHabitItems, toggleTaskChecklistItem } from '@/app/actions/data'
+import { Habit, SafeUser, User } from '@/lib/types'
 import { toast } from '@/hooks/use-toast'
 import { DateTime } from 'luxon'
 import {
@@ -17,7 +17,7 @@ import {
   getISODate,
   d2s,
   playSound,
-  checkPermission
+  hasPermission
 } from '@/lib/utils'
 import { ToastAction } from '@/components/ui/toast'
 import { Undo2 } from 'lucide-react'
@@ -27,7 +27,7 @@ function handlePermissionCheck(
   user: SafeUser | User | undefined,
   resource: 'habit' | 'wishlist' | 'coins',
   action: 'write' | 'interact',
-  tCommon: (key: string, values?: Record<string, any>) => string
+  tCommon: (key: string, values?: Record<string, string | number>) => string
 ): boolean {
   if (!user) {
     toast({
@@ -38,7 +38,7 @@ function handlePermissionCheck(
     return false
   }
 
-  if (!user.isAdmin && !checkPermission(user.permissions, resource, action)) {
+  if (!hasPermission(user, resource, action)) {
     toast({
       title: tCommon("permissionDeniedTitle"),
       description: tCommon("permissionDeniedDescription", { action, resource }),
@@ -98,6 +98,30 @@ export function useHabits() {
       return { updatedHabits, newBalance: result.coins.balance, newTransactions: result.coins.transactions }
     } catch {
       toast({ title: tCommon('errorTitle'), description: tCommon('permissionDeniedDescription', { action: 'interact', resource: 'habit' }), variant: 'destructive' })
+    }
+  }
+
+  const logSlip = async (habit: Habit) => {
+    if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
+    try {
+      const result = await recordHabitSlip(habit.id, d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }))
+      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setCoins(result.coins)
+      toast({ title: t('slipRecorded'), description: t('slipPenalty', { count: result.penalty }) })
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: t('slipError'), variant: 'destructive' })
+    }
+  }
+
+  const undoSlip = async (habit: Habit, slipId: string) => {
+    if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
+    try {
+      const result = await undoHabitSlip(habit.id, slipId)
+      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setCoins(result.coins)
+      toast({ title: t('slipUndone') })
+    } catch {
+      toast({ title: tCommon('errorTitle'), description: t('slipError'), variant: 'destructive' })
     }
   }
 
@@ -255,6 +279,8 @@ export function useHabits() {
 
   return {
     completeHabit,
+    logSlip,
+    undoSlip,
     undoComplete,
     saveHabit,
     reorderHabits,

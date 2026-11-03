@@ -2,7 +2,7 @@
 
 import { getCurrentUser } from '@/lib/server-helpers'
 import { readAuthData, verifyStepUpPassword } from '@/lib/auth-store'
-import { getAdminConfigSummary, getLegacyOidcIssuer, saveLogLevel, saveOidcConfig, saveOidcDisplayName } from '@/lib/admin-config'
+import { getAdminConfigSummary, getLegacyOidcIssuer, saveLogLevel, saveOidcConfig, saveOidcDisplayName, saveSmtpConfig } from '@/lib/admin-config'
 import { PermissionError } from '@/lib/exceptions'
 
 async function requireAdministrator() {
@@ -62,5 +62,18 @@ export async function updateOidcProvider(input: {
     }
   }
   await saveOidcConfig(input)
+  return adminSummary()
+}
+
+export async function updateSmtpSettings(input: {
+  enabled: boolean; host: string; port: number; secure: boolean; from: string;
+  username: string; password: string; currentPassword: string
+}) {
+  const user = await requireAdministrator()
+  if (typeof input?.currentPassword !== 'string' || input.currentPassword.length > 128 || !user.password ||
+      !(await verifyStepUpPassword(user, input.currentPassword))) {
+    throw new PermissionError('Current local password is incorrect')
+  }
+  await saveSmtpConfig(input)
   return adminSummary()
 }

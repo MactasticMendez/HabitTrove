@@ -15,14 +15,15 @@ import DrawingModal from './DrawingModal'
 import DrawingDisplay from './DrawingDisplay'
 import { Brush } from 'lucide-react'
 import { MAX_COIN_LIMIT } from '@/lib/constants'
+import { checkPermission } from '@/lib/utils'
 
 interface AddEditWishlistItemModalProps {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   editingItem: WishlistItemType | null
   setEditingItem: (item: WishlistItemType | null) => void
-  addWishlistItem: (item: Omit<WishlistItemType, 'id'>) => void
-  editWishlistItem: (item: WishlistItemType) => void
+  addWishlistItem: (item: Omit<WishlistItemType, 'id'>) => Promise<void>
+  editWishlistItem: (item: WishlistItemType) => Promise<void>
 }
 
 export default function AddEditWishlistItemModal({
@@ -41,6 +42,11 @@ export default function AddEditWishlistItemModal({
   const [link, setLink] = useState(editingItem?.link || '')
   const [currentUser] = useAtom(currentUserAtom)
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>((editingItem?.userIds || []).filter(id => id !== currentUser?.id))
+  const [includeSelf, setIncludeSelf] = useState(!editingItem || !!editingItem.userIds?.includes(currentUser?.id ?? ''))
+  const [saving, setSaving] = useState(false)
+  const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
+    checkPermission(currentUser.permissions, 'wishlist', 'write') ||
+    !!currentUser.managedUserIds?.includes(userId))
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const [usersData] = useAtom(usersAtom)
   const [drawing, setDrawing] = useState<string>(editingItem?.drawing || '')
@@ -54,6 +60,8 @@ export default function AddEditWishlistItemModal({
       setTargetCompletions(editingItem.targetCompletions)
       setLink(editingItem.link || '')
       setDrawing(editingItem.drawing || '')
+      setSelectedUserIds((editingItem.userIds || []).filter(id => id !== currentUser?.id))
+      setIncludeSelf(!!editingItem.userIds?.includes(currentUser?.id ?? ''))
     } else {
       setName('')
       setDescription('')
@@ -61,9 +69,11 @@ export default function AddEditWishlistItemModal({
       setTargetCompletions(undefined)
       setLink('')
       setDrawing('')
+      setSelectedUserIds([])
+      setIncludeSelf(true)
     }
     setErrors({})
-  }, [editingItem])
+  }, [editingItem, currentUser?.id])
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {}
@@ -80,6 +90,9 @@ export default function AddEditWishlistItemModal({
     }
     if (link && !isValidUrl(link)) {
       newErrors.link = t('errorInvalidUrl')
+    }
+    if (!includeSelf && selectedUserIds.length === 0) {
+      newErrors.assignment = t('assignmentRequired')
     }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -99,7 +112,7 @@ export default function AddEditWishlistItemModal({
     setEditingItem(null)
   }
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
@@ -109,18 +122,19 @@ export default function AddEditWishlistItemModal({
       coinCost,
       targetCompletions: targetCompletions || undefined,
       link: link.trim() || undefined,
-      userIds: selectedUserIds.length > 0 ? selectedUserIds.concat(currentUser?.id || []) : (currentUser && [currentUser.id]),
+      userIds: [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
       drawing: drawing && drawing !== '[]' ? drawing : undefined
     }
 
-    if (editingItem) {
-      editWishlistItem({ ...itemData, id: editingItem.id })
-    } else {
-      addWishlistItem(itemData)
-    }
-
-    setIsOpen(false)
-    setEditingItem(null)
+    setSaving(true)
+    try {
+      if (editingItem) await editWishlistItem({ ...itemData, id: editingItem.id })
+      else await addWishlistItem(itemData)
+      setIsOpen(false)
+      setEditingItem(null)
+    } catch {
+      setErrors(previous => ({ ...previous, save: t('saveError') }))
+    } finally { setSaving(false) }
   }
 
   return (
@@ -313,6 +327,10 @@ export default function AddEditWishlistItemModal({
                   </div>
                 </div>
               </div>
+              {(currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="col-span-3 col-start-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
+                {t('includeSelf')}
+              </label>}
               {usersData.users && usersData.users.length > 1 && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <div className="flex items-center justify-end gap-2">
@@ -320,15 +338,14 @@ export default function AddEditWishlistItemModal({
                   </div>
                   <div className="col-span-3">
                     <div className="flex flex-wrap gap-2">
-                      {usersData.users.filter((u) => u.id !== currentUser?.id).map(user => (
-                        <Avatar
-                          key={user.id}
+                      {usersData.users.filter(user => user.id !== currentUser?.id && canAssignUser(user.id)).map(user => (
+                        <button type="button" key={user.id} aria-label={t('assignUser', { username: user.username })}
+                          aria-pressed={selectedUserIds.includes(user.id)}
                           className={`h-8 w-8 border-2 cursor-pointer
                           ${selectedUserIds.includes(user.id)
                               ? 'border-primary'
                               : 'border-muted'
                             }`}
-                          title={user.username}
                           onClick={() => {
                             setSelectedUserIds(prev =>
                               prev.includes(user.id)
@@ -337,17 +354,20 @@ export default function AddEditWishlistItemModal({
                             )
                           }}
                         >
+                          <Avatar className="h-7 w-7">
                           <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
                           <AvatarFallback>{user.username[0]}</AvatarFallback>
-                        </Avatar>
+                          </Avatar>
+                        </button>
                       ))}
                     </div>
                   </div>
                 </div>
               )}
             </div>
+            {(errors.assignment || errors.save) && <p role="alert" className="text-sm text-destructive">{errors.assignment || errors.save}</p>}
             <DialogFooter>
-              <Button type="submit">{editingItem ? t('saveButton') : t('addButton')}</Button>
+              <Button type="submit" disabled={saving}>{editingItem ? t('saveButton') : t('addButton')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

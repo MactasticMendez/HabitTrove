@@ -31,4 +31,16 @@ describe('activity summaries', () => {
     expect(getCurrentStreak(completions, today)).toBe(1)
     expect(getCurrentStreak(new Map(), today)).toBe(0)
   })
+
+  test('status dates pause a streak without adding completions', () => {
+    const today = DateTime.fromISO('2026-11-03', { zone: 'UTC' })
+    const completions = new Map([
+      ['2026-11-01', [habit]],
+      ['2026-11-03', [habit]],
+    ])
+    expect(getCurrentStreak(completions, today)).toBe(1)
+    expect(getCurrentStreak(completions, today, new Set(['2026-11-02']))).toBe(2)
+    expect(getCurrentStreak(new Map([['2026-11-01', [habit]]]), today,
+      new Set(['2026-11-02', '2026-11-03']))).toBe(1)
+  })
 })

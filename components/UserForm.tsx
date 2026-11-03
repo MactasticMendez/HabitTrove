@@ -71,6 +71,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
   const [permissions, setPermissions] = useState<Permission[]>(
     user?.permissions || getDefaultPermissions()
   );
+  const [managedUserIds, setManagedUserIds] = useState<string[]>(user?.managedUserIds ?? [])
   const isEditing = !!user;
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -158,7 +159,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
 
       if (isEditing) {
         const profileChanged = username !== user.username || email !== (user.email || '') || avatarPath !== user.avatarPath ||
-          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin || authentikSubject || removeAuthentik));
+          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin || authentikSubject || removeAuthentik || !_.isEqual(managedUserIds, user.managedUserIds ?? [])));
         const passwordChanged = (disablePassword && user.hasPassword) || !!password;
         if (profileChanged && passwordChanged) {
           setError(accountText('saveSeparately'));
@@ -174,6 +175,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
             ...(currentUser?.isAdmin && isAdmin !== user.isAdmin && { isAdmin }),
             ...(currentUser?.isAdmin && authentikSubject && { authentikSubject }),
             ...(currentUser?.isAdmin && removeAuthentik && { authentikSubject: null }),
+            ...(currentUser?.isAdmin && !_.isEqual(managedUserIds, user.managedUserIds ?? []) && { managedUserIds }),
           });
         }
 
@@ -192,7 +194,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
               username,
               email,
               avatarPath,
-              ...(currentUser?.isAdmin && { permissions, isAdmin }),
+              ...(currentUser?.isAdmin && { permissions, isAdmin, managedUserIds }),
               hasPassword: disablePassword ? false : (password ? true : !!u.hasPassword),
               hasAuthentik: removeAuthentik ? false : (authentikSubject ? true : !!u.hasAuthentik),
             } : u
@@ -398,6 +400,15 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
           onPermissionsChange={setPermissions}
           onAdminChange={setIsAdmin}
         />}
+        {currentUser?.isAdmin && isEditing && <fieldset className="space-y-2 rounded border p-3">
+          <legend className="px-1 font-medium">{t('managedFamilyMembers')}</legend>
+          <p className="text-sm text-muted-foreground">{t('managedFamilyHelp')}</p>
+          {users.users.filter(candidate => candidate.id !== user.id).map(candidate => <label key={candidate.id} className="flex items-center gap-2">
+            <input type="checkbox" checked={managedUserIds.includes(candidate.id)} onChange={event =>
+              setManagedUserIds(previous => event.target.checked ? [...previous, candidate.id] : previous.filter(id => id !== candidate.id))} />
+            {candidate.username}
+          </label>)}
+        </fieldset>}
 
       </div>
 
