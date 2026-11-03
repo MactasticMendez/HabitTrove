@@ -100,7 +100,7 @@ export default function PasswordEntryForm({
     </form>
     {user.hasAuthentik && serverSettings.authentikEnabled && (
       <form action={signInWithAuthentik}>
-        <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik')}</Button>
+        <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: serverSettings.oidcDisplayName })}</Button>
       </form>
     )}
     {!canUseLocal && !(user.hasAuthentik && serverSettings.authentikEnabled) && (

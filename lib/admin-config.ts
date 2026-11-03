@@ -7,6 +7,12 @@ import { z } from 'zod'
 
 export const logLevels = ['debug', 'info', 'warn', 'error'] as const
 export type LogLevel = typeof logLevels[number]
+export const defaultOidcDisplayName = 'OIDC'
+
+const oidcDisplayNameSchema = z.string().trim().max(64).refine(
+  name => !/[\p{Cc}\p{Cf}\p{Cs}]/u.test(name),
+  'The OIDC sign-in name must be plain text',
+)
 
 export interface OidcConfig {
   providerId: 'oidc' | 'authentik'
@@ -31,6 +37,7 @@ const oidcSchema = z.object({
 const storedSchema = z.object({
   version: z.literal(1),
   logLevel: z.enum(logLevels),
+  oidcDisplayName: oidcDisplayNameSchema.optional(),
   legacyIssuer: z.string().optional(),
   oidcOverride: z.union([z.object({
     issuer: z.string(),
@@ -131,6 +138,14 @@ export function getApplicationLogLevel(): LogLevel {
   }
 }
 
+export async function getOidcDisplayName(): Promise<string> {
+  try {
+    return (await readStoredConfig())?.oidcDisplayName || defaultOidcDisplayName
+  } catch {
+    return defaultOidcDisplayName
+  }
+}
+
 export async function getAdminConfigSummary() {
   const stored = await readStoredConfig()
   const oidc = effectiveOidcConfig(stored)
@@ -145,6 +160,7 @@ export async function getAdminConfigSummary() {
     logLevel: stored?.logLevel ?? 'info',
     oidc: {
       enabled: !!oidc,
+      displayName: stored?.oidcDisplayName || defaultOidcDisplayName,
       issuer: oidc?.issuer ?? '',
       clientId: oidc?.clientId ?? '',
       secretConfigured: !!oidc?.clientSecret,
@@ -180,6 +196,11 @@ async function updateStoredConfig(update: (current: StoredAdminConfig) => Stored
 export async function saveLogLevel(value: unknown): Promise<void> {
   const level = z.enum(logLevels).parse(value)
   await updateStoredConfig(current => ({ ...current, logLevel: level }))
+}
+
+export async function saveOidcDisplayName(value: unknown): Promise<void> {
+  const name = oidcDisplayNameSchema.parse(value) || defaultOidcDisplayName
+  await updateStoredConfig(current => ({ ...current, oidcDisplayName: name }))
 }
 
 export async function saveOidcConfig(input: {

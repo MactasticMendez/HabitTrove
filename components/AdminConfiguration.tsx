@@ -2,27 +2,32 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslations } from 'next-intl'
+import { useSetAtom } from 'jotai'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { loadAdminPanelSettings, updateApplicationLogLevel, updateOidcProvider } from '@/app/actions/admin'
+import { loadAdminPanelSettings, updateApplicationLogLevel, updateOidcDisplayName, updateOidcProvider } from '@/app/actions/admin'
 import type { LogLevel } from '@/lib/admin-config'
+import { serverSettingsAtom } from '@/lib/atoms'
 
 type Summary = Awaited<ReturnType<typeof loadAdminPanelSettings>>
 
 export default function AdminConfiguration() {
   const t = useTranslations('SettingsPage')
+  const setServerSettings = useSetAtom(serverSettingsAtom)
   const [summary, setSummary] = useState<Summary>()
   const [logLevel, setLogLevel] = useState<LogLevel>('info')
   const [enabled, setEnabled] = useState(false)
   const [issuer, setIssuer] = useState('')
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
+  const [displayName, setDisplayName] = useState('OIDC')
   const [currentPassword, setCurrentPassword] = useState('')
   const [savingLog, setSavingLog] = useState(false)
   const [savingOidc, setSavingOidc] = useState(false)
+  const [savingDisplayName, setSavingDisplayName] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const providerIdentityChanged = issuer.trim() !== summary?.oidc.issuer || clientId.trim() !== summary?.oidc.clientId
@@ -38,6 +43,7 @@ export default function AdminConfiguration() {
       setEnabled(value.oidc.enabled)
       setIssuer(value.oidc.issuer)
       setClientId(value.oidc.clientId)
+      setDisplayName(value.oidc.displayName)
     }).catch(() => { if (mounted) setError(t('adminLoadError')) })
     return () => { mounted = false }
   }, [t])
@@ -75,6 +81,24 @@ export default function AdminConfiguration() {
     }
   }
 
+  const saveDisplayName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    setSavingDisplayName(true)
+    try {
+      const next = await updateOidcDisplayName(displayName)
+      setSummary(next)
+      setDisplayName(next.oidc.displayName)
+      setServerSettings(current => ({ ...current, oidcDisplayName: next.oidc.displayName }))
+      setNotice(t('oidcDisplayNameSaved'))
+    } catch {
+      setError(t('adminSaveError'))
+    } finally {
+      setSavingDisplayName(false)
+    }
+  }
+
   return <div className="space-y-6">
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {notice && <p role="status" className="text-sm text-primary">{notice}</p>}
@@ -83,6 +107,14 @@ export default function AdminConfiguration() {
       <CardContent>
         <p className="mb-4 text-sm text-muted-foreground">{t('oidcDescription')}</p>
         <p className="mb-4 text-sm text-muted-foreground">{t('oidcSourceLabel')}: {summary ? t(`oidcSource.${summary.oidc.source}`) : t('loading')}</p>
+        <form onSubmit={saveDisplayName} className="mb-6 flex flex-wrap items-end gap-3">
+          <div className="min-w-48 flex-1 space-y-2">
+            <Label htmlFor="oidc-display-name">{t('oidcDisplayNameLabel')}</Label>
+            <Input id="oidc-display-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={!summary || savingDisplayName} maxLength={64} autoComplete="off" aria-describedby="oidc-display-name-help" />
+            <p id="oidc-display-name-help" className="text-sm text-muted-foreground">{t('oidcDisplayNameHelp')}</p>
+          </div>
+          <Button type="submit" disabled={!summary || savingDisplayName}>{savingDisplayName ? t('saving') : t('oidcDisplayNameSaveButton')}</Button>
+        </form>
         <form onSubmit={saveOidc} className="space-y-4">
           <div className="flex items-center gap-3">
             <Switch id="oidc-enabled" className="min-h-6" checked={enabled} onCheckedChange={setEnabled} disabled={!summary || savingOidc} />

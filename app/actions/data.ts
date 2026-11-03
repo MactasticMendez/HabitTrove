@@ -40,7 +40,7 @@ import { z } from 'zod'
 import { MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
 import { validateHabit, validateSettings, validateWishlistItem } from '@/lib/security-validation'
-import { getActiveOidcConfig } from '@/lib/admin-config'
+import { getActiveOidcConfig, getOidcDisplayName } from '@/lib/admin-config'
 import { log } from '@/lib/logger'
 import { getTaskProgress, isApprovedCompletion, isCountedCompletion, isTaskScheduledOnDate } from '@/lib/task-schedule'
 import sharp from 'sharp'
@@ -1462,9 +1462,11 @@ export async function updateLastNotificationReadTimestamp(userId: string, timest
 
 
 export async function loadServerSettings(): Promise<ServerSettings> {
+  const [oidc, oidcDisplayName] = await Promise.all([getActiveOidcConfig(), getOidcDisplayName()])
   return {
     isDemo: process.env.DEMO === 'true',
-    authentikEnabled: !!(await getActiveOidcConfig()),
+    authentikEnabled: !!oidc,
+    oidcDisplayName,
   }
 }
 

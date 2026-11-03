@@ -2,7 +2,7 @@
 
 import { getCurrentUser } from '@/lib/server-helpers'
 import { readAuthData, verifyStepUpPassword } from '@/lib/auth-store'
-import { getAdminConfigSummary, getLegacyOidcIssuer, saveLogLevel, saveOidcConfig } from '@/lib/admin-config'
+import { getAdminConfigSummary, getLegacyOidcIssuer, saveLogLevel, saveOidcConfig, saveOidcDisplayName } from '@/lib/admin-config'
 import { PermissionError } from '@/lib/exceptions'
 
 async function requireAdministrator() {
@@ -30,6 +30,12 @@ export async function loadAdminPanelSettings() {
 export async function updateApplicationLogLevel(level: string) {
   await requireAdministrator()
   await saveLogLevel(level)
+  return adminSummary()
+}
+
+export async function updateOidcDisplayName(name: string) {
+  await requireAdministrator()
+  await saveOidcDisplayName(name)
   return adminSummary()
 }
 
