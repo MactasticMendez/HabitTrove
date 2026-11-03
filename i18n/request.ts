@@ -1,6 +1,8 @@
 import { getRequestConfig } from 'next-intl/server';
 import { loadSettings } from '@/app/actions/data'; // Adjust path as necessary
 import { supportedLanguages } from '@/lib/security-validation'
+import merge from 'lodash/merge'
+import englishMessages from '@/messages/en.json'
 
 export default getRequestConfig(async () => {
   // Load settings to get the user's preferred language
@@ -9,6 +11,6 @@ export default getRequestConfig(async () => {
 
   return {
     locale,
-    messages: (await import(`../messages/${locale}.json`)).default
+    messages: merge({}, englishMessages, (await import(`../messages/${locale}.json`)).default)
   };
 });

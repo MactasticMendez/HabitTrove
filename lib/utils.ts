@@ -172,7 +172,7 @@ export function calculateCoinsEarnedToday(transactions: CoinTransaction[], timez
     .filter(transaction =>
       isSameDate(t2d({ timestamp: transaction.timestamp, timezone }),
         t2d({ timestamp: today, timezone })) &&
-      (transaction.amount > 0 || transaction.type === 'HABIT_UNDO')
+      (transaction.amount > 0 && transaction.type !== 'HABIT_SLIP_UNDO' || transaction.type === 'HABIT_UNDO')
     )
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
@@ -180,7 +180,7 @@ export function calculateCoinsEarnedToday(transactions: CoinTransaction[], timez
 export function calculateTotalEarned(transactions: CoinTransaction[]): number {
   return transactions
     .filter(transaction =>
-      transaction.amount > 0 || transaction.type === 'HABIT_UNDO'
+      transaction.amount > 0 && transaction.type !== 'HABIT_SLIP_UNDO' || transaction.type === 'HABIT_UNDO'
     )
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
@@ -551,6 +551,9 @@ export function hasPermission(
   }
   // If user is admin, they have all permissions.
   if (currentUser.isAdmin) {
+    return true;
+  }
+  if (action === 'write' && resource !== 'coins' && currentUser.managedUserIds?.length) {
     return true;
   }
   // Otherwise, check specific permissions.

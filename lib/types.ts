@@ -4,6 +4,10 @@ import { DateTime } from "luxon"
 
 export type UserId = string
 
+export type PersonalFolder = { id: string; name: string; itemIds: string[] }
+export type StatusDay = { date: string; status: 'sick' | 'travel' | 'rest' | 'other' }
+export type FamilyInvite = { tokenHash: string; email: string; createdBy: UserId; managedBy?: UserId; expiresAt: string }
+
 export type Permission = {
   habit: {
     write: boolean
@@ -40,6 +44,9 @@ export type User = SafeUser & {
   oidcIssuer?: string
   authVersion?: number
   lastNotificationReadTimestamp?: string // UTC ISO date string
+  personalFolders?: PersonalFolder[]
+  statusDays?: StatusDay[]
+  managedUserIds?: UserId[]
 }
 
 export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssuer' | 'authVersion'> & {
@@ -106,6 +113,9 @@ export type Habit = {
   approverIds?: UserId[]
   createdBy?: UserId
   coinBoost?: CoinBoost
+  isNegative?: boolean
+  coinPenalty?: number
+  slips?: { id: string; actorId: UserId; timestamp: string; penaltyAmount: number }[]
 }
 
 
@@ -123,7 +133,7 @@ export type WishlistItemType = {
   drawing?: string // Optional JSON string of drawing data
 }
 
-export type TransactionType = 'HABIT_COMPLETION' | 'HABIT_UNDO' | 'WISH_REDEMPTION' | 'MANUAL_ADJUSTMENT' | 'TASK_COMPLETION' | 'TASK_UNDO';
+export type TransactionType = 'HABIT_COMPLETION' | 'HABIT_UNDO' | 'HABIT_SLIP' | 'HABIT_SLIP_UNDO' | 'WISH_REDEMPTION' | 'MANUAL_ADJUSTMENT' | 'TASK_COMPLETION' | 'TASK_UNDO';
 
 export interface CoinTransaction {
   id: string;
@@ -140,6 +150,7 @@ export interface CoinTransaction {
 
 export interface UserData {
   users: User[]
+  invites?: FamilyInvite[]
 }
 
 export interface PublicUserData {

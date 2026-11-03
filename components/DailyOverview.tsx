@@ -33,6 +33,7 @@ import { Button } from './ui/button'
 import { HabitContextMenuItems } from './HabitContextMenuItems'
 import DrawingDisplay from './DrawingDisplay'
 import { getPerHabitProgress } from '@/lib/habit-progress'
+import { DateTime } from 'luxon'
 
 interface UpcomingItemsProps {
   habits: Habit[]
@@ -59,12 +60,13 @@ const ItemSection = ({
 }: ItemSectionProps) => {
   const t = useTranslations('DailyOverview');
   const tHabitItem = useTranslations('HabitItem');
-  const { completeHabit, undoComplete, saveHabit, deleteHabit, archiveHabit, habitFreqMap } = useHabits();
+  const { completeHabit, undoComplete, logSlip, undoSlip, saveHabit, deleteHabit, archiveHabit, habitFreqMap } = useHabits();
   const [_, setPomo] = useAtom(pomodoroAtom);
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom);
   const [settings] = useAtom(settingsAtom);
   const [currentUser] = useAtom(currentUserAtom);
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom);
+  const pausedDates = new Set(currentUser?.statusDays?.map(day => day.date) ?? []);
 
   const today = getTodayInTimezone(settings.system.timezone);
   const currentTodayCompletions = completedHabitsMap.get(today) || [];
@@ -146,8 +148,8 @@ const ItemSection = ({
               return a.pinned ? -1 : 1;
             }
 
-            const aStreak = a.isTask ? 0 : getPerHabitProgress(a, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay).streak
-            const bStreak = b.isTask ? 0 : getPerHabitProgress(b, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay).streak
+            const aStreak = a.isTask ? 0 : getPerHabitProgress(a, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay, pausedDates).streak
+            const bStreak = b.isTask ? 0 : getPerHabitProgress(b, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay, pausedDates).streak
             if ((aStreak >= 3) !== (bStreak >= 3)) return aStreak >= 3 ? -1 : 1
 
             // Then by completion status
@@ -183,9 +185,11 @@ const ItemSection = ({
               isSameDate(t2d({ timestamp: completion, timezone: settings.system.timezone }), t2d({ timestamp: d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }), timezone: settings.system.timezone }))
             ).length
             const target = habit.targetCompletions || 1
-            const progress = !itemIsTask ? getPerHabitProgress(habit, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay) : null
+            const progress = !itemIsTask ? getPerHabitProgress(habit, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay, pausedDates) : null
             const isCompleted = completionsToday >= target || (itemIsTask && habit.archived)
             const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
+            const slipToday = habit.slips?.find(slip => DateTime.fromISO(slip.timestamp).setZone(settings.system.timezone).toISODate() === today)
+            const canRecordNegative = !habit.isNegative || habit.userIds?.[0] === currentUser?.id
             return (
               <li
                 className={`flex items-center justify-between text-sm p-2 rounded-md
@@ -199,8 +203,8 @@ const ItemSection = ({
                         <div className="flex-shrink-0">
                           <button
                             type="button"
-                            aria-label={`${tHabitItem(isCompleted ? 'undoButton' : 'completeButton')}: ${habit.name}`}
-                            disabled={isCompleted && undoIndex < 0}
+                            aria-label={`${tHabitItem(isCompleted ? 'undoButton' : habit.isNegative ? 'avoidButton' : 'completeButton')}: ${habit.name}`}
+                            disabled={!canRecordNegative || !!slipToday || isCompleted && undoIndex < 0}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -295,6 +299,12 @@ const ItemSection = ({
                   </ContextMenu>
                 </span>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground flex-shrink-0">
+                  {habit.isNegative && <button type="button" className="rounded border px-2 py-1 text-foreground"
+                    disabled={!canRecordNegative || isCompleted}
+                    aria-label={tHabitItem(slipToday ? 'undoSlipFor' : 'logSlipFor', { name: habit.name })}
+                    onClick={() => void (slipToday ? undoSlip(habit, slipToday.id) : logSlip(habit))}>
+                    {tHabitItem(slipToday ? 'undoSlip' : 'logSlip')}
+                  </button>}
                   {progress && <span className="flex items-center gap-1" aria-label={`${t('individualProgress', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}${progress.graceUsed ? `; ${t('graceUsed')}` : ''}`}>
                     {progress.streak >= 3 && <><Flame aria-hidden="true" className="h-3 w-3 text-orange-600" />{progress.streak}</>}
                     {progress.graceUsed && <span className="text-amber-700 dark:text-amber-300">{t('graceUsed')}</span>}

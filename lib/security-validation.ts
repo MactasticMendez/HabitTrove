@@ -64,6 +64,21 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
       typeof habit.frequency !== 'string' || habit.frequency.length > 512 || !Array.isArray(habit.completions) ||
       habit.completions.length > 20_000) throw new Error('Invalid habit')
   validateReward(habit.coinReward)
+  if (habit.isNegative !== undefined && typeof habit.isNegative !== 'boolean') throw new Error('Invalid negative habit')
+  if (habit.coinPenalty !== undefined) {
+    validateReward(habit.coinPenalty)
+    if (!habit.isNegative) throw new Error('Coin penalty requires a negative habit')
+  }
+  if (habit.isNegative && (habit.isTask || habit.targetCompletions && habit.targetCompletions !== 1 ||
+      habit.requiresApproval || habit.coinBoost || habit.userIds?.length !== 1)) throw new Error('Invalid negative habit settings')
+  if (habit.slips !== undefined && (!habit.isNegative || !Array.isArray(habit.slips) || habit.slips.length > 20_000 ||
+      new Set(habit.slips.map(slip => slip?.id)).size !== habit.slips.length || habit.slips.some(slip =>
+        !slip || typeof slip.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(slip.id) ||
+        typeof slip.actorId !== 'string' || slip.actorId.length > 128 ||
+        typeof slip.timestamp !== 'string' || !DateTime.fromISO(slip.timestamp).isValid ||
+        !Number.isSafeInteger(slip.penaltyAmount) || slip.penaltyAmount < 0 || slip.penaltyAmount > MAX_COIN_LIMIT))) {
+    throw new Error('Invalid slip records')
+  }
   if (habit.targetCompletions !== undefined && (!Number.isSafeInteger(habit.targetCompletions) ||
       habit.targetCompletions < 1 || habit.targetCompletions > 10_000)) throw new Error('Invalid completion target')
   if (habit.position !== undefined && (!Number.isSafeInteger(habit.position) || habit.position < 0 || habit.position > 100_000)) {

@@ -41,6 +41,7 @@ export interface BrowserSettings {
   expandedToday?: boolean
   dashboardOrder?: string[]
   hideNonDaily?: boolean
+  showFolders?: boolean
   remindersEnabled?: boolean
   reminderLeadMinutes?: number
 }
