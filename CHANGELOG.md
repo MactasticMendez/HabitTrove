@@ -12,6 +12,7 @@
 ### Fixed
 
 * Keep the npm lockfile compatible with the Node 22 Docker build and GitHub Actions.
+* Place the OIDC sign-in button name save action below its field and help text.
 
 ### Security
 

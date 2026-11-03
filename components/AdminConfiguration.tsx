@@ -142,8 +142,8 @@ export default function AdminConfiguration() {
       <CardContent>
         <p className="mb-4 text-sm text-muted-foreground">{t('oidcDescription')}</p>
         <p className="mb-4 text-sm text-muted-foreground">{t('oidcSourceLabel')}: {summary ? t(`oidcSource.${summary.oidc.source}`) : t('loading')}</p>
-        <form onSubmit={saveDisplayName} className="mb-6 flex flex-wrap items-end gap-3">
-          <div className="min-w-48 flex-1 space-y-2">
+        <form onSubmit={saveDisplayName} className="mb-6 space-y-3">
+          <div className="space-y-2">
             <Label htmlFor="oidc-display-name">{t('oidcDisplayNameLabel')}</Label>
             <Input id="oidc-display-name" value={displayName} onChange={event => setDisplayName(event.target.value)} disabled={!summary || savingDisplayName} maxLength={64} autoComplete="off" aria-describedby="oidc-display-name-help" />
             <p id="oidc-display-name-help" className="text-sm text-muted-foreground">{t('oidcDisplayNameHelp')}</p>
