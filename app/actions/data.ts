@@ -1324,7 +1324,7 @@ export async function createFamilyInvite(rawEmail: string, managedBy?: string): 
   await updateAuthData(data => {
     if (!data.users.some(user => user.id === actor.id && user.isAdmin)) throw new PermissionError('Administrator access required')
     if (data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already belongs to an account')
-    if (managedBy && (!data.users.some(user => user.id === managedBy) || managedBy === actor.id)) {
+    if (managedBy && !data.users.some(user => user.id === managedBy)) {
       throw new Error('Unknown family manager')
     }
     data.invites = (data.invites ?? []).filter(invite => DateTime.fromISO(invite.expiresAt).toMillis() > Date.now())

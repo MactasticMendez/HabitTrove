@@ -685,10 +685,10 @@
   },
   "FamilyInvites": {
     "title": "Family invitations",
-    "description": "Invite a new member by email. Links expire after seven days and work once. Choose a manager to let them edit the new member’s items.",
+    "description": "Invite a new member by email. Links expire after seven days and work once. Choose a manager for the new member’s items; administrators can manage members even without a designation.",
     "email": "Invitee email",
     "manager": "Family manager",
-    "noManager": "No manager",
+    "noManager": "No designated manager",
     "send": "Create and send invite",
     "loadError": "Could not load invitations.",
     "createError": "Could not create invitation. Check the email or existing invitations.",

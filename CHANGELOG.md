@@ -11,6 +11,7 @@
 
 ### Fixed
 
+* Allow an administrator to designate their own account as the family manager when inviting a member, and clarify that administrator access remains available when no manager is chosen.
 * Keep the npm lockfile compatible with the Node 22 Docker build and GitHub Actions.
 * Place the OIDC sign-in button name save action below its field and help text.
 
