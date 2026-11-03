@@ -26,7 +26,7 @@ export default function HabitHeatmap() {
   const total = days.reduce((sum, day) => sum + day.total, 0)
 
   return (
-    <Card className="md:col-span-2 lg:col-span-3">
+    <Card>
       <CardHeader>
         <CardTitle>{t('title')}</CardTitle>
         <p className="text-sm text-muted-foreground">{t('summary', { count: total })}</p>

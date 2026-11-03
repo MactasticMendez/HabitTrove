@@ -214,6 +214,7 @@ export const getDefaultSettings = (): Settings => ({
 export const getDefaultServerSettings = (): ServerSettings => ({
   isDemo: false,
   authentikEnabled: false,
+  oidcDisplayName: 'OIDC',
 })
 
 // Map of data types to their default values
@@ -272,6 +273,7 @@ export interface JotaiHydrateInitialValues {
 export interface ServerSettings {
   isDemo: boolean
   authentikEnabled: boolean
+  oidcDisplayName: string
 }
 
 export type ParsedResultType = DateTime<true> | RRule | string | null // null if invalid
