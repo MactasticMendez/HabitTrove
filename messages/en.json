@@ -187,6 +187,8 @@
     "taskScheduleHelp": "Pick a date or type today, tomorrow, or a date.",
     "habitScheduleHelp": "Text syntax uses English: every week on Mon, Thu; every month on the 15th.",
     "completeLabel": "Complete",
+    "decreaseValue": "Decrease {field}",
+    "increaseValue": "Increase {field}",
     "timesSuffix": "times",
     "rewardLabel": "Reward",
     "coinsSuffix": "coins",
