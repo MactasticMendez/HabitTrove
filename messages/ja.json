@@ -32,8 +32,8 @@
     "heatmap": "Completion calendar",
     "achievements": "Achievements",
     "reorderSection": "Reorder {name}",
-    "moveUp": "Move {name} up",
-    "moveDown": "Move {name} down",
+    "moveUp": "Move {name} earlier",
+    "moveDown": "Move {name} later",
     "title": "ダッシュボード"
   },
   "HabitList": {
@@ -422,7 +422,8 @@
     "completeButtonCount": "完了（{completed}/{target}）",
     "completeButtonCountMobile": "{completed}/{target}",
     "undoButton": "取り消し",
-    "editButton": "編集"
+    "editButton": "編集",
+    "moreActions": "More actions for {name}"
   },
   "TransactionNoteEditor": {
     "noteTooLongTitle": "メモが長すぎます",
@@ -475,8 +476,12 @@
     "adminLoadError": "Could not load administrator settings. Please try again.",
     "adminSaveError": "Could not save the change. Check the values and current password, then try again.",
     "oidcTitle": "OIDC setup",
-    "oidcDescription": "Configure an OIDC sign-in provider. Local sign-in remains available. Changes take effect after the container restarts.",
+    "oidcDescription": "Configure an OIDC sign-in provider. Local sign-in remains available. Provider connection changes take effect after the container restarts.",
     "oidcSourceLabel": "Configuration source",
+    "oidcDisplayNameLabel": "Sign-in button name",
+    "oidcDisplayNameHelp": "Shown on sign-in buttons. Leave blank to use OIDC.",
+    "oidcDisplayNameSaveButton": "Save button name",
+    "oidcDisplayNameSaved": "Sign-in button name saved.",
     "oidcSource": {"environment": "Container environment", "admin": "Admin panel", "none": "Not configured"},
     "oidcEnabledLabel": "Enable OIDC sign-in",
     "oidcCallbackLabel": "Redirect URI for the OIDC provider",
@@ -603,7 +608,7 @@
     "subjectPlaceholder": "Paste the user subject from the OIDC provider",
     "removeAuthentikLink": "Remove OIDC link",
     "saveSeparately": "Save profile and password changes separately.",
-    "continueAuthentik": "Continue with OIDC",
+    "continueAuthentik": "Continue with {name}",
     "profileMenu": "Account menu",
     "initialPasswordAdmin": "Ask an administrator to set your first local password.",
     "contactAdmin": "Ask an administrator to set up a sign-in method for this account."
