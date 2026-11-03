@@ -112,6 +112,8 @@ describe('family and negative-habit security', () => {
     await fs.writeFile(habitFile, JSON.stringify(habits))
     const visible = await actions.loadHabitsData()
     expect(visible.habits.map((habit: { id: string }) => habit.id)).toContain('foreign')
+    await expect(actions.reorderHabitItems(visible.habits.map((habit: Habit) => habit.id), false))
+      .rejects.toThrow('requires habit write permission')
     await actions.saveHabitsData({ habits: visible.habits.map((habit: Habit) =>
       habit.id === 'foreign' ? { ...habit, name: 'Managed' } : habit) })
     await expect(actions.saveHabitsData({ habits: visible.habits.map((habit: Habit) =>
