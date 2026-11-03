@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { Flame } from 'lucide-react'
-import { settingsAtom, hasTasksAtom, completedHabitsMapAtom } from '@/lib/atoms'
+import { settingsAtom, hasTasksAtom, completedHabitsMapAtom, currentUserAtom } from '@/lib/atoms'
 import { getActivityDays, getCurrentStreak } from '@/lib/activity'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 
@@ -15,10 +15,12 @@ export default function HabitStreak() {
   const [settings] = useAtom(settingsAtom)
   const [hasTasks] = useAtom(hasTasksAtom)
   const [completedHabitsMap] = useAtom(completedHabitsMapAtom)
+  const [currentUser] = useAtom(currentUserAtom)
   const today = useTodayInTimezone(settings.system.timezone)
   const currentDay = DateTime.fromISO(today, { zone: settings.system.timezone })
   const completions = getActivityDays(completedHabitsMap, currentDay, 7)
-  const currentStreak = getCurrentStreak(completedHabitsMap, currentDay)
+  const currentStreak = getCurrentStreak(completedHabitsMap, currentDay,
+    new Set(currentUser?.statusDays?.map(day => day.date) ?? []))
 
   return (
     <Card>

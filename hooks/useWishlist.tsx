@@ -5,14 +5,14 @@ import { saveWishlistItems, removeCoins } from '@/app/actions/data'
 import { toast } from '@/hooks/use-toast'
 import { WishlistItemType, User, SafeUser } from '@/lib/types'
 import { celebrations } from '@/utils/celebrations'
-import { checkPermission } from '@/lib/utils'
+import { hasPermission } from '@/lib/utils'
 import { useCoins } from './useCoins'
 
 function handlePermissionCheck(
   user: User | SafeUser | undefined,
   resource: 'habit' | 'wishlist' | 'coins',
   action: 'write' | 'interact',
-  tCommon: (key: string, values?: Record<string, any>) => string
+  tCommon: (key: string, values?: Record<string, string | number>) => string
 ): boolean {
   if (!user) {
     toast({
@@ -23,7 +23,7 @@ function handlePermissionCheck(
     return false
   }
   
-  if (!user.isAdmin && !checkPermission(user.permissions, resource, action)) {
+  if (!hasPermission(user, resource, action)) {
     toast({
       title: tCommon("permissionDeniedTitle"),
       description: tCommon("permissionDeniedDescription", { action, resource }),
@@ -48,8 +48,8 @@ export function useWishlist() {
     const newItem = { ...item, id: Date.now().toString() }
     const newItems = [...wishlist.items, newItem]
     const newWishListData = { items: newItems }
-    setWishlist(newWishListData)
     await saveWishlistItems(newWishListData)
+    setWishlist(newWishListData)
   }
 
   const editWishlistItem = async (updatedItem: WishlistItemType) => {
@@ -58,8 +58,8 @@ export function useWishlist() {
       item.id === updatedItem.id ? updatedItem : item
     )
     const newWishListData = { items: newItems }
-    setWishlist(newWishListData)
     await saveWishlistItems(newWishListData)
+    setWishlist(newWishListData)
   }
 
   const deleteWishlistItem = async (id: string) => {

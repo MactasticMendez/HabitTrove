@@ -33,6 +33,13 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: '/invite/:token',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'no-store' },
+        ],
+      },
+      {
         source: '/sw.js',
         headers: [
           {

@@ -11,6 +11,8 @@ import LoadingSpinner from './LoadingSpinner'
 import { checkDataFreshness as checkServerDataFreshness } from '@/app/actions/data'
 import RefreshBanner from './RefreshBanner'
 import CompleteEmailAccount from './CompleteEmailAccount'
+import InviteAcceptance from './InviteAcceptance'
+import { usePathname } from 'next/navigation'
 
 function ClientWrapperContent({ children }: { children: ReactNode }) {
   const [pomo] = useAtom(pomodoroAtom)
@@ -87,6 +89,7 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
 
 export default function ClientWrapper({ children }: { children: ReactNode }) {
   const [isMounted, setIsMounted] = useState(false);
+  const pathname = usePathname()
 
   // block client-side hydration until mounted (this is crucial to wait for all jotai atoms to load),
   // to prevent SSR hydration errors in the children components
@@ -96,6 +99,10 @@ export default function ClientWrapper({ children }: { children: ReactNode }) {
 
   if (!isMounted) {
     return <LoadingSpinner />;
+  }
+
+  if (pathname.startsWith('/invite/')) {
+    return <InviteAcceptance token={pathname.slice('/invite/'.length)} />
   }
 
   return (

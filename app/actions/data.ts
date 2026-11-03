@@ -17,6 +17,8 @@ import {
   getDefaultSettings,
   UserData,
   User,
+  PersonalFolder,
+  StatusDay,
   PublicUser,
   PublicUserData,
   getDefaultWishlistData,
@@ -44,6 +46,8 @@ import { getActiveOidcConfig, getOidcDisplayName } from '@/lib/admin-config'
 import { log } from '@/lib/logger'
 import { getTaskProgress, isApprovedCompletion, isCountedCompletion, isTaskScheduledOnDate } from '@/lib/task-schedule'
 import sharp from 'sharp'
+import { createHash, randomBytes } from 'crypto'
+import { sendFamilyInvitation } from '@/lib/invitation-mail'
 
 
 
@@ -109,10 +113,25 @@ async function verifyPermission(
   action: ActionType
 ): Promise<User> {
   const user = await requireUser()
-  if (!user.isAdmin && !checkPermission(user.permissions, resource, action)) {
+  if (!user.isAdmin && !checkPermission(user.permissions, resource, action) &&
+      !(action === 'write' && resource !== 'coins' && user.managedUserIds?.length)) {
     throw new PermissionError(`User does not have ${action} permission for ${resource}`)
   }
   return user
+}
+
+function familyItemVisible(item: { userIds?: string[] }, user: User): boolean {
+  if (user.isAdmin || item.userIds?.includes(user.id)) return true
+  const managed = new Set([user.id, ...(user.managedUserIds ?? [])])
+  return !!item.userIds?.length && item.userIds.every(id => managed.has(id)) &&
+    item.userIds.some(id => id !== user.id)
+}
+
+function familyItemEditable(item: { userIds?: string[] }, user: User): boolean {
+  if (user.isAdmin || item.userIds?.includes(user.id)) return true
+  const managed = new Set([user.id, ...(user.managedUserIds ?? [])])
+  return !!item.userIds?.length && item.userIds.every(id => managed.has(id)) &&
+    !!user.managedUserIds?.length
 }
 
 async function requireUser(): Promise<User> {
@@ -133,13 +152,18 @@ function mergeOwnedItems<T extends { id: string; userIds?: string[] }>(
   existing: T[],
   user: User,
   canWrite: boolean,
-  interactionFields: (keyof T)[]
+  interactionFields: (keyof T)[],
+  resource: 'habit' | 'wishlist'
 ): T[] {
   if (!Array.isArray(submitted)) throw new Error('Invalid item list')
   if (user.isAdmin) return submitted
 
   const existingById = new Map(existing.map(item => [item.id, item]))
-  const visible = existing.filter(item => item.userIds?.includes(user.id))
+  const visible = existing.filter(item => familyItemEditable(item, user))
+  const managerOnly = !checkPermission(user.permissions, resource, 'write') && !!user.managedUserIds?.length
+  const managed = new Set([user.id, ...(user.managedUserIds ?? [])])
+  const managerCanWrite = (item: T) => !!item.userIds?.length && item.userIds.every(id => managed.has(id)) &&
+    item.userIds.some(id => id !== user.id)
   const seen = new Set<string>()
 
   const ownedItems = submitted.map(item => {
@@ -148,17 +172,19 @@ function mergeOwnedItems<T extends { id: string; userIds?: string[] }>(
     }
     seen.add(item.id)
     const stored = existingById.get(item.id)
-    if (stored && !stored.userIds?.includes(user.id)) {
+    if (stored && !familyItemEditable(stored, user)) {
       throw new PermissionError('Cannot change another user\'s item')
     }
     const userIds = item.userIds ?? [user.id]
-    if (!Array.isArray(userIds) || !userIds.includes(user.id) || userIds.some(id => typeof id !== 'string')) {
+    if (!Array.isArray(userIds) || !familyItemEditable({ userIds }, user) || userIds.some(id => typeof id !== 'string')) {
       throw new PermissionError('Item must belong to the current user')
     }
-    if (!canWrite) {
+    const fullWrite = canWrite && (!managerOnly || managerCanWrite(item) && (!stored || managerCanWrite(stored)))
+    if (!fullWrite) {
       if (!stored) throw new PermissionError('Cannot create items with interaction permission')
       const unchanged = (value: T) => Object.fromEntries(
-        Object.entries(value).filter(([key]) => !interactionFields.includes(key as keyof T))
+        Object.entries(value).filter(([key, field]) => field !== undefined &&
+          (managerOnly || !interactionFields.includes(key as keyof T)))
       )
       if (!_.isEqual(unchanged(item), unchanged(stored))) {
         throw new PermissionError('Only interaction fields may be changed')
@@ -167,11 +193,11 @@ function mergeOwnedItems<T extends { id: string; userIds?: string[] }>(
     return { ...item, userIds }
   })
 
-  if (!canWrite && (ownedItems.length !== visible.length || visible.some(item => !seen.has(item.id)))) {
+  if ((!canWrite || managerOnly) && visible.some(item => !seen.has(item.id) && (!managerOnly || !managerCanWrite(item)))) {
     throw new PermissionError('Cannot delete items with interaction permission')
   }
 
-  return [...existing.filter(item => !item.userIds?.includes(user.id)), ...ownedItems]
+  return [...existing.filter(item => !familyItemEditable(item, user)), ...ownedItems]
 }
 
 function getDefaultData<T>(type: DataType): T {
@@ -278,7 +304,7 @@ export async function loadWishlistData(): Promise<WishlistData> {
   const data = await loadData<WishlistData>('wishlist')
   return {
     ...data,
-    items: data.items.filter(x => user.isAdmin || x.userIds?.includes(user.id))
+    items: data.items.filter(x => familyItemVisible(x, user))
   }
 }
 
@@ -292,7 +318,7 @@ export async function saveWishlistItems(data: WishlistData): Promise<void> {
     const user = await verifyPermission('wishlist', 'write')
     const existingData = await loadData<WishlistData>('wishlist')
     if (!data || !Array.isArray(data.items)) throw new Error('Invalid reward list')
-    const items = mergeOwnedItems(data.items.map(validateWishlistItem), existingData.items, user, true, [])
+    const items = mergeOwnedItems(data.items.map(validateWishlistItem), existingData.items, user, true, [], 'wishlist')
     return saveData('wishlist', { items })
   })
 }
@@ -304,14 +330,14 @@ export async function loadHabitsData(): Promise<HabitsData> {
   const data = await loadData<HabitsData>('habits')
   return {
     ...data,
-    habits: data.habits.filter(x => user.isAdmin || x.userIds?.includes(user.id))
+    habits: data.habits.filter(x => familyItemVisible(x, user))
   }
 }
 
 export async function saveHabitsData(data: HabitsData): Promise<void> {
   return withDataWriteLock(async () => {
     const user = await requireUser()
-    const canWrite = user.isAdmin || checkPermission(user.permissions, 'habit', 'write')
+    const canWrite = !!(user.isAdmin || checkPermission(user.permissions, 'habit', 'write') || user.managedUserIds?.length)
     if (!canWrite) await verifyPermission('habit', 'interact')
     const existingData = await loadData<HabitsData>('habits')
     if (!data || !Array.isArray(data.habits)) throw new Error('Invalid habit list')
@@ -322,7 +348,9 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
       if (
         (stored && !_.isEqual(habit.completions, stored.completions)) ||
         (!stored && Array.isArray(habit?.completions) && habit.completions.length > 0) ||
-        (habit?.completionRecords !== undefined && !_.isEqual(habit.completionRecords, stored?.completionRecords))
+        (habit?.completionRecords !== undefined && !_.isEqual(habit.completionRecords, stored?.completionRecords)) ||
+        (habit?.slips !== undefined && !_.isEqual(habit.slips, stored?.slips)) ||
+        (stored && habit.isNegative !== stored.isNegative && (stored.completions.length > 0 || !!stored.slips?.length))
       ) {
         throw new PermissionError('Use the completion action to change habit history')
       }
@@ -347,11 +375,12 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
         ...(habit.isTask === undefined && stored.isTask !== undefined && { isTask: stored.isTask }),
         ...(habit.archived === undefined && stored.archived !== undefined && { archived: stored.archived }),
         ...(habit.completionRecords === undefined && stored.completionRecords !== undefined && { completionRecords: stored.completionRecords }),
+        ...(habit.slips === undefined && stored.slips !== undefined && { slips: stored.slips }),
       } : { ...editableHabit, createdBy: user.id }
     })
     const habits = mergeOwnedItems(
       submitted.map(habit => validateHabit(habit, previous.get(habit.id)?.frequency)),
-      existingData.habits, user, canWrite, ['completions', 'archived'])
+      existingData.habits, user, canWrite, ['completions', 'archived'], 'habit')
     if (!user.isAdmin) {
       for (const habit of habits) {
         const stored = previous.get(habit.id)
@@ -378,6 +407,9 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
 export async function reorderHabitItems(orderedIds: string[], isTask: boolean): Promise<HabitsData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'write')
+    if (!user.isAdmin && !checkPermission(user.permissions, 'habit', 'write')) {
+      throw new PermissionError('Manual ordering requires habit write permission')
+    }
     if (!Array.isArray(orderedIds) || orderedIds.length > 10_000 ||
         orderedIds.some(id => typeof id !== 'string' || !id || id.length > 128) ||
         new Set(orderedIds).size !== orderedIds.length || typeof isTask !== 'boolean') {
@@ -385,7 +417,7 @@ export async function reorderHabitItems(orderedIds: string[], isTask: boolean): 
     }
     const existing = await loadData<HabitsData>('habits')
     const movable = existing.habits.filter(habit => !habit.archived && Boolean(habit.isTask) === isTask &&
-      (user.isAdmin || habit.userIds?.includes(user.id)))
+      familyItemEditable(habit, user))
     const selected = new Set(orderedIds)
     if (movable.length !== orderedIds.length || movable.some(habit => !selected.has(habit.id))) {
       throw new PermissionError('Habit order is out of date or includes an inaccessible item')
@@ -394,7 +426,7 @@ export async function reorderHabitItems(orderedIds: string[], isTask: boolean): 
     const habits = existing.habits.map(habit => positions.has(habit.id)
       ? { ...habit, position: positions.get(habit.id)! } : habit)
     await saveData('habits', { habits })
-    return { habits: habits.filter(habit => user.isAdmin || habit.userIds?.includes(user.id)) }
+    return { habits: habits.filter(habit => familyItemVisible(habit, user)) }
   })
 }
 
@@ -506,6 +538,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     const habit = habits.habits.find(item => item.id === habitId)
     if (!habit || !habit.userIds?.includes(user.id) && !user.isAdmin) throw new PermissionError('Habit interaction is not allowed')
     validateHabit(habit, habit.frequency)
+    if (habit.isNegative && habit.userIds?.[0] !== user.id) throw new PermissionError('Only the assigned user can record avoidance')
     const photo = await checkedEvidence(evidence)
     if (photo && !habit.requiresApproval) throw new Error('Evidence is only accepted for approval submissions')
     if (habit.archived) throw new PermissionError('Cannot complete an archived habit')
@@ -513,6 +546,9 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
 
     const timezone = (await loadSettings()).system.timezone
     const day = completionDay(timestamp, timezone)
+    if (habit.isNegative && habit.slips?.some(slip => completionDay(slip.timestamp, timezone) === day)) {
+      throw new PermissionError('A slip is already recorded for this day')
+    }
     if (habit.taskRepeat && !isTaskScheduledOnDate(habit, DateTime.fromISO(timestamp, { setZone: true }), timezone)) {
       throw new PermissionError('Task is not scheduled for this day')
     }
@@ -590,6 +626,69 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       rewardAmount: rewarded ? rewardAmount : 0, pending, targetReached,
       completionIndex: updatedHabit.completions.length - 1, completionTimestamp: timestamp,
     }
+  })
+}
+
+export async function recordHabitSlip(habitId: string, timestamp: string): Promise<{ habit: Habit; coins: CoinsData; penalty: number }> {
+  return withDataWriteLock(async () => {
+    const user = await verifyPermission('habit', 'interact')
+    if (typeof habitId !== 'string' || habitId.length > 200) throw new Error('Invalid habit ID')
+    checkedCompletionTimestamp(timestamp)
+    const habits = await loadData<HabitsData>('habits')
+    const habit = habits.habits.find(item => item.id === habitId)
+    if (!habit?.isNegative || habit.archived || habit.userIds?.[0] !== user.id) {
+      throw new PermissionError('Slip recording is not allowed')
+    }
+    validateHabit(habit, habit.frequency)
+    if ((habit.slips?.length ?? 0) >= 20_000) throw new Error('Slip limit reached')
+    const timezone = (await loadSettings()).system.timezone
+    const day = completionDay(timestamp, timezone)
+    if (habit.slips?.some(slip => completionDay(slip.timestamp, timezone) === day) ||
+        habit.completions.some((value, index) => isCountedCompletion(habit, index) && completionDay(value, timezone) === day)) {
+      throw new PermissionError('This day is already recorded')
+    }
+    const coins = await loadData<CoinsData>('coins')
+    const balance = coins.transactions.filter(transaction => transaction.userId === user.id)
+      .reduce((total, transaction) => total + transaction.amount, 0)
+    const penalty = Math.min(habit.coinPenalty ?? 0, Math.max(0, balance))
+    const slip = { id: uuid(), actorId: user.id, timestamp, penaltyAmount: penalty }
+    const updatedHabit = { ...habit, slips: [...(habit.slips ?? []), slip] }
+    const updatedCoins = penalty ? {
+      balance: Math.max(0, coins.balance - penalty),
+      transactions: [{ id: uuid(), userId: user.id, actorId: user.id, completionId: slip.id,
+        amount: -penalty, type: 'HABIT_SLIP' as const, relatedItemId: habit.id,
+        description: `Slip: ${habit.name}`, timestamp: d2t({ dateTime: getNow({}) }) }, ...coins.transactions],
+    } : coins
+    await saveCompletionAndRewards(habits, { habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item) }, coins, updatedCoins)
+    return { habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user), penalty }
+  })
+}
+
+export async function undoHabitSlip(habitId: string, slipId: string): Promise<{ habit: Habit; coins: CoinsData }> {
+  return withDataWriteLock(async () => {
+    const user = await verifyPermission('habit', 'interact')
+    if (typeof habitId !== 'string' || habitId.length > 200 || !/^[0-9a-f-]{36}$/i.test(slipId)) {
+      throw new Error('Invalid slip')
+    }
+    const habits = await loadData<HabitsData>('habits')
+    const habit = habits.habits.find(item => item.id === habitId)
+    const slip = habit?.slips?.find(candidate => candidate.id === slipId)
+    if (!habit?.isNegative || !slip || slip.actorId !== user.id || habit.userIds?.[0] !== user.id) {
+      throw new PermissionError('Slip undo is not allowed')
+    }
+    const updatedHabit = { ...habit, slips: habit.slips!.filter(candidate => candidate.id !== slipId) }
+    const coins = await loadData<CoinsData>('coins')
+    const debit = coins.transactions.find(transaction => transaction.completionId === slipId && transaction.type === 'HABIT_SLIP')
+    const refund = debit ? -debit.amount : 0
+    if (refund !== slip.penaltyAmount) throw new Error('Slip transaction is inconsistent')
+    const updatedCoins = refund ? {
+      balance: coins.balance + refund,
+      transactions: [{ id: uuid(), userId: user.id, actorId: user.id, completionId: slip.id,
+        amount: refund, type: 'HABIT_SLIP_UNDO' as const, relatedItemId: habit.id,
+        description: `Undid slip: ${habit.name}`, timestamp: d2t({ dateTime: getNow({}) }) }, ...coins.transactions],
+    } : coins
+    await saveCompletionAndRewards(habits, { habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item) }, coins, updatedCoins)
+    return { habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user) }
   })
 }
 
@@ -1160,6 +1259,112 @@ export async function loadUsersPublicData(): Promise<PublicUserData> {
   return sanitizeUserData(data, viewer.id, !!viewer.isAdmin)
 }
 
+export async function savePersonalFolders(folders: PersonalFolder[]): Promise<PersonalFolder[]> {
+  const actor = await requireUser()
+  if (process.env.DEMO === 'true') throw new PermissionError('Folder changes are disabled in demo mode')
+  if (!Array.isArray(folders) || folders.length > 50 || folders.some(folder =>
+    !folder || typeof folder.id !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(folder.id) ||
+    typeof folder.name !== 'string' || !folder.name.trim() || folder.name.length > 80 ||
+    !Array.isArray(folder.itemIds) || folder.itemIds.length > 2000 ||
+    folder.itemIds.some(id => typeof id !== 'string' || !id || id.length > 200))) {
+    throw new Error('Invalid folders')
+  }
+  if (new Set(folders.map(folder => folder.id)).size !== folders.length ||
+      new Set(folders.map(folder => folder.name.trim().toLowerCase())).size !== folders.length) {
+    throw new Error('Duplicate folder')
+  }
+  const assignments = folders.flatMap(folder => folder.itemIds)
+  if (new Set(assignments).size !== assignments.length) throw new Error('An item can belong to only one folder')
+  return withDataWriteLock(async () => {
+    const habits = await loadData<HabitsData>('habits')
+    const visibleIds = new Set(habits.habits.filter(item => familyItemVisible(item, actor)).map(item => item.id))
+    if (assignments.some(id => !visibleIds.has(id))) throw new PermissionError('Cannot file an inaccessible item')
+    return updateAuthData(data => {
+      const user = data.users.find(candidate => candidate.id === actor.id)
+      if (!user) throw new PermissionError('User not authenticated')
+      user.personalFolders = folders.map(folder => ({
+        id: folder.id, name: folder.name.trim(), itemIds: [...folder.itemIds],
+      }))
+      return user.personalFolders
+    })
+  })
+}
+
+export async function saveStatusDays(days: StatusDay[]): Promise<StatusDay[]> {
+  const actor = await requireUser()
+  if (process.env.DEMO === 'true') throw new PermissionError('Status changes are disabled in demo mode')
+  const today = DateTime.now().setZone((await loadSettings()).system.timezone).startOf('day')
+  if (!Array.isArray(days) || days.length > 90 || days.some(day =>
+    !day || typeof day.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day.date) ||
+    !DateTime.fromISO(day.date).isValid || !['sick', 'travel', 'rest', 'other'].includes(day.status) ||
+    Math.abs(DateTime.fromISO(day.date).diff(today, 'days').days) > 366) ||
+    new Set(days.map(day => day.date)).size !== days.length) throw new Error('Invalid status dates')
+  return updateAuthData(data => {
+    const user = data.users.find(candidate => candidate.id === actor.id)
+    if (!user) throw new PermissionError('User not authenticated')
+    user.statusDays = [...days].sort((a, b) => a.date.localeCompare(b.date))
+    return user.statusDays
+  })
+}
+
+const inviteLifetimeMs = 7 * 24 * 60 * 60 * 1000
+
+export async function listFamilyInvites(): Promise<{ tokenHash: string; email: string; expiresAt: string; managedBy?: string }[]> {
+  await requireAdmin()
+  return ((await readAuthData()).invites ?? []).filter(invite => DateTime.fromISO(invite.expiresAt).toMillis() > Date.now())
+    .map(({ tokenHash, email, expiresAt, managedBy }) => ({ tokenHash, email, expiresAt, managedBy }))
+}
+
+export async function createFamilyInvite(rawEmail: string, managedBy?: string): Promise<{ token: string; sent: boolean }> {
+  const actor = await requireAdmin()
+  if (process.env.DEMO === 'true') throw new PermissionError('Invitations are disabled in demo mode')
+  const email = validateEmail(rawEmail)!
+  const token = randomBytes(32).toString('base64url')
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  await updateAuthData(data => {
+    if (!data.users.some(user => user.id === actor.id && user.isAdmin)) throw new PermissionError('Administrator access required')
+    if (data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already belongs to an account')
+    if (managedBy && (!data.users.some(user => user.id === managedBy) || managedBy === actor.id)) {
+      throw new Error('Unknown family manager')
+    }
+    data.invites = (data.invites ?? []).filter(invite => DateTime.fromISO(invite.expiresAt).toMillis() > Date.now())
+    if (data.invites.length >= 50) throw new Error('Too many pending invitations')
+    if (data.invites.some(invite => invite.email === email)) throw new Error('Email already has a pending invitation')
+    data.invites.push({ tokenHash, email, createdBy: actor.id, managedBy,
+      expiresAt: new Date(Date.now() + inviteLifetimeMs).toISOString() })
+  })
+  const sent = await sendFamilyInvitation(email, token).catch(() => false)
+  return { token, sent }
+}
+
+export async function revokeFamilyInvite(tokenHash: string): Promise<void> {
+  await requireAdmin()
+  if (!/^[0-9a-f]{64}$/.test(tokenHash)) throw new Error('Invalid invitation')
+  await updateAuthData(data => { data.invites = (data.invites ?? []).filter(invite => invite.tokenHash !== tokenHash) })
+}
+
+export async function acceptFamilyInvite(token: string, username: string, password: string): Promise<void> {
+  if (process.env.DEMO === 'true') throw new PermissionError('Invitations are disabled in demo mode')
+  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Invalid invitation')
+  usernameSchema.parse(username)
+  newPasswordSchema.parse(password)
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  await updateAuthData(data => {
+    const invite = data.invites?.find(candidate => candidate.tokenHash === tokenHash)
+    if (!invite || DateTime.fromISO(invite.expiresAt).toMillis() <= Date.now()) throw new Error('Invitation expired or already used')
+    if (data.users.some(user => user.username.toLowerCase() === username.toLowerCase() ||
+      user.email?.toLowerCase() === invite.email)) throw new Error('Account already exists')
+    const account: User = { id: uuid(), username, email: invite.email,
+      password: saltAndHashPassword(password), isAdmin: false, authVersion: 0,
+      permissions: [{ habit: { write: true, interact: true }, wishlist: { write: true, interact: true },
+        coins: { write: true, interact: true } }] }
+    data.users.push(account)
+    const manager = data.users.find(user => user.id === invite.managedBy)
+    if (manager) manager.managedUserIds = [...new Set([...(manager.managedUserIds ?? []), account.id])]
+    data.invites = data.invites!.filter(candidate => candidate.tokenHash !== tokenHash)
+  })
+}
+
 export async function createUser(formData: FormData): Promise<PublicUser> {
   const administrator = await requireAdmin()
   if (process.env.DEMO === 'true') throw new PermissionError('Account changes are disabled in demo mode')
@@ -1233,7 +1438,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     throw new PermissionError('Cannot edit another user')
   }
 
-  const allowedKeys = ['username', 'email', 'avatarPath', 'permissions', 'isAdmin', 'authentikSubject']
+  const allowedKeys = ['username', 'email', 'avatarPath', 'permissions', 'isAdmin', 'authentikSubject', 'managedUserIds']
   if (Object.keys(updates).some(key => !allowedKeys.includes(key))) {
     throw new Error('Invalid user update')
   }
@@ -1249,7 +1454,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   if (!actor.isAdmin &&
     (updates.isAdmin !== undefined && updates.isAdmin !== existingUser.isAdmin ||
       updates.permissions !== undefined && !_.isEqual(updates.permissions, existingUser.permissions) ||
-      updates.authentikSubject !== undefined)) {
+      updates.authentikSubject !== undefined || updates.managedUserIds !== undefined)) {
     throw new PermissionError('Cannot change account permissions')
   }
 
@@ -1261,6 +1466,15 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     ...(actor.isAdmin && updates.permissions !== undefined && { permissions: permissionSchema.parse(updates.permissions) }),
     ...(actor.isAdmin && updates.authentikSubject !== undefined && { authentikSubject: validateAuthentikSubject(updates.authentikSubject) }),
     ...(actor.isAdmin && updates.authentikSubject !== undefined && { oidcIssuer }),
+    ...(actor.isAdmin && updates.managedUserIds !== undefined && {
+      managedUserIds: z.array(z.string().min(1).max(128)).max(50).parse(updates.managedUserIds),
+    }),
+  }
+
+  if (validatedUpdates.managedUserIds && (new Set(validatedUpdates.managedUserIds).size !== validatedUpdates.managedUserIds.length ||
+      validatedUpdates.managedUserIds.includes(userId) ||
+      validatedUpdates.managedUserIds.some(id => !data.users.some(candidate => candidate.id === id)))) {
+    throw new Error('Invalid managed family members')
   }
 
   const subject = 'authentikSubject' in validatedUpdates ? validatedUpdates.authentikSubject : existingUser.authentikSubject
@@ -1287,7 +1501,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   const updatedUser = {
     ...data.users[userIndex],
     ...validatedUpdates,
-    authVersion: (existingUser.authVersion ?? 0) + (updates.email !== undefined || updates.isAdmin !== undefined || updates.permissions !== undefined || updates.authentikSubject !== undefined ? 1 : 0),
+    authVersion: (existingUser.authVersion ?? 0) + (updates.email !== undefined || updates.isAdmin !== undefined || updates.permissions !== undefined || updates.authentikSubject !== undefined || updates.managedUserIds !== undefined ? 1 : 0),
   }
   data.users[userIndex] = updatedUser
   return sanitizeUserData({ users: [updatedUser] }, actor.id, !!actor.isAdmin).users[0]
@@ -1350,6 +1564,10 @@ export async function deleteUser(userId: string): Promise<void> {
       throw new Error('Cannot delete the last administrator')
     }
     const remainingUsers = authData.users.filter(user => user.id !== userId)
+    for (const user of remainingUsers) {
+      if (user.managedUserIds) user.managedUserIds = user.managedUserIds.filter(id => id !== userId)
+    }
+    authData.invites = authData.invites?.filter(invite => invite.managedBy !== userId)
     const fallbackAdmin = remainingUsers.find(user => user.isAdmin)?.id
     if (!fallbackAdmin) throw new Error('An administrator is required for approval recovery')
     const avatarsDir = path.join(process.cwd(), 'data', 'avatars')

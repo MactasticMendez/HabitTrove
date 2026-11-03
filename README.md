@@ -23,6 +23,10 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 - ✅ Require named approvers for tasks or habits, with optional private photo evidence
 - 🔔 Choose time reminders for items, with a browser-local on/off switch and lead time
 - 📈 See each habit's streak and week progress, rearrange dashboard cards, and filter to daily items
+- 📁 Organize your own habits and tasks in personal folders
+- 👪 Invite family members by email and designate managers for their habits and rewards
+- 🚫 Track avoided days and slips for negative habits, with optional rewards and penalties
+- ⏸️ Mark status dates to pause streaks without earning coins
 - 🏅 Earn achievement badges and set temporary 2× or 3× coin boosts
 - 🌍 Multi-language support (English, Español, Català, Deutsch, Français, Русский, 简体中文, 한국어, 日本語)
 - 🌙 Dark mode support
@@ -46,6 +50,10 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 7. **Approval and evidence**: Turn on **Require approval** while creating or editing a task or habit, then choose one or more approvers from username suggestions. New items record their creator; only that creator or an administrator can change approval settings. For older items without a recorded creator, an administrator must change those settings. Approvers, including the completer if listed, review submissions at **Approvals**. Coins are awarded to the completing account only after approval. Rejection permits resubmission. Photo evidence is optional; JPEG, PNG, and WebP uploads up to 2 MB are converted to metadata-free WebP and can be viewed only by the completer, creator, or designated approvers. Delete the item or withdraw the submission to remove its evidence file.
 
 8. **Reminders, progress, and boosts**: Choose a reminder time per item. Turn pop-up reminders on in **Settings → Preferences** and select a lead time. The site must be open to show reminders; they are stored per browser and account. Habit cards show the current occurrence streak and progress for the configured week, with one missed occurrence allowed as a grace day. A recurring task goal counts scheduled dates that reach their completion target, rather than individual check-ins. Use the dashboard arrows to reorder sections and **Daily only** to hide less frequent items. Achievement badges use your coin transaction history. A temporary 2× or 3× boost applies only to eligible future completions until its selected end date; an approval submission keeps the reward amount calculated when it was submitted.
+
+9. **Folders and family**: Create folders on the Habits or Tasks page and assign items when editing them. Folders belong to your account; other members may organize shared items differently. Administrators can invite a new member from **Settings → Admin panel → Family invitations** and optionally choose a manager. The invitation expires after seven days and can be used once. A manager can edit habits and rewards assigned only to that manager or their designated members. Existing approval settings remain controlled by the item creator or an administrator.
+
+10. **Negative habits and status dates**: Create a negative habit for one assigned member. Mark a day **Avoided** for the optional reward, or **Log slip** for an optional penalty capped at that member's available coins; undoing a slip refunds its recorded penalty. A day can have one outcome. In **Settings → Preferences**, add sick, travel, rest, or other dates to pause streaks. Status dates do not record a completion or grant coins.
 
 ## Docker Deployment
 
@@ -139,6 +147,12 @@ The **Sign-in button name** field in OIDC setup changes the text on OIDC login b
 The first in-app OIDC save creates an override in `data/admin-config.json`; an explicit in-app disable also overrides the environment values. Until then, the complete `OIDC_*` set or legacy `AUTHENTIK_*` set remains active. The client secret is encrypted in that owner-only file using a key derived from `AUTH_SECRET`, so preserve `AUTH_SECRET` along with backups. If this file is damaged, OIDC sign-in stays disabled until it is repaired; local sign-in remains available. To discard the in-app override and return to the environment configuration, stop the app, back up and remove `data/admin-config.json`, then restart. This also resets the app log level to Info and the button name to OIDC.
 
 The same Admin panel contains the existing system settings (timezone, week start, backups, and language) and an application log level (Debug, Info, Warn, or Error). Log level changes apply immediately to HabitTrove's server backup, scheduler, and data-action logs; framework and browser logs have their own settings. This setting does not change `NODE_ENV` or container logging controls.
+
+### SMTP family invitations
+
+In **Settings → Admin panel → SMTP email**, enable SMTP and enter your mail server host, port, sender address, and optional username and password. Port 587 with **Implicit TLS** off requires STARTTLS; enable **Implicit TLS** for servers that expect TLS on connection, typically port 465. Saving requires the administrator's current local password. The SMTP password is encrypted in `data/admin-config.json` using `AUTH_SECRET`, is never returned to the browser, and is retained when its field is left blank and the username stays the same. Preserve `AUTH_SECRET` with your backups.
+
+Set `AUTH_URL` to your public HabitTrove HTTPS origin so emailed invitation links use the correct hostname. Administrators can create invitations in the same Admin panel. When SMTP is unavailable or delivery fails, the panel displays the one-use link for manual sharing and reports that email was not sent. Creating an invitation does not verify delivery. Keep manual links private; anyone with a valid link can create the invited account until it expires or is revoked.
 
 To link an existing local account, sign in locally, add its email if needed, sign in again, then choose **Link OIDC account** from the profile menu. Confirm the local password and sign in to the OIDC account with the same verified email. The link is saved against the provider's stable subject and issuer; later OIDC sign-ins must match both. Email alone never signs into or links an account. Administrators may also pre-link an OIDC subject in the user editor after the provider is active, while keeping a local password on administrator accounts. The stored `authentikSubject` key is retained for compatibility with existing account data.
 

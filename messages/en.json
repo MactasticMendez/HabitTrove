@@ -68,7 +68,18 @@
     "deleteHabitDialogTitle": "Delete Habit",
     "deleteTaskDialogMessage": "Are you sure you want to delete this task? This action cannot be undone.",
     "deleteHabitDialogMessage": "Are you sure you want to delete this habit? This action cannot be undone.",
-    "deleteButton": "Delete"
+    "deleteButton": "Delete",
+    "showFlatList": "Flat list",
+    "showFolders": "Show folders",
+    "manageFolders": "Manage folders",
+    "renameFolder": "Rename",
+    "newFolder": "Folder name",
+    "saveFolder": "Save folder",
+    "createFolder": "Create folder",
+    "cancelFolder": "Cancel",
+    "folderSaveFailed": "Could not save folders. Please try again.",
+    "unfiled": "Unfiled",
+    "deleteFolder": "Delete folder"
   },
   "DailyOverview": {
     "graceUsed": "Grace used",
@@ -185,7 +196,16 @@
     "shareLabel": "Share",
     "saveChangesButton": "Save Changes",
     "addTaskButton": "Add Task",
-    "addHabitButton": "Add Habit"
+    "addHabitButton": "Add Habit",
+    "negativeHabitLabel": "Negative habit",
+    "negativeHabitHelp": "Log an avoided day for optional coins, or a slip for an optional penalty. Negative habits belong to one person.",
+    "coinPenaltyLabel": "Coins per slip",
+    "negativeAssignee": "Assigned to",
+    "includeSelf": "Include me on this item",
+    "assignUser": "Assign to {username}",
+    "folderLabel": "Folder",
+    "noFolder": "No folder",
+    "saveFailed": "Could not save this item. Check the details and try again."
   },
   "ConfirmDialog": {
     "confirmButton": "Confirm",
@@ -209,6 +229,10 @@
     "addDrawing": "Add Drawing",
     "editDrawing": "Edit Drawing",
     "shareLabel": "Share",
+    "includeSelf": "Assign this reward to me",
+    "assignUser": "Assign reward to {username}",
+    "assignmentRequired": "Choose at least one member",
+    "saveError": "Could not save this reward. Check your permissions and try again.",
     "saveButton": "Save Changes",
     "addButton": "Add Reward"
   },
@@ -295,7 +319,9 @@
     "transactionTypeWishRedemption": "Wish Redemption",
     "transactionTypeManualAdjustment": "Manual Adjustment",
     "transactionTypeCoinReset": "Coin Reset",
-    "transactionTypeInitialBalance": "Initial Balance"
+    "transactionTypeInitialBalance": "Initial Balance",
+    "transactionTypeHabitSlip": "Negative habit slip",
+    "transactionTypeHabitSlipUndo": "Slip undone"
   },
   "NotificationBell": {
     "errorUpdateTimestamp": "Failed to update notification read timestamp:"
@@ -338,7 +364,8 @@
     "selectDatePrompt": "Select a date",
     "tasksSectionTitle": "Tasks",
     "habitsSectionTitle": "Habits",
-    "errorCompletingPastHabit": "Error completing past habit:"
+    "errorCompletingPastHabit": "Error completing past habit:",
+    "pausedStatus": "Streak paused for {status} on this date. No completion or coins were added by the status."
   },
   "NotificationDropdown": {
     "notLoggedIn": "Not logged in.",
@@ -404,7 +431,9 @@
     "areYouSure": "Are you sure?",
     "deleteUserConfirmation": "Are you sure you want to delete user {username}?",
     "cancel": "Cancel",
-    "confirmDeleteButtonText": "Delete"
+    "confirmDeleteButtonText": "Delete",
+    "managedFamilyMembers": "Managed family members",
+    "managedFamilyHelp": "This account may edit habits, tasks and wishlist rewards assigned only to the selected members."
   },
   "ViewToggle": {
     "habitsLabel": "Habits",
@@ -431,7 +460,16 @@
     "completeButtonCountMobile": "{completed}/{target}",
     "undoButton": "Undo",
     "editButton": "Edit",
-    "moreActions": "More actions for {name}"
+    "moreActions": "More actions for {name}",
+    "coinsPerAvoidance": "{count} coins per avoided day",
+    "coinsPerSlip": "Up to {count} coins deducted per slip",
+    "avoidedStatus": "Avoided",
+    "avoidButton": "Mark avoided",
+    "slipLogged": "Slip logged",
+    "logSlip": "Log slip",
+    "logSlipFor": "Log slip for {name}",
+    "undoSlipFor": "Undo slip for {name}",
+    "undoSlip": "Undo slip"
   },
   "TransactionNoteEditor": {
     "noteTooLongTitle": "Note too long",
@@ -490,7 +528,11 @@
     "oidcDisplayNameHelp": "Shown on sign-in buttons. Leave blank to use OIDC.",
     "oidcDisplayNameSaveButton": "Save button name",
     "oidcDisplayNameSaved": "Sign-in button name saved.",
-    "oidcSource": {"environment": "Container environment", "admin": "Admin panel", "none": "Not configured"},
+    "oidcSource": {
+      "environment": "Container environment",
+      "admin": "Admin panel",
+      "none": "Not configured"
+    },
     "oidcEnabledLabel": "Enable OIDC sign-in",
     "oidcCallbackLabel": "Redirect URI for the OIDC provider",
     "oidcLegacyCallbackLabel": "Current legacy redirect URI until the new setup is saved and restarted",
@@ -539,7 +581,19 @@
     "languageDescription": "Choose your preferred display language for the application.",
     "languageChangedTitle": "Language Changed",
     "languageChangedDescription": "Please refresh the page to see the changes",
-    "languageDisabledInDemoTooltip": "Changing the language is disabled in the demo version."
+    "languageDisabledInDemoTooltip": "Changing the language is disabled in the demo version.",
+    "smtpTitle": "SMTP email",
+    "smtpDescription": "Send one-use family invitations by email. Connections require TLS. The password is encrypted on disk.",
+    "smtpEnabled": "Enable invitation email",
+    "smtpHost": "SMTP host",
+    "smtpPort": "SMTP port",
+    "smtpFrom": "From email address",
+    "smtpUsername": "SMTP username (optional)",
+    "smtpPassword": "SMTP password",
+    "smtpPasswordHelp": "Leave blank to keep the saved password. Enter a new password when changing the username.",
+    "smtpSecure": "Use implicit TLS (port 465); otherwise require STARTTLS",
+    "smtpSave": "Save SMTP settings",
+    "smtpSaved": "SMTP settings saved."
   },
   "Common": {
     "authenticationRequiredTitle": "Authentication Required",
@@ -568,7 +622,11 @@
     "alreadyCompletedPastDateTitle": "Already completed",
     "alreadyCompletedPastDateDescription": "This habit was already completed on {dateKey}.",
     "earnedCoinsPastDateDescription": "You earned {coinReward} coins for {dateKey}.",
-    "progressPastDateDescription": "You've completed {count}/{target} times on {dateKey}."
+    "progressPastDateDescription": "You've completed {count}/{target} times on {dateKey}.",
+    "slipRecorded": "Slip recorded",
+    "slipPenalty": "{count} coins deducted.",
+    "slipError": "Could not update the slip.",
+    "slipUndone": "Slip undone"
   },
   "useWishlist": {
     "redemptionLimitReachedTitle": "Redemption limit reached",
@@ -583,8 +641,6 @@
     "invalidAmountTitle": "Invalid amount",
     "invalidAmountDescription": "Please enter a valid positive number",
     "successTitle": "Success",
-    "transactionNotFoundDescription": "Transaction not found",
-    "maxAmountExceededDescription": "The amount cannot exceed {max}.",
     "transactionNotFoundDescription": "Transaction not found",
     "maxAmountExceededDescription": "The amount cannot exceed {max}."
   },
@@ -612,5 +668,47 @@
     "profileMenu": "Account menu",
     "initialPasswordAdmin": "Ask an administrator to set your first local password.",
     "contactAdmin": "Ask an administrator to set up a sign-in method for this account."
+  },
+  "StatusDays": {
+    "title": "Status and grace days",
+    "description": "Mark a date as sick, travel, rest or other. It pauses your streak without adding a completion or coins.",
+    "date": "Date",
+    "status": "Status",
+    "sick": "Sick",
+    "travel": "Travel",
+    "rest": "Rest",
+    "other": "Other",
+    "add": "Save status",
+    "remove": "Remove",
+    "removeDate": "Remove status for {date}",
+    "saveError": "Could not save status dates."
+  },
+  "FamilyInvites": {
+    "title": "Family invitations",
+    "description": "Invite a new member by email. Links expire after seven days and work once. Choose a manager to let them edit the new member’s items.",
+    "email": "Invitee email",
+    "manager": "Family manager",
+    "noManager": "No manager",
+    "send": "Create and send invite",
+    "loadError": "Could not load invitations.",
+    "createError": "Could not create invitation. Check the email or existing invitations.",
+    "revokeError": "Could not revoke invitation.",
+    "sent": "Invitation email sent. The link is also available below.",
+    "notSent": "Email was not sent. Copy the invitation link to share it securely.",
+    "link": "One-use invitation link",
+    "copy": "Copy link",
+    "pending": "Pending invitations",
+    "expires": "Expires {date}",
+    "revokeFor": "Revoke invitation for {email}",
+    "revoke": "Revoke",
+    "acceptTitle": "Join HabitTrove",
+    "acceptDescription": "Choose a username and a local password for the email address invited by your family administrator. You can link OIDC after signing in.",
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "passwordMismatch": "Passwords do not match.",
+    "acceptError": "This invitation could not be used. It may be expired, already used, or the account may already exist.",
+    "saving": "Creating account…",
+    "accept": "Create account"
   }
 }

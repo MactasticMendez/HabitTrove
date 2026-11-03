@@ -97,6 +97,8 @@ export default function CoinsManager() {
       case 'HABIT_COMPLETION': return t('transactionTypeHabitCompletion');
       case 'TASK_COMPLETION': return t('transactionTypeTaskCompletion');
       case 'HABIT_UNDO': return t('transactionTypeHabitUndo');
+      case 'HABIT_SLIP': return t('transactionTypeHabitSlip');
+      case 'HABIT_SLIP_UNDO': return t('transactionTypeHabitSlipUndo');
       case 'TASK_UNDO': return t('transactionTypeTaskUndo');
       case 'WISH_REDEMPTION': return t('transactionTypeWishRedemption');
       case 'MANUAL_ADJUSTMENT': return t('transactionTypeManualAdjustment');
@@ -316,6 +318,10 @@ export default function CoinsManager() {
                           case 'HABIT_COMPLETION':
                             return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
                           case 'HABIT_UNDO':
+                            return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
+                          case 'HABIT_SLIP':
+                            return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
+                          case 'HABIT_SLIP_UNDO':
                             return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100'
                           case 'WISH_REDEMPTION':
                             return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100'

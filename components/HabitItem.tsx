@@ -49,7 +49,7 @@ const renderUserAvatars = (habit: Habit, currentUser: User | null, usersData: { 
 
 
 export default function HabitItem({ habit, compact = false, onEdit, onDelete }: HabitItemProps) {
-  const { completeHabit, completePastHabit, undoComplete, toggleChecklistItem } = useHabits()
+  const { completeHabit, completePastHabit, undoComplete, toggleChecklistItem, logSlip, undoSlip } = useHabits()
   const [settings] = useAtom(settingsAtom)
   const [_, setPomo] = useAtom(pomodoroAtom)
   const completionsToday = getCompletionsForToday({ habit, timezone: settings.system.timezone })
@@ -71,10 +71,13 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   const isRecurRule = !isTasksView
   const today = DateTime.now().setZone(settings.system.timezone)
   const missedDates = habit.isTask ? getTaskMissedDates(habit, today, settings.system.timezone) : []
-  const progress = getPerHabitProgress(habit, today, settings.system.timezone, settings.system.weekStartDay)
+  const progress = getPerHabitProgress(habit, today, settings.system.timezone, settings.system.weekStartDay,
+    new Set(currentUser?.statusDays?.map(day => day.date) ?? []))
   const pendingToday = habit.completions.some((timestamp, index) =>
     isCountedCompletion(habit, index) && habit.completionRecords?.[index]?.approval === 'pending' &&
     DateTime.fromISO(timestamp).setZone(settings.system.timezone).hasSame(today, 'day'))
+  const slipToday = habit.slips?.find(slip => DateTime.fromISO(slip.timestamp).setZone(settings.system.timezone).hasSame(today, 'day'))
+  const negativeOwner = !habit.isNegative || habit.userIds?.[0] === currentUser?.id
 
   const submitCompletion = async (date?: DateTime) => {
     setBusy(true)
@@ -160,8 +163,9 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           </p>
           <div className={`flex items-center ${compact ? 'mt-0.5' : 'mt-2'}`}>
             <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
-            <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t('coinsPerCompletion', { count: habit.coinReward })}</span>
+            <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t(habit.isNegative ? 'coinsPerAvoidance' : 'coinsPerCompletion', { count: habit.coinReward })}</span>
           </div>
+          {habit.isNegative && <p className="text-xs text-muted-foreground">{t('coinsPerSlip', { count: habit.coinPenalty ?? 0 })}</p>}
           {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
           {!habit.isTask && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
           {!habit.isTask && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
@@ -194,7 +198,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
               variant={isCompletedToday ? "secondary" : "default"}
               size="sm"
               onClick={() => submitCompletion()}
-              disabled={!canInteract || habit.archived || busy || !!photoError || (isCompletedToday && completionsToday >= target)}
+              disabled={!canInteract || !negativeOwner || habit.archived || busy || !!photoError || !!slipToday || (isCompletedToday && completionsToday >= target)}
               className={`overflow-hidden w-24 ${compact ? 'sm:w-36' : 'sm:w-auto'} ${habit.archived ? 'cursor-not-allowed' : ''}`}
             >
               <Check className="h-4 w-4 sm:mr-2" />
@@ -206,7 +210,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
                       <span className="hidden sm:inline">{t('completedStatusCount', { completed: completionsToday, target })}</span>
                     </>
                   ) : (
-                    t('completedStatus')
+                    t(habit.isNegative ? 'avoidedStatus' : 'completedStatus')
                   )
                 ) : (
                   target > 1 ? (
@@ -214,7 +218,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
                       <span className="sm:hidden">{t('completeButtonCountMobile', { completed: completionsToday, target })}</span>
                       <span className="hidden sm:inline">{t('completeButtonCount', { completed: completionsToday, target })}</span>
                     </>
-                  ) : t('completeButton')
+                    ) : t(habit.isNegative ? 'avoidButton' : 'completeButton')
                 )}
               </span>
               {habit.targetCompletions && habit.targetCompletions > 1 && (
@@ -227,6 +231,13 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
               )}
             </Button>
           </div>
+          {habit.isNegative && <Button type="button" variant="outline" size="sm"
+            disabled={!canInteract || !negativeOwner || habit.archived || busy || isCompletedToday || !!slipToday}
+            aria-label={t('logSlipFor', { name: habit.name })}
+            onClick={() => void logSlip(habit)}>{t(slipToday ? 'slipLogged' : 'logSlip')}</Button>}
+          {habit.isNegative && slipToday && <Button type="button" variant="outline" size="sm"
+            disabled={!canInteract || !negativeOwner || busy} onClick={() => void undoSlip(habit, slipToday.id)}
+            aria-label={t('undoSlipFor', { name: habit.name })}>{t('undoSlip')}</Button>}
           {missedDates.length > 0 && !habit.archived && <Button type="button" variant="outline" size="sm"
             disabled={!canInteract || busy || !!photoError} onClick={() => submitCompletion(missedDates[0])}
             aria-label={t('catchUpDate', { date: missedDates[0].toISODate() ?? '' })}>

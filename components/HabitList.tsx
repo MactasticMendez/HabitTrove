@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { Plus, ArrowUpNarrowWide, ArrowDownWideNarrow, Search, GripVertical, ArrowUp, ArrowDown, Rows3 } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { habitsAtom, browserSettingsAtom, settingsAtom, currentUserAtom } from '@/lib/atoms'
+import { habitsAtom, browserSettingsAtom, settingsAtom, currentUserAtom, usersAtom } from '@/lib/atoms'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import EmptyState from './EmptyState'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,10 @@ import { Input } from '@/components/ui/input' // Added
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select' // Added
 import { Label } from '@/components/ui/label' // Added
 import { DateTime } from 'luxon' // Added
-import { getHabitFreq, hasPermission } from '@/lib/utils'
+import { checkPermission, getHabitFreq } from '@/lib/utils'
+import { savePersonalFolders } from '@/app/actions/data'
+import type { PersonalFolder } from '@/lib/types'
+import { uuid } from '@/lib/utils'
 
 export default function HabitList() {
   const t = useTranslations('HabitList');
@@ -27,6 +30,13 @@ export default function HabitList() {
   const [habitsData] = useAtom(habitsAtom) // setHabitsData removed as it's not used
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom)
   const [currentUser] = useAtom(currentUserAtom)
+  const [, setUsersData] = useAtom(usersAtom)
+  const [folderName, setFolderName] = useState('')
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<string[]>([])
+  const [folderError, setFolderError] = useState('')
+  const folders = currentUser?.personalFolders ?? []
+  const showFolders = browserSettings.showFolders !== false && folders.length > 0
   const [settings] = useAtom(settingsAtom)
   useTodayInTimezone(settings.system.timezone)
   const isTasksView = browserSettings.viewType === 'tasks'
@@ -43,7 +53,8 @@ export default function HabitList() {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [reordering, setReordering] = useState(false)
   const [orderError, setOrderError] = useState('')
-  const canReorder = sortBy === 'custom' && !searchTerm.trim() && !browserSettings.hideNonDaily && hasPermission(currentUser, 'habit', 'write')
+  const canReorder = !showFolders && sortBy === 'custom' && !searchTerm.trim() && !browserSettings.hideNonDaily &&
+    !!currentUser && (currentUser.isAdmin || checkPermission(currentUser.permissions, 'habit', 'write'))
   const originalOrder = useMemo(() => new Map(habitsData.habits.map((habit, index) => [habit.id, index])), [habitsData.habits])
 
   const compareHabits = useMemo(() => {
@@ -129,6 +140,32 @@ export default function HabitList() {
     habitId: null
   })
 
+  const persistFolders = async (next: PersonalFolder[]) => {
+    if (!currentUser) return
+    setFolderError('')
+    try {
+      const saved = await savePersonalFolders(next)
+      setUsersData(previous => ({ ...previous, users: previous.users.map(user =>
+        user.id === currentUser.id ? { ...user, personalFolders: saved } : user) }))
+    } catch {
+      setFolderError(t('folderSaveFailed'))
+      throw new Error('Folder save failed')
+    }
+  }
+
+  const createFolder = async () => {
+    const name = folderName.trim()
+    if (!name) return
+    await persistFolders([...folders, { id: uuid(), name, itemIds: [] }])
+    setFolderName('')
+  }
+
+  const moveToFolder = async (itemId: string, folderId: string, existing: PersonalFolder[] = folders) => {
+    await persistFolders(existing.map(folder => ({ ...folder,
+      itemIds: [...folder.itemIds.filter(id => id !== itemId), ...(folder.id === folderId ? [itemId] : [])],
+    })))
+  }
+
   const moveHabit = async (fromIndex: number, toIndex: number) => {
     if (!canReorder || reordering || fromIndex < 0 || toIndex < 0 ||
         fromIndex >= activeHabits.length || toIndex >= activeHabits.length ||
@@ -212,9 +249,55 @@ export default function HabitList() {
           </Button>
         </div>
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {folders.length > 0 && <Button type="button" variant="outline" aria-pressed={showFolders}
+          onClick={() => setBrowserSettings(previous => ({ ...previous, showFolders: !showFolders }))}>
+          {showFolders ? t('showFlatList') : t('showFolders')}
+        </Button>}
+        <details className="rounded border bg-card p-2">
+          <summary className="cursor-pointer font-medium">{t('manageFolders')}</summary>
+          <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={event => {
+            event.preventDefault()
+            void (editingFolderId
+              ? persistFolders(folders.map(folder => folder.id === editingFolderId ? { ...folder, name: folderName.trim() } : folder))
+                .then(() => { setEditingFolderId(null); setFolderName('') })
+              : createFolder()).catch(() => {})
+          }}>
+            <div className="space-y-1"><Label htmlFor="folder-name">{editingFolderId ? t('renameFolder') : t('newFolder')}</Label>
+              <Input id="folder-name" value={folderName} onChange={event => setFolderName(event.target.value)} maxLength={80} required /></div>
+            <Button type="submit">{editingFolderId ? t('saveFolder') : t('createFolder')}</Button>
+            {editingFolderId && <Button type="button" variant="outline" onClick={() => { setEditingFolderId(null); setFolderName('') }}>{t('cancelFolder')}</Button>}
+          </form>
+        </details>
+      </div>
+      {folderError && <p role="alert" className="mb-3 text-sm text-destructive">{folderError}</p>}
       {sortBy === 'custom' && <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{t('manualOrderHelp')}</p>}
       {orderError && <p role="alert" className="text-sm text-destructive mb-3">{orderError}</p>}
 
+      {showFolders && activeHabits.length > 0 && <div className="space-y-4">
+        {[...folders, { id: '', name: t('unfiled'), itemIds: [] }].map(folder => {
+          const assigned = new Set(folders.flatMap(entry => entry.itemIds))
+          const items = activeHabits.filter(habit => folder.id ? folder.itemIds.includes(habit.id) : !assigned.has(habit.id))
+          if (searchTerm && items.length === 0) return null
+          const expanded = !!searchTerm || !collapsedFolderIds.includes(folder.id)
+          return <section key={folder.id || 'unfiled'} className="rounded border bg-card p-3" data-folder-id={folder.id}>
+            <button type="button" className="text-lg font-semibold" aria-expanded={expanded}
+              onClick={() => setCollapsedFolderIds(previous => previous.includes(folder.id)
+                ? previous.filter(id => id !== folder.id) : [...previous, folder.id])}>
+              {folder.name} <span className="text-sm font-normal text-muted-foreground">({items.length})</span>
+            </button>
+            {expanded && <>{folder.id && <div className="my-3 flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => { setEditingFolderId(folder.id); setFolderName(folder.name) }}>{t('renameFolder')}</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => void persistFolders(folders.filter(entry => entry.id !== folder.id)).catch(() => {})}>{t('deleteFolder')}</Button>
+            </div>}
+            <div className={`mt-3 grid grid-cols-1 gap-4 ${browserSettings.compactItems ? '' : 'md:grid-cols-2'}`}>
+              {items.map(habit => <HabitItem key={habit.id} habit={habit} compact={Boolean(browserSettings.compactItems)}
+                onEdit={() => { setEditingHabit(habit); setModalConfig({ isOpen: true, isTask: isTasksView }) }}
+                onDelete={() => setDeleteConfirmation({ isOpen: true, habitId: habit.id })} />)}
+            </div></>}
+          </section>
+        })}
+      </div>}
       <div className={`grid grid-cols-1 gap-4 items-stretch ${browserSettings.compactItems ? '' : 'md:grid-cols-2'}`}>
         {activeHabits.length === 0 && searchTerm.trim() ? (
           <div className="col-span-2 text-center text-muted-foreground py-8">
@@ -229,7 +312,7 @@ export default function HabitList() {
             />
           </div>
         ) : (
-          activeHabits.map((habit: Habit, index) => (
+          !showFolders && activeHabits.map((habit: Habit, index) => (
             <div key={habit.id} className="min-w-0" onDragOver={event => {
               const from = activeHabits.find(item => item.id === draggedId)
               if (from && Boolean(from.pinned) === Boolean(habit.pinned)) event.preventDefault()
@@ -303,13 +386,18 @@ export default function HabitList() {
             setModalConfig({ isOpen: false, isTask: false })
             setEditingHabit(null)
           }}
-          onSave={async (habit) => {
-            await saveHabit({ ...habit, id: editingHabit?.id, isTask: modalConfig.isTask })
+          onSave={async (habit, folderId) => {
+            const updated = await saveHabit({ ...habit, id: editingHabit?.id, isTask: modalConfig.isTask })
+            const itemId = editingHabit?.id ?? updated?.at(-1)?.id
+            const oldFolderId = folders.find(folder => folder.itemIds.includes(itemId ?? ''))?.id ?? ''
+            if (itemId && folderId !== oldFolderId) await moveToFolder(itemId, folderId ?? '').catch(() => {})
             setModalConfig({ isOpen: false, isTask: false })
             setEditingHabit(null)
           }}
           habit={editingHabit}
           isTask={modalConfig.isTask}
+          folders={folders}
+          folderId={folders.find(folder => folder.itemIds.includes(editingHabit?.id ?? ''))?.id}
         />
       }
       <ConfirmDialog
@@ -318,6 +406,9 @@ export default function HabitList() {
         onConfirm={async () => {
           if (deleteConfirmation.habitId) {
             await deleteHabit(deleteConfirmation.habitId)
+            await persistFolders(folders.map(folder => ({ ...folder,
+              itemIds: folder.itemIds.filter(id => id !== deleteConfirmation.habitId),
+            }))).catch(() => {})
           }
           setDeleteConfirmation({ isOpen: false, habitId: null })
         }}

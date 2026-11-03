@@ -10,7 +10,7 @@ import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { useHabits } from '@/hooks/useHabits'
-import { habitsAtom, settingsAtom, completedHabitsMapAtom, hasTasksAtom } from '@/lib/atoms'
+import { habitsAtom, settingsAtom, completedHabitsMapAtom, hasTasksAtom, currentUserAtom } from '@/lib/atoms'
 import { DateTime } from 'luxon'
 import Linkify from './linkify'
 import { Habit } from '@/lib/types'
@@ -38,6 +38,7 @@ export default function HabitCalendar() {
   }, [timezone])
   const selectedDate = selectedDateTime.toFormat("yyyy-MM-dd")
   const [habitsData] = useAtom(habitsAtom)
+  const [currentUser] = useAtom(currentUserAtom)
   const [hasTasks] = useAtom(hasTasksAtom)
   const habits = habitsData.habits
 
@@ -45,6 +46,7 @@ export default function HabitCalendar() {
 
   // Get completed dates for calendar modifiers
   const completedDates = useMemo(() => new Set(completedHabitsMap.keys()), [completedHabitsMap])
+  const statusDays = currentUser?.statusDays ?? []
 
   return (
     <div>
@@ -63,10 +65,12 @@ export default function HabitCalendar() {
               weekStartsOn={settings.system.weekStartDay}
               className="rounded-md border"
               modifiers={{
-                completed: (date) => completedDates.has(fromCalendarPickerDate(date, timezone).toISODate() ?? '')
+                completed: (date) => completedDates.has(fromCalendarPickerDate(date, timezone).toISODate() ?? ''),
+                paused: (date) => statusDays.some(day => day.date === fromCalendarPickerDate(date, timezone).toISODate()),
               }}
               modifiersClassNames={{
                 completed: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 font-medium rounded-md',
+                paused: 'ring-2 ring-amber-600 dark:ring-amber-400 rounded-md',
               }}
             />
           </CardContent>
@@ -82,6 +86,10 @@ export default function HabitCalendar() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {statusDays.find(day => day.date === selectedDate) &&
+              <p className="mb-4 rounded border border-amber-600 p-2 text-sm" role="status">
+                {t('pausedStatus', { status: statusDays.find(day => day.date === selectedDate)!.status })}
+              </p>}
             {selectedDateTime && (
               <div className="space-y-8">
                 {hasTasks && (

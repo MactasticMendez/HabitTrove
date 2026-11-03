@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+* Add personal folders for habits and tasks, with a folder or flat-list view ([upstream #118](https://github.com/dohsimpson/HabitTrove/issues/118), [#120](https://github.com/dohsimpson/HabitTrove/issues/120)).
+* Add one-use family invitations, configurable SMTP delivery in the Admin panel, and designated managers for assigned members' habits and rewards ([upstream #95](https://github.com/dohsimpson/HabitTrove/issues/95)).
+* Add negative habits with optional coins for avoided days and optional balance-capped penalties for recorded slips ([upstream #153](https://github.com/dohsimpson/HabitTrove/issues/153)).
+* Add personal sick, travel, rest, and other status dates that pause streaks without creating completions or coins ([upstream #28](https://github.com/dohsimpson/HabitTrove/issues/28)).
+
+### Fixed
+
+* Keep the npm lockfile compatible with the Node 22 Docker build and GitHub Actions.
+
+### Security
+
+* Store only hashes of invitation tokens, expire them after seven days, and consume each token once.
+* Encrypt SMTP passwords at rest, require an administrator's local password to edit SMTP settings, and limit manager edits to their assigned family members.
+
 ## Version 0.7.0
 
 ### Added
