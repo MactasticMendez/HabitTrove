@@ -79,6 +79,17 @@ describe('family and negative-habit security', () => {
     expect(saved.users.find((user: User) => user.id === 'member').managedUserIds).toContain(created.id)
   })
 
+  test('allows the inviting administrator to manage the new member', async () => {
+    currentUser = admin
+    await expect(actions.createFamilyInvite('new@example.test', 'missing')).rejects.toThrow('Unknown family manager')
+    const invite = await actions.createFamilyInvite('new@example.test', admin.id)
+    currentUser = undefined
+    await actions.acceptFamilyInvite(invite.token, 'newmember', 'a-strong-password')
+    const saved = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
+    const created = saved.users.find((user: User) => user.username === 'newmember')
+    expect(saved.users.find((user: User) => user.id === admin.id).managedUserIds).toContain(created.id)
+  })
+
   test('caps slip penalties at the member balance and prevents forged history', async () => {
     const habitFile = path.join(directory, 'data', 'habits.json')
     await fs.writeFile(habitFile, JSON.stringify({ habits: [{ id: 'negative', name: 'No smoking', description: '',

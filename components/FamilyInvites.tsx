@@ -64,7 +64,7 @@ export default function FamilyInvites() {
           <select id="invite-manager" className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             value={managerId} onChange={event => setManagerId(event.target.value)}>
             <option value="">{t('noManager')}</option>
-            {users.users.filter(user => !user.isAdmin).map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
+            {users.users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
           </select></div>
         <Button type="submit" disabled={busy}>{t('send')}</Button>
       </form>
