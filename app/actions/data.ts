@@ -407,6 +407,9 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
 export async function reorderHabitItems(orderedIds: string[], isTask: boolean): Promise<HabitsData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'write')
+    if (!user.isAdmin && !checkPermission(user.permissions, 'habit', 'write')) {
+      throw new PermissionError('Manual ordering requires habit write permission')
+    }
     if (!Array.isArray(orderedIds) || orderedIds.length > 10_000 ||
         orderedIds.some(id => typeof id !== 'string' || !id || id.length > 128) ||
         new Set(orderedIds).size !== orderedIds.length || typeof isTask !== 'boolean') {

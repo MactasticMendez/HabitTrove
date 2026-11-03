@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input' // Added
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select' // Added
 import { Label } from '@/components/ui/label' // Added
 import { DateTime } from 'luxon' // Added
-import { getHabitFreq, hasPermission } from '@/lib/utils'
+import { checkPermission, getHabitFreq } from '@/lib/utils'
 import { savePersonalFolders } from '@/app/actions/data'
 import type { PersonalFolder } from '@/lib/types'
 import { uuid } from '@/lib/utils'
@@ -53,7 +53,8 @@ export default function HabitList() {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [reordering, setReordering] = useState(false)
   const [orderError, setOrderError] = useState('')
-  const canReorder = !showFolders && sortBy === 'custom' && !searchTerm.trim() && !browserSettings.hideNonDaily && hasPermission(currentUser, 'habit', 'write')
+  const canReorder = !showFolders && sortBy === 'custom' && !searchTerm.trim() && !browserSettings.hideNonDaily &&
+    !!currentUser && (currentUser.isAdmin || checkPermission(currentUser.permissions, 'habit', 'write'))
   const originalOrder = useMemo(() => new Map(habitsData.habits.map((habit, index) => [habit.id, index])), [habitsData.habits])
 
   const compareHabits = useMemo(() => {
