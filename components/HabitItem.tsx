@@ -65,6 +65,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   const canWrite = hasPermission(currentUser, 'habit', 'write')
   const canInteract = hasPermission(currentUser, 'habit', 'interact')
   const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
+  const canUndo = completionsToday > 0 && undoIndex >= 0
   const [browserSettings] = useAtom(browserSettingsAtom)
   const isTasksView = browserSettings.viewType === 'tasks'
   const isRecurRule = !isTasksView
@@ -107,9 +108,9 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   return (
     <Card
       id={`habit-${habit.id}`}
-      className={`transition-all duration-500 ${compact ? 'flex flex-wrap items-center gap-x-2 text-sm' : 'h-full flex flex-col'} ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''} ${habit.archived ? 'opacity-75' : ''}`}
+      className={`transition-all duration-500 ${compact ? 'grid grid-cols-1 items-center gap-x-4 text-sm md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32rem]' : 'h-full flex flex-col'} ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''} ${habit.archived ? 'opacity-75' : ''}`}
     >
-      <CardHeader className={compact ? 'min-w-0 flex-[1_1_12rem] p-2' : 'flex-shrink-0'}>
+      <CardHeader className={compact ? 'min-w-0 p-2' : 'flex-shrink-0'}>
         <div className="flex justify-between items-start">
           <CardTitle className={`line-clamp-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''} flex items-center ${isTasksView ? 'w-full' : ''} justify-between`}>
             <div className="flex items-center gap-1">
@@ -146,7 +147,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           </div>
         )}
       </CardHeader>
-      <CardContent className={compact ? 'min-w-0 flex-[1_1_9rem] p-2' : 'flex-grow flex flex-col justify-end'}>
+      <CardContent className={compact ? 'min-w-0 p-2' : 'flex-grow flex flex-col justify-end'}>
         <div className={compact ? '' : 'mt-auto'}>
           <p className={`text-sm ${compact ? 'line-clamp-1' : ''} ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500'}`}>
             {t('whenLabel', {
@@ -186,7 +187,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           {photoError && <p role="alert" className="text-xs text-destructive">{photoError}</p>}
         </div>
       </CardContent>
-      <CardFooter className={compact ? 'flex-[0_1_auto] justify-between gap-2 p-2' : 'flex-shrink-0 flex justify-between gap-2'}>
+      <CardFooter className={compact ? 'min-w-0 justify-between gap-2 p-2 md:col-span-2 2xl:col-span-1' : 'flex-shrink-0 flex justify-between gap-2'}>
         <div className="flex gap-2">
           <div className="relative">
             <Button
@@ -194,7 +195,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
               size="sm"
               onClick={() => submitCompletion()}
               disabled={!canInteract || habit.archived || busy || !!photoError || (isCompletedToday && completionsToday >= target)}
-              className={`overflow-hidden w-24 sm:w-auto ${habit.archived ? 'cursor-not-allowed' : ''}`}
+              className={`overflow-hidden w-24 ${compact ? 'sm:w-36' : 'sm:w-auto'} ${habit.archived ? 'cursor-not-allowed' : ''}`}
             >
               <Check className="h-4 w-4 sm:mr-2" />
               <span>
@@ -231,18 +232,22 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
             aria-label={t('catchUpDate', { date: missedDates[0].toISODate() ?? '' })}>
             {t('catchUp')}
           </Button>}
-          {completionsToday > 0 && undoIndex >= 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`${t('undoButton')}: ${habit.name}`}
-              onClick={async () => await undoComplete(habit)}
-              disabled={!canInteract}
-              className="w-10 sm:w-auto"
-            >
-              <Undo2 className="h-4 w-4" />
-              <span className="hidden sm:inline ml-2">{t('undoButton')}</span>
-            </Button>
+          {(canUndo || compact) && (
+            <div className={compact ? `${canUndo ? 'w-10' : 'hidden'} sm:block sm:w-24` : ''}>
+              {canUndo && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`${t('undoButton')}: ${habit.name}`}
+                  onClick={async () => await undoComplete(habit)}
+                  disabled={!canInteract}
+                  className={compact ? 'w-full' : 'w-10 sm:w-auto'}
+                >
+                  <Undo2 className="h-4 w-4" />
+                  <span className="hidden sm:inline ml-2">{t('undoButton')}</span>
+                </Button>
+              )}
+            </div>
           )}
         </div>
         <div className="flex gap-2">

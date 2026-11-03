@@ -44,6 +44,23 @@ test('uses the existing environment provider until an admin override is saved', 
   expect(config.getApplicationLogLevel()).toBe('info')
 })
 
+test('changes the sign-in button name without changing the OIDC provider', async () => {
+  const original = (await config.readEffectiveOidcConfig())!
+  await config.saveOidcDisplayName('  Robin’s Auth  ')
+  expect(await config.getOidcDisplayName()).toBe('Robin’s Auth')
+  expect((await config.getAdminConfigSummary()).oidc.displayName).toBe('Robin’s Auth')
+  expect(await config.readEffectiveOidcConfig()).toEqual(original)
+  expect(JSON.parse(await fs.readFile(path.join(directory, 'data', 'admin-config.json'), 'utf8')).oidcOverride).toBeUndefined()
+
+  await expect(config.saveOidcDisplayName('unsafe\nname')).rejects.toThrow()
+  await expect(config.saveOidcDisplayName('unsafe\u202ename')).rejects.toThrow()
+  await expect(config.saveOidcDisplayName('x'.repeat(65))).rejects.toThrow()
+  expect(await config.getOidcDisplayName()).toBe('Robin’s Auth')
+
+  await config.saveOidcDisplayName('')
+  expect(await config.getOidcDisplayName()).toBe('OIDC')
+})
+
 test('disables OIDC sign-in when saved configuration is damaged', async () => {
   await fs.mkdir(path.join(directory, 'data'))
   await fs.writeFile(path.join(directory, 'data', 'admin-config.json'), '{invalid json')

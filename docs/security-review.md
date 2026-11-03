@@ -1,5 +1,9 @@
 # Security review
 
+## 2026-11-02 dashboard layout and OIDC button name (v0.7.0)
+
+The OIDC sign-in button name is stored separately from provider credentials. Only an administrator can change it; input is limited to 64 plain-text characters, and React renders it as text. Renaming does not change the active issuer, callback, client secret, or linked accounts and does not require a container restart. The dashboard and compact-row changes affect layout only; they do not change completion or coin authorization. Dashboard sections retain their document order and keyboard reorder controls in the fluid column layout.
+
 ## 2026-11-02 selected improvements (v0.6.0)
 
 Approval and reward decisions run in serialized server actions. New item creators are assigned server-side, approval settings require the creator or an administrator, and approver IDs must name existing accounts. A pending submission does not award coins. A designated approver may approve their own submission by product choice. Rejected records do not count as completions and can be resubmitted. Reward values for pending submissions are captured at submission time, including any active boost. Legacy items have no creator identity; only administrators can change their approval settings.

@@ -20,9 +20,10 @@ import { Description } from '@radix-ui/react-dialog';
 import { SafeUser } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-export function AnonymousSignIn({ onSuccess, authentikEnabled, isDemo }: {
+export function AnonymousSignIn({ onSuccess, authentikEnabled, oidcDisplayName, isDemo }: {
   onSuccess: () => void;
   authentikEnabled: boolean;
+  oidcDisplayName: string;
   isDemo: boolean;
 }) {
   const t = useTranslations('UserSelectModal');
@@ -65,7 +66,7 @@ export function AnonymousSignIn({ onSuccess, authentikEnabled, isDemo }: {
       </form>
       {authentikEnabled && (
         <form action={signInWithAuthentik}>
-          <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik')}</Button>
+          <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: oidcDisplayName })}</Button>
         </form>
       )}
     </div>
@@ -230,7 +231,7 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-col gap-4">
           {!currentUser ? (
-            <AnonymousSignIn onSuccess={onClose} authentikEnabled={serverSettings.authentikEnabled} isDemo={serverSettings.isDemo} />
+            <AnonymousSignIn onSuccess={onClose} authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
           ) : !selectedUser && !isCreating && !isEditing ? (
             <UserSelectionView
               users={users}

@@ -42,8 +42,8 @@ export default function Dashboard() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-xl xs:text-3xl font-bold">{t('title')}</h1>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {order.map((id, index) => <section key={id} className={id === 'heatmap' ? 'md:col-span-2 lg:col-span-3' : ''}>
+      <div className="columns-1 gap-6 xl:columns-2 2xl:columns-3">
+        {order.map((id, index) => <section key={id} className="mb-6 inline-block w-full break-inside-avoid align-top">
           <div className="mb-1 flex justify-end gap-1" role="group" aria-label={t('reorderSection', { name: t(id) })}>
             <Button type="button" size="sm" variant="ghost" disabled={index === 0}
               aria-label={t('moveUp', { name: t(id) })} onClick={() => move(index, -1)}><ArrowUp className="h-4 w-4" /></Button>

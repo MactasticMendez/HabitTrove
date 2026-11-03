@@ -48,10 +48,20 @@ test('blocks members and signed-out visitors from reading or editing admin setti
   currentUser = { ...admin, isAdmin: false }
   await expect(actions.loadAdminPanelSettings()).rejects.toThrow('Administrator access required')
   await expect(actions.updateApplicationLogLevel('debug')).rejects.toThrow('Administrator access required')
+  await expect(actions.updateOidcDisplayName('Example')).rejects.toThrow('Administrator access required')
   currentUser = undefined
   await expect(actions.updateOidcProvider({
     enabled: false, issuer: '', clientId: '', clientSecret: '', currentPassword: 'current-password',
   })).rejects.toThrow('Administrator access required')
+})
+
+test('lets an administrator rename the OIDC button without changing provider credentials', async () => {
+  const summary = await actions.updateOidcDisplayName('Robin’s Auth')
+  expect(summary.oidc.displayName).toBe('Robin’s Auth')
+  expect(summary.oidc.source).toBe('none')
+  expect(summary.oidc.enabled).toBe(false)
+  const raw = await fs.readFile(path.join(directory, 'data', 'admin-config.json'), 'utf8')
+  expect(JSON.parse(raw).oidcOverride).toBeUndefined()
 })
 
 test('requires the current admin password to change OIDC and never returns the secret', async () => {

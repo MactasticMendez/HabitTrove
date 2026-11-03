@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## Version 0.7.0
+
+### Added
+
+* Let administrators set the OIDC sign-in button name without changing provider configuration.
+
+### Changed
+
+* Arrange dashboard tiles in fluid columns so tall tiles do not leave empty grid rows.
+
+### Fixed
+
+* Keep compact task and habit columns and action buttons aligned when Undo appears after a completion.
+
 ## Version 0.6.1
 
 ### Fixed
