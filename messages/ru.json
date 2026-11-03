@@ -422,7 +422,8 @@
     "completeButtonCount": "Выполнить ({completed}/{target})",
     "completeButtonCountMobile": "{completed}/{target}",
     "undoButton": "Отменить",
-    "editButton": "Редактировать"
+    "editButton": "Редактировать",
+    "moreActions": "More actions for {name}"
   },
   "TransactionNoteEditor": {
     "noteTooLongTitle": "Слишком длинная заметка",

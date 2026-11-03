@@ -212,7 +212,7 @@ export default function HabitList() {
           </Button>
         </div>
       </div>
-      {sortBy === 'custom' && <p className="text-sm text-muted-foreground mb-3">{t('manualOrderHelp')}</p>}
+      {sortBy === 'custom' && <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{t('manualOrderHelp')}</p>}
       {orderError && <p role="alert" className="text-sm text-destructive mb-3">{orderError}</p>}
 
       <div className={`grid grid-cols-1 gap-4 items-stretch ${browserSettings.compactItems ? '' : 'md:grid-cols-2'}`}>

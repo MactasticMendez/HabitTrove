@@ -422,7 +422,8 @@
     "completeButtonCount": "Abschließen ({completed}/{target})",
     "completeButtonCountMobile": "{completed}/{target}",
     "undoButton": "Rückgängig",
-    "editButton": "Bearbeiten"
+    "editButton": "Bearbeiten",
+    "moreActions": "More actions for {name}"
   },
   "TransactionNoteEditor": {
     "noteTooLongTitle": "Notiz zu lang",

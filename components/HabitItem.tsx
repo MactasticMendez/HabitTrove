@@ -265,7 +265,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           )}
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label={t('moreActions', { name: habit.name })}>
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
