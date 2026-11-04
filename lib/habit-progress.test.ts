@@ -29,4 +29,21 @@ describe('per-item progress', () => {
     expect(progress.weeklyDue).toBe(3)
     expect(progress.streak).toBe(2)
   })
+
+  test('any-time events do not create daily obligations or streak pressure', () => {
+    expect(getPerHabitProgress({ ...task, isTask: false,
+      schedule: { type: 'anytime', recordingPolicy: 'both' } }, DateTime.fromISO('2026-03-09'), 'UTC'))
+      .toEqual({ streak: 0, weeklyDone: 0, weeklyDue: 0, graceUsed: false })
+  })
+
+  test('completion-relative progress counts cycles with at most one overdue obligation', () => {
+    const habit: Habit = { ...task, isTask: false,
+      schedule: { type: 'afterCompletion', interval: 2, unit: 'days', startsOn: '2026-03-01' },
+      completions: ['2026-03-02T12:00:00Z', '2026-03-05T12:00:00Z'],
+    }
+    expect(getPerHabitProgress(habit, DateTime.fromISO('2026-03-15'), 'UTC'))
+      .toEqual({ streak: 2, weeklyDone: 0, weeklyDue: 1, graceUsed: true })
+    expect(getPerHabitProgress(habit, DateTime.fromISO('2026-03-05'), 'UTC'))
+      .toEqual({ streak: 2, weeklyDone: 2, weeklyDue: 2, graceUsed: false })
+  })
 })

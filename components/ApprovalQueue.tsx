@@ -49,11 +49,15 @@ export default function ApprovalQueue() {
       <p>{t('empty')}</p> : <ul className="space-y-4">
         {pending.map(item => {
           const actor = users.users.find(user => user.id === item.actorId)
+          const beneficiary = users.users.find(user => user.id === item.beneficiaryId)
           return <li key={item.completionId}>
             <Card>
               <CardHeader><CardTitle>{item.habitName}</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm">{t('submittedBy', { username: actor?.username ?? t('unknownUser') })}</p>
+                {item.beneficiaryId && item.beneficiaryId !== item.actorId && <p className="text-sm">
+                  {t('recordedFor', { username: beneficiary?.username ?? t('unknownUser') })}
+                </p>}
                 <p className="text-sm text-foreground">{new Date(item.submittedAt).toLocaleString()}</p>
                 {item.evidenceId && <div>
                   <p className="mb-1 text-sm font-medium">{t('evidence')}</p>

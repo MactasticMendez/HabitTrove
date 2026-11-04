@@ -16,11 +16,13 @@ import { CalendarDays, Brush } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Habit, PersonalFolder } from '@/lib/types'
+import { FlexibleSchedule, Habit, PersonalFolder } from '@/lib/types'
 import EmojiPickerButton from './EmojiPickerButton'
 import ModalOverlay from './ModalOverlay' // Import the new component
 import DrawingModal from './DrawingModal'
 import DrawingDisplay from './DrawingDisplay'
+import GuidedScheduleFields from './GuidedScheduleFields'
+import { buildCalendarSchedule, canEditCalendarSchedule, initialCalendarSchedule } from './guided-schedule'
 import { checkPermission, convertHumanReadableFrequencyToMachineReadable, convertMachineReadableFrequencyToHumanReadable, d2t, deserializeRRule, fromCalendarPickerDate, serializeRRule, toCalendarPickerDate, uuid } from '@/lib/utils'
 import { INITIAL_DUE, INITIAL_RECURRENCE_RULE, QUICK_DATES, MAX_COIN_LIMIT } from '@/lib/constants'
 import { DateTime } from 'luxon'
@@ -33,6 +35,7 @@ interface AddEditHabitModalProps {
   isTask: boolean
   folders?: PersonalFolder[]
   folderId?: string
+  initialUserIds?: string[]
 }
 
 const weekdays = [
@@ -42,12 +45,14 @@ const weekdays = [
   { key: 'SU', english: 'Sunday' },
 ] as const
 
-type SchedulePreset = 'daily' | 'alternate' | 'weekdays' | 'chosenDays' | 'custom'
+type SchedulePreset = 'daily' | 'alternate' | 'weekdays' | 'chosenDays' | 'guided' | 'custom'
 
 function initialSchedule(frequency?: string): { preset: SchedulePreset; selectedDays: string[] } {
   if (!frequency) return { preset: 'daily', selectedDays: ['MO'] }
   const rule = deserializeRRule(frequency)
   if (!rule) return { preset: 'custom', selectedDays: ['MO'] }
+  if (!canEditCalendarSchedule(frequency)) return { preset: 'custom', selectedDays: ['MO'] }
+  if (rule.origOptions.dtstart || rule.origOptions.until || rule.origOptions.freq === RRule.MONTHLY || rule.origOptions.freq === RRule.YEARLY || (rule.origOptions.interval ?? 1) > 2) return { preset: 'guided', selectedDays: ['MO'] }
   if (rule.origOptions.freq === RRule.DAILY && (rule.origOptions.interval ?? 1) === 1) {
     return { preset: 'daily', selectedDays: ['MO'] }
   }
@@ -63,7 +68,7 @@ function initialSchedule(frequency?: string): { preset: SchedulePreset; selected
   return { preset: 'custom', selectedDays: ['MO'] }
 }
 
-export default function AddEditHabitModal({ onClose, onSave, habit, isTask, folders, folderId }: AddEditHabitModalProps) {
+export default function AddEditHabitModal({ onClose, onSave, habit, isTask, folders, folderId, initialUserIds }: AddEditHabitModalProps) {
   const t = useTranslations('AddEditHabitModal');
   const [settings] = useAtom(settingsAtom)
   const [name, setName] = useState(habit?.name || '')
@@ -72,6 +77,8 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
   const [isNegative, setIsNegative] = useState(habit?.isNegative ?? false)
   const [coinPenalty, setCoinPenalty] = useState(habit?.coinPenalty ?? 0)
   const [targetCompletions, setTargetCompletions] = useState(habit?.targetCompletions || 1)
+  const [taskRepeatInterval, setTaskRepeatInterval] = useState(habit?.taskRepeatInterval ?? 1)
+  const [taskRepeatUntil, setTaskRepeatUntil] = useState(habit?.taskRepeatUntil ?? '')
   const [taskRepeat, setTaskRepeat] = useState(habit?.taskRepeat ?? 'none')
   const [taskGoalOccurrences, setTaskGoalOccurrences] = useState(habit?.taskGoalOccurrences ?? 0)
   const [checklist, setChecklist] = useState(habit?.checklist ?? [])
@@ -95,17 +102,25 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
   const initialScheduleChoice = initialSchedule(isRecurRule ? habit?.frequency : undefined)
   const [schedulePreset, setSchedulePreset] = useState<SchedulePreset>(initialScheduleChoice.preset)
   const [selectedWeekdays, setSelectedWeekdays] = useState(initialScheduleChoice.selectedDays)
+  const [scheduleMode, setScheduleMode] = useState<'calendar' | 'afterCompletion' | 'anytime'>(habit?.schedule?.type ?? 'calendar')
+  const [scheduleDirty, setScheduleDirty] = useState(false)
+  const [calendarSchedule, setCalendarSchedule] = useState(() => {
+    const draft = initialCalendarSchedule(!isTask ? habit?.frequency : undefined, DateTime.now().setZone(settings.system.timezone).toISODate()!)
+    return habit?.schedule?.type === 'afterCompletion' ? { ...draft, ...habit.schedule, endsOn: habit.schedule.endsOn ?? '' } : draft
+  })
+  const [recordingPolicy, setRecordingPolicy] = useState<'member' | 'manager' | 'both'>(habit?.schedule?.type === 'anytime' ? habit.schedule.recordingPolicy : 'both')
+  const scheduleHasHistory = !!habit?.completions.length || !!habit?.slips?.length
+  const scheduleHasPending = !!habit?.completionRecords?.some(record => record?.approval === 'pending')
   const [pickedTaskDate, setPickedTaskDate] = useState<DateTime | null>(null)
   const [currentUser] = useAtom(currentUserAtom)
   const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
     checkPermission(currentUser.permissions, 'habit', 'write') ||
     !!currentUser.managedUserIds?.includes(userId))
-  const [includeSelf, setIncludeSelf] = useState(!habit || !!habit.userIds?.includes(currentUser?.id ?? ''))
-  const [negativeOwnerId, setNegativeOwnerId] = useState(habit?.userIds?.[0] ?? currentUser?.id ?? '')
+  const [includeSelf, setIncludeSelf] = useState((habit?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') ?? !habit)
+  const [negativeOwnerId, setNegativeOwnerId] = useState(habit?.userIds?.[0] ?? initialUserIds?.[0] ?? currentUser?.id ?? '')
   const [isQuickDatesOpen, setIsQuickDatesOpen] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null); // State for validation message
   const [approvalError, setApprovalError] = useState('')
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((habit?.userIds || []).filter(id => id !== currentUser?.id))
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((habit?.userIds ?? initialUserIds ?? []).filter(id => id !== currentUser?.id))
   const [usersData] = useAtom(usersAtom)
   const users = usersData.users
   const canConfigureApproval = !habit || !!currentUser?.isAdmin || habit.createdBy === currentUser?.id
@@ -118,7 +133,21 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
   const [selectedFolderId, setSelectedFolderId] = useState(folderId ?? '')
   const [saveError, setSaveError] = useState(false)
 
+  const updateCalendarSchedule = (value: typeof calendarSchedule) => { setCalendarSchedule(value); setScheduleDirty(true) }
+  const isAnytime = scheduleMode === 'anytime'
+  const parsedRule = convertHumanReadableFrequencyToMachineReadable({ text: ruleText, timezone: settings.system.timezone, isRecurring: isRecurRule })
+  const usesScheduleText = scheduleMode === 'calendar' && (isTask || schedulePreset !== 'guided')
+  let errorMessage: string | null = usesScheduleText && (scheduleDirty || !habit?.frequency) ? parsedRule.message : null
+  if (scheduleMode === 'afterCompletion' || !isTask && schedulePreset === 'guided' && scheduleMode === 'calendar') {
+    try { buildCalendarSchedule(calendarSchedule, settings.system.timezone) } catch { errorMessage = t('scheduleInvalid') }
+  }
+
   function getFrequencyUpdate() {
+    if (scheduleMode !== 'calendar') return isTask
+      ? d2t({ dateTime: DateTime.fromISO(calendarSchedule.startsOn, { zone: settings.system.timezone }).startOf('day') })
+      : 'FREQ=DAILY'
+    if (!scheduleDirty && habit?.frequency) return habit.frequency
+    if (!isTask && schedulePreset === 'guided') return buildCalendarSchedule(calendarSchedule, settings.system.timezone)
     if (ruleText === initialRuleText && habit?.frequency) {
       // If text hasn't changed and original frequency exists, return it
       return habit.frequency;
@@ -146,6 +175,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
 
   const setPreset = (preset: SchedulePreset) => {
     setSchedulePreset(preset)
+    setScheduleDirty(true)
     if (preset === 'daily') setRuleText('every day')
     if (preset === 'alternate') setRuleText('every 2 days')
     if (preset === 'weekdays') setRuleText('weekdays')
@@ -161,12 +191,13 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
       ? selectedWeekdays.filter(day => day !== key) : [...selectedWeekdays, key]
     if (!selected.length) return
     setSelectedWeekdays(selected)
+    setScheduleDirty(true)
     setRuleText(`every week on ${weekdays.filter(day => selected.includes(day.key)).map(day => day.english).join(', ')}`)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isNegative && !includeSelf && !selectedUserIds.length) {
+    if (!isNegative && !isAnytime && !includeSelf && !selectedUserIds.length) {
       setSaveError(true)
       return
     }
@@ -174,6 +205,11 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
       setApprovalError(t('approverRequired'))
       return
     }
+    if (errorMessage || (isAnytime || isNegative) && !negativeOwnerId) { setSaveError(true); return }
+    const schedule: FlexibleSchedule | undefined = scheduleMode === 'afterCompletion'
+      ? { type: 'afterCompletion', interval: calendarSchedule.interval, unit: calendarSchedule.unit,
+        startsOn: calendarSchedule.startsOn, ...(calendarSchedule.endsOn && { endsOn: calendarSchedule.endsOn }) }
+      : isAnytime ? { type: 'anytime', recordingPolicy } : undefined
     const boostUntil = boostEndsOn
       ? DateTime.fromISO(boostEndsOn, { zone: settings.system.timezone }).endOf('day').toUTC().toISO() : null
     try { await onSave({
@@ -182,15 +218,18 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
       coinReward,
       isNegative: !isTask && isNegative || undefined,
       coinPenalty: !isTask && isNegative ? coinPenalty : undefined,
-      targetCompletions: !isNegative && targetCompletions > 1 ? targetCompletions : undefined,
+      targetCompletions: !isNegative && !isAnytime && targetCompletions > 1 ? targetCompletions : undefined,
       completions: habit?.completions || [],
       frequency: getFrequencyUpdate(),
-      userIds: isNegative ? [negativeOwnerId] : [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
+      schedule,
+      userIds: isNegative || isAnytime ? [negativeOwnerId] : [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
       drawing: drawing && drawing !== '[]' ? drawing : undefined,
-      taskRepeat: isTask && taskRepeat !== 'none' ? taskRepeat as Habit['taskRepeat'] : undefined,
-      taskGoalOccurrences: isTask && taskRepeat !== 'none' && taskGoalOccurrences > 0 ? taskGoalOccurrences : undefined,
+      taskRepeat: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' ? taskRepeat as Habit['taskRepeat'] : undefined,
+      taskRepeatInterval: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' ? taskRepeatInterval : undefined,
+      taskRepeatUntil: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' ? taskRepeatUntil || undefined : undefined,
+      taskGoalOccurrences: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' && taskGoalOccurrences > 0 ? taskGoalOccurrences : undefined,
       checklist: isTask && checklist.length ? checklist : undefined,
-      reminderTime: reminderTime || undefined,
+      reminderTime: isAnytime ? undefined : reminderTime || undefined,
       requiresApproval: isNegative ? false : canConfigureApproval ? requiresApproval : habit?.requiresApproval,
       approverIds: isNegative ? [] : canConfigureApproval ? (requiresApproval ? approverIds : []) : habit?.approverIds,
       coinBoost: !isNegative && boostMultiplier > 1 && boostUntil ? unchangedBoost ? habit?.coinBoost : {
@@ -254,12 +293,38 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   className="min-w-0 sm:col-span-3"
                 />
               </div>
-              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              <div className="grid min-w-0 grid-cols-1 items-start gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="schedule-mode" className="sm:text-right sm:pt-2">{t('scheduleMode')}</Label>
+                <div className="min-w-0 space-y-2 sm:col-span-3">
+                  <select id="schedule-mode" className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={scheduleMode} disabled={scheduleHasHistory || scheduleHasPending}
+                    onChange={event => { setScheduleMode(event.target.value as typeof scheduleMode); setScheduleDirty(true); setSaveError(false) }}>
+                    <option value="calendar">{t('scheduleCalendar')}</option>
+                    <option value="afterCompletion">{t('scheduleAfterCompletion')}</option>
+                    {!isTask && !isNegative && <option value="anytime" disabled={!canConfigureApproval}>{t('scheduleAnytime')}</option>}
+                  </select>
+                  {scheduleHasHistory && <p className="text-xs text-muted-foreground">{t('scheduleHistoryHelp')}</p>}
+                  {scheduleHasPending && <p className="text-xs text-muted-foreground">{t('schedulePendingHelp')}</p>}
+                  {isAnytime && <>
+                    <Label htmlFor="recording-policy" className="block">{t('recordingPolicy')}</Label>
+                    <select id="recording-policy" className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={recordingPolicy} disabled={!canConfigureApproval || scheduleHasPending}
+                      onChange={event => setRecordingPolicy(event.target.value as typeof recordingPolicy)}>
+                      <option value="member">{t('recordingMember')}</option><option value="manager">{t('recordingManager')}</option>
+                      <option value="both">{t('recordingBoth')}</option>
+                    </select><p className="text-xs text-muted-foreground">{t('scheduleAnytimeHelp')}</p>
+                  </>}
+                  {scheduleMode === 'afterCompletion' && <fieldset disabled={scheduleHasPending} className="min-w-0">
+                    <GuidedScheduleFields value={calendarSchedule} onChange={updateCalendarSchedule} language={settings.system.language} afterCompletion />
+                  </fieldset>}
+                </div>
+              </div>
+              {scheduleMode === 'calendar' && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="recurrence" className="sm:text-right">
                   {t('whenLabel')}
                 </Label>
                 {/* date input (task) */}
-                <div className="min-w-0 sm:col-span-3 space-y-2">
+                <fieldset disabled={scheduleHasPending} className="min-w-0 sm:col-span-3 space-y-2">
                   {!isTask && (
                     <>
                       <Select value={schedulePreset} onValueChange={value => setPreset(value as SchedulePreset)}>
@@ -271,6 +336,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                           <SelectItem value="alternate">{t('scheduleAlternate')}</SelectItem>
                           <SelectItem value="weekdays">{t('scheduleWeekdays')}</SelectItem>
                           <SelectItem value="chosenDays">{t('scheduleChosenDays')}</SelectItem>
+                          <SelectItem value="guided">{t('scheduleGuided')}</SelectItem>
                           <SelectItem value="custom">{t('scheduleCustom')}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -291,13 +357,15 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                       )}
                     </>
                   )}
-                  <div className="flex gap-2">
+                  {!isTask && schedulePreset === 'guided' ? <GuidedScheduleFields value={calendarSchedule}
+                    onChange={updateCalendarSchedule} language={settings.system.language} /> : <div className="flex gap-2">
                     <Input
                       id="recurrence"
                       className="min-w-0"
                       value={ruleText}
                       onChange={(e) => {
                         setRuleText(e.target.value)
+                        setScheduleDirty(true)
                         if (isTask) setPickedTaskDate(null)
                         else setSchedulePreset('custom')
                       }}
@@ -327,6 +395,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                                   className="justify-start h-9 px-3 hover:bg-primary hover:text-primary-foreground transition-colors"
                                   onClick={() => {
                                     setRuleText(date.value);
+                                    setScheduleDirty(true)
                                     setPickedTaskDate(null)
                                     setIsQuickDatesOpen(false);
                                   }}
@@ -347,6 +416,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                                 if (!date) return
                                 const selected = fromCalendarPickerDate(date, settings.system.timezone)
                                 setPickedTaskDate(selected)
+                                setScheduleDirty(true)
                                 setRuleText(selected.toISODate() ?? '')
                                 setIsQuickDatesOpen(false)
                               }}
@@ -357,43 +427,28 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                         </PopoverContent>
                       </Popover>
                     )}
-                  </div>
+                  </div>}
                   <details className="text-xs text-muted-foreground">
                     <summary className="cursor-pointer">{t('scheduleHelpTitle')}</summary>
                     <p className="mt-1">{t(isTask ? 'taskScheduleHelp' : 'habitScheduleHelp')}</p>
                   </details>
-                </div>
+                </fieldset>
                 {/* rrule input (habit) */}
                 <div className="sm:col-start-2 min-w-0 sm:col-span-3 text-sm">
-                  {(() => {
-                    let displayText = '';
-                    const { result, message } = convertHumanReadableFrequencyToMachineReadable({ text: ruleText, timezone: settings.system.timezone, isRecurring: isRecurRule });
-                    if (message !== errorMessage) { // Only update if it changed to avoid re-renders
-                      setErrorMessage(message);
-                    }
-                    displayText = convertMachineReadableFrequencyToHumanReadable({ frequency: result, isRecurRule, timezone: settings.system.timezone })
-
-                    return (
-                      <>
-                        <span className={errorMessage ? 'text-destructive' : 'text-muted-foreground'}>
-                          {displayText}
-                        </span>
-                        {errorMessage && (
-                          <p className="text-destructive text-xs mt-1">{errorMessage}</p>
-                        )}
-                      </>
-                    );
-                  })()}
+                  {errorMessage ? <p role="alert" className="text-destructive text-xs">{errorMessage}</p>
+                    : <span className="text-muted-foreground">{!isTask && schedulePreset === 'guided'
+                      ? new RRule(RRule.parseString(buildCalendarSchedule(calendarSchedule, settings.system.timezone))).toText()
+                      : convertMachineReadableFrequencyToHumanReadable({ frequency: parsedRule.result, isRecurRule, timezone: settings.system.timezone })}</span>}
                 </div>
-              </div>
-              {!isTask && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              </div>}
+              {!isTask && !isAnytime && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="negative-habit" className="sm:text-right">{t('negativeHabitLabel')}</Label>
                 <div className="min-w-0 sm:col-span-3 space-y-1"><Switch id="negative-habit" checked={isNegative}
                   disabled={!!habit?.completions.length || !!habit?.slips?.length}
                   onCheckedChange={setIsNegative} />
                   <p className="text-xs text-muted-foreground">{t('negativeHabitHelp')}</p></div>
               </div>}
-              {!isNegative && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              {!isNegative && !isAnytime && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <div className="flex items-center gap-2 sm:justify-end">
                   <Label htmlFor="targetCompletions">
                     {t('completeLabel')}
@@ -487,10 +542,10 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                 <Input id="coin-penalty" type="number" className="min-w-0 sm:col-span-3" min={0} max={MAX_COIN_LIMIT}
                   value={coinPenalty} onChange={event => setCoinPenalty(Number(event.target.value))} required />
               </div>}
-              {isTask && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              {isTask && scheduleMode === 'calendar' && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="task-repeat" className="sm:text-right">{t('taskRepeatLabel')}</Label>
                 <div className="min-w-0 sm:col-span-3 flex flex-wrap gap-2">
-                  <Select value={taskRepeat} onValueChange={setTaskRepeat}>
+                  <Select value={taskRepeat} onValueChange={setTaskRepeat} disabled={scheduleHasPending}>
                     <SelectTrigger id="task-repeat" className="w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">{t('taskRepeatNone')}</SelectItem>
@@ -500,7 +555,16 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                       <SelectItem value="yearly">{t('taskRepeatYearly')}</SelectItem>
                     </SelectContent>
                   </Select>
-                  {taskRepeat !== 'none' && <div className="flex items-center gap-2">
+                  {taskRepeat !== 'none' && <>
+                    <div className="space-y-1"><Label htmlFor="task-repeat-interval" className="block">{t('scheduleInterval')}</Label>
+                      <Input id="task-repeat-interval" type="number" min={1} max={365} className="w-20" required
+                        value={taskRepeatInterval} disabled={scheduleHasPending} onChange={event => setTaskRepeatInterval(Number(event.target.value))} /></div>
+                    <div className="min-w-0 space-y-1"><Label htmlFor="task-repeat-until" className="block">{t('scheduleEndsOn')}</Label>
+                      <Input id="task-repeat-until" type="date" className="min-w-0" value={taskRepeatUntil} disabled={scheduleHasPending}
+                        min={parsedRule.result instanceof DateTime ? parsedRule.result.toISODate() ?? undefined : undefined}
+                        onChange={event => setTaskRepeatUntil(event.target.value)} /></div>
+                  </>}
+                  {taskRepeat !== 'none' && <div className="flex flex-wrap items-center gap-2">
                     <Label htmlFor="task-goal">{t('taskGoalLabel')}</Label>
                     <Input id="task-goal" type="number" min={0} max={1000} className="w-24"
                       value={taskGoalOccurrences} onChange={event => setTaskGoalOccurrences(Number(event.target.value))} />
@@ -525,11 +589,11 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </Button>
                 </div>
               </div>}
-              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              {!isAnytime && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="reminder-time" className="sm:text-right">{t('reminderTimeLabel')}</Label>
                 <Input id="reminder-time" type="time" className="min-w-0 sm:col-span-3" value={reminderTime}
                   onChange={event => setReminderTime(event.target.value)} />
-              </div>
+              </div>}
               {!isNegative && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="boost-multiplier" className="sm:text-right">{t('boostLabel')}</Label>
                 <div className="min-w-0 sm:col-span-3 flex flex-wrap items-center gap-2">
@@ -616,19 +680,19 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               </div>
-              {isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
-                <Label htmlFor="negative-assignee" className="sm:text-right">{t('negativeAssignee')}</Label>
+              {(isAnytime || isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length)) && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="negative-assignee" className="sm:text-right">{t(isAnytime ? 'anytimeAssignee' : 'negativeAssignee')}</Label>
                 <select id="negative-assignee" className="min-w-0 sm:col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={negativeOwnerId} onChange={event => setNegativeOwnerId(event.target.value)}>
-                  {users.filter(user => user.id === currentUser.id || canAssignUser(user.id))
+                  value={negativeOwnerId} disabled={scheduleHasPending} onChange={event => setNegativeOwnerId(event.target.value)}>
+                  {users.filter(user => user.id === currentUser?.id || currentUser?.isAdmin || currentUser?.managedUserIds?.includes(user.id))
                     .map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
                 </select>
               </div>}
-              {!isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
+              {!isNegative && !isAnytime && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={includeSelf} disabled={scheduleHasPending} onChange={event => setIncludeSelf(event.target.checked)} />
                 {t('includeSelf')}
               </label>}
-              {!isNegative && users && users.length > 1 && (
+              {!isNegative && !isAnytime && users && users.length > 1 && (
                 <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                   <div className="flex items-center gap-2 sm:justify-end">
                     <Label id="sharing-label">{t('shareLabel')}</Label>
@@ -636,7 +700,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   <div className="min-w-0 sm:col-span-3">
                     <div role="group" aria-labelledby="sharing-label" className="flex flex-wrap gap-2">
                       {users.filter(user => user.id !== currentUser?.id && canAssignUser(user.id)).map(user => (
-                        <button type="button" key={user.id} aria-label={t('assignUser', { username: user.username })}
+                        <button type="button" key={user.id} disabled={scheduleHasPending} aria-label={t('assignUser', { username: user.username })}
                           aria-pressed={selectedUserIds.includes(user.id)}
                           className={`h-8 w-8 border-2 cursor-pointer
                           ${selectedUserIds.includes(user.id)

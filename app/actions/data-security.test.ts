@@ -1030,3 +1030,228 @@ describe('server action authorization', () => {
     }
   })
 })
+
+describe('scheduling, any-time actions and family oversight', () => {
+  const now = () => DateTime.now().toUTC()
+  const requestId = () => crypto.randomUUID()
+  const file = (name: string) => path.join(directory, 'data', `${name}.json`)
+  const read = async (name: string) => JSON.parse(await fs.readFile(file(name), 'utf8'))
+  const write = async (name: string, value: unknown) => fs.writeFile(file(name), JSON.stringify(value))
+  const anytime = (policy: 'member' | 'manager' | 'both' = 'both', assignee = 'other'): Habit => ({
+    id: 'action', name: 'Good manners', description: '', frequency: 'FREQ=DAILY', coinReward: 2,
+    userIds: [assignee], createdBy: 'admin', completions: [], schedule: { type: 'anytime', recordingPolicy: policy },
+  })
+  const makeManager = async (managedUserIds = ['other']) => {
+    const manager = { ...member, managedUserIds, permissions: [] }
+    const auth = await read('auth')
+    auth.users = auth.users.map((user: User) => user.id === member.id ? manager : user)
+    await write('auth', auth)
+    currentUser = manager
+    return manager
+  }
+
+  test('credits each any-time action to its assignee and deduplicates concurrent retries', async () => {
+    await makeManager()
+    await write('habits', { habits: [anytime()] })
+    const id = requestId()
+    const results = await Promise.all([1, 2].map(() => actions.recordHabitCompletion('action', now().toISO()!, undefined,
+      { beneficiaryId: 'other', requestId: id })))
+    expect(results.filter(result => result.rewarded)).toHaveLength(1)
+    await actions.recordHabitCompletion('action', now().toISO()!, undefined, { beneficiaryId: 'other', requestId: requestId() })
+    const coins = await read('coins')
+    const credits = coins.transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')
+    expect(credits).toHaveLength(2)
+    expect(credits.every((tx: { userId: string; actorId: string }) => tx.userId === 'other' && tx.actorId === 'member')).toBe(true)
+    expect(results[0].coins.transactions.every(tx => tx.userId === 'member')).toBe(true)
+  })
+
+  test('enforces member, manager and both policies and rejects forged recipients', async () => {
+    await makeManager()
+    await write('habits', { habits: [anytime('member')] })
+    await expect(actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId() })).rejects.toThrow('not allowed')
+    await write('habits', { habits: [anytime('manager')] })
+    currentUser = { ...other, permissions: member.permissions }
+    await expect(actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId() })).rejects.toThrow('not allowed')
+    currentUser = member
+    await expect(actions.recordHabitCompletion('action', now().toISO()!, undefined,
+      { requestId: requestId(), beneficiaryId: 'admin' })).rejects.toThrow('recipient')
+    await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId(), beneficiaryId: 'other' })
+    await write('habits', { habits: [anytime('both', 'member')] })
+    await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId(), beneficiaryId: 'member' })
+  })
+
+  test('keeps retry tombstones after undo and rejects a revoked manager undo', async () => {
+    const manager = await makeManager()
+    await write('habits', { habits: [anytime()] })
+    const id = requestId()
+    const first = await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: id })
+    const auth = await read('auth')
+    auth.users.find((user: User) => user.id === 'other').permissions = member.permissions
+    await write('auth', auth)
+    currentUser = { ...other, permissions: member.permissions }
+    await expect(actions.undoHabitCompletion('action', first.completionIndex, first.completionTimestamp)).rejects.toThrow('person who recorded')
+    currentUser = manager
+    await makeManager([])
+    currentUser = manager // Simulate a stale client/session role snapshot.
+    await expect(actions.undoHabitCompletion('action', first.completionIndex, first.completionTimestamp)).rejects.toThrow('not allowed')
+    await makeManager()
+    const undone = await actions.undoHabitCompletion('action', first.completionIndex, first.completionTimestamp)
+    expect(undone.rewardReversed).toBe(true)
+    expect(undone.habit.completionRecords?.[0]?.voided).toBe(true)
+    const replay = await actions.recordHabitCompletion('action', first.completionTimestamp, undefined, { requestId: id })
+    expect(replay.rewarded).toBe(false)
+    expect((await read('coins')).transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')).toHaveLength(1)
+  })
+
+  test('approves every any-time event independently and rewards the beneficiary', async () => {
+    await makeManager()
+    await write('habits', { habits: [{ ...anytime(), requiresApproval: true, approverIds: ['admin'] }] })
+    const a = await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId() })
+    const b = await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId() })
+    expect(a.pending && b.pending).toBe(true)
+    expect((await read('coins')).transactions).toHaveLength(1)
+    currentUser = admin
+    const pending = await actions.loadPendingApprovals()
+    expect(pending.every(item => item.actorId === 'member' && item.beneficiaryId === 'other')).toBe(true)
+    await actions.reviewHabitCompletion('action', a.habit.completionRecords![0]!.id, 'approve')
+    await actions.reviewHabitCompletion('action', b.habit.completionRecords![1]!.id, 'approve')
+    const credits = (await read('coins')).transactions.filter((tx: { type: string }) => tx.type === 'HABIT_COMPLETION')
+    expect(credits).toHaveLength(2)
+    expect(credits.every((tx: { userId: string }) => tx.userId === 'other')).toBe(true)
+  })
+
+  test('blocks rewriting schedule history and creator-controlled recording permissions', async () => {
+    await makeManager()
+    await write('habits', { habits: [anytime()] })
+    const loaded = await actions.loadHabitsData()
+    await expect(actions.saveHabitsData({ habits: [{ ...loaded.habits[0], schedule: { type: 'anytime', recordingPolicy: 'member' } }] }))
+      .rejects.toThrow('Only the creator')
+    await actions.recordHabitCompletion('action', now().toISO()!, undefined, { requestId: requestId() })
+    currentUser = admin
+    const changed = (await actions.loadHabitsData()).habits[0]
+    await expect(actions.saveHabitsData({ habits: [{ ...changed, schedule: undefined }] })).rejects.toThrow('Create a new item')
+  })
+
+  test('enforces completion-relative due dates without archiving the recurring task', async () => {
+    const start = now().minus({ days: 5 }).toISODate()!
+    const task: Habit = { id: 'relative', name: 'Replace filter', description: '', frequency: now().minus({ days: 5 }).toISO()!,
+      isTask: true, coinReward: 1, completions: [], userIds: ['member'],
+      schedule: { type: 'afterCompletion', startsOn: start, interval: 10, unit: 'days' } }
+    await write('habits', { habits: [task] })
+    const first = await actions.recordHabitCompletion('relative', now().minus({ days: 2 }).toISO()!)
+    expect(first.habit.archived).not.toBe(true)
+    await expect(actions.recordHabitCompletion('relative', now().toISO()!)).rejects.toThrow('not due yet')
+    await expect(actions.recordHabitCompletion('relative', now().minus({ days: 4 }).toISO()!)).rejects.toThrow('date order')
+  })
+
+  test('prevents pending submissions on two dates in one completion-relative cycle', async () => {
+    const habit: Habit = { ...anytime(), id: 'relative', userIds: ['member'], schedule: {
+      type: 'afterCompletion', startsOn: now().minus({ days: 5 }).toISODate()!, interval: 10, unit: 'days' },
+      requiresApproval: true, approverIds: ['admin'] }
+    await write('habits', { habits: [habit] })
+    await actions.recordHabitCompletion('relative', now().minus({ days: 2 }).toISO()!)
+    await expect(actions.recordHabitCompletion('relative', now().toISO()!)).rejects.toThrow('pending cycle')
+  })
+
+  test('allows historical catch-up before an end date and resets an approved recurring checklist', async () => {
+    const end = now().minus({ days: 2 }).toISODate()!
+    const habit: Habit = { id: 'relative', name: 'Clean filter', description: '', frequency: now().minus({ days: 7 }).toISO()!,
+      isTask: true, userIds: ['member'], coinReward: 1, completions: [], requiresApproval: true, approverIds: ['admin'],
+      checklist: [{ id: 'step', text: 'Rinse', completed: true }],
+      schedule: { type: 'afterCompletion', startsOn: now().minus({ days: 7 }).toISODate()!, endsOn: end, interval: 1, unit: 'days' } }
+    await write('habits', { habits: [habit] })
+    const result = await actions.recordHabitCompletion('relative', now().minus({ days: 4 }).toISO()!)
+    currentUser = admin
+    const approved = await actions.reviewHabitCompletion('relative', result.habit.completionRecords![0]!.id, 'approve')
+    expect(approved.habit?.checklist?.[0].completed).toBe(false)
+    expect(approved.habit?.archived).not.toBe(true)
+  })
+
+  test('does not count pending submissions as completed in the family summary', async () => {
+    await makeManager()
+    const auth = await read('auth')
+    auth.users.find((user: User) => user.id === 'other').permissions = member.permissions
+    await write('auth', auth)
+    await write('habits', { habits: [{ ...anytime(), schedule: undefined, requiresApproval: true, approverIds: ['admin'] }] })
+    currentUser = { ...other, permissions: member.permissions }
+    await actions.recordHabitCompletion('action', now().toISO()!)
+    await makeManager()
+    const child = (await actions.loadFamilyOverview()).members.find(user => user.id === 'other')!
+    expect(child.dueToday).toBe(1)
+    expect(child.completedToday).toBe(0)
+    expect(child.pendingApprovals).toBe(1)
+  })
+
+  test('scopes family summaries and denies ordinary members and revoked managers', async () => {
+    await expect(actions.loadFamilyOverview()).rejects.toThrow('Family manager')
+    const manager = await makeManager()
+    const auth = await read('auth')
+    auth.users.push({ id: 'stranger', username: 'Private person', email: 'private@example.test', statusDays: [{ date: now().toISODate(), status: 'sick' }] })
+    await write('auth', auth)
+    const coins = await read('coins')
+    coins.transactions.push({ id: 'secret', userId: 'stranger', amount: 999, type: 'MANUAL_ADJUSTMENT' })
+    await write('coins', coins)
+    const overview = await actions.loadFamilyOverview()
+    expect(overview.members.map(account => account.id).sort()).toEqual(['member', 'other'])
+    expect(JSON.stringify(overview)).not.toContain('Private person')
+    expect(JSON.stringify(overview)).not.toContain('999')
+    await makeManager([])
+    currentUser = manager
+    await expect(actions.loadFamilyOverview()).rejects.toThrow('Family manager')
+  })
+
+  test('redeems from the selected member balance once and enforces global reward limits', async () => {
+    await makeManager()
+    const coins = await read('coins')
+    coins.balance = 12
+    coins.transactions.push({ id: 'child-balance', userId: 'other', amount: 10, type: 'MANUAL_ADJUSTMENT' })
+    await write('coins', coins)
+    await write('wishlist', { items: [{ id: 'reward', name: 'Screen time', description: '', coinCost: 3, userIds: ['other'], targetCompletions: 1 }] })
+    const id = requestId()
+    await Promise.all([1, 2].map(() => actions.redeemFamilyReward('other', 'reward', id)))
+    await actions.redeemFamilyReward('other', 'reward', id)
+    const redeemed = (await read('coins')).transactions.filter((tx: { type: string }) => tx.type === 'WISH_REDEMPTION')
+    expect(redeemed).toHaveLength(1)
+    expect(redeemed[0]).toMatchObject({ userId: 'other', actorId: 'member', amount: -3 })
+    expect((await read('wishlist')).items[0].archived).toBe(true)
+    await expect(actions.redeemFamilyReward('other', 'reward', requestId())).rejects.toThrow('not available')
+    await expect(actions.redeemFamilyReward('admin', 'reward', requestId())).rejects.toThrow('not allowed')
+    await expect(actions.removeCoins({ amount: 1, description: 'Bypass', userId: 'other' })).rejects.toThrow()
+  })
+  test('does not let delegated managers bypass their own reward permissions', async () => {
+    await makeManager()
+    await write('wishlist', { items: [{ id: 'own-reward', name: 'Treat', description: '', coinCost: 1, userIds: ['member'] }] })
+    const auth = await read('auth')
+    const manager = auth.users.find((user: User) => user.id === 'member')
+    const originalCoins = await read('coins')
+    for (const permissions of [[], [{ coins: { interact: true }, wishlist: { interact: false } }],
+      [{ coins: { interact: false }, wishlist: { interact: true } }]]) {
+      manager.permissions = permissions
+      await write('auth', auth)
+      await expect(actions.redeemFamilyReward('member', 'own-reward', requestId())).rejects.toThrow('permission required')
+      expect(await read('coins')).toEqual(originalCoins)
+    }
+    manager.permissions = member.permissions
+    await write('auth', auth)
+    await actions.redeemFamilyReward('member', 'own-reward', requestId())
+    expect((await read('coins')).transactions[0]).toMatchObject({ userId: 'member', actorId: 'member', amount: -1 })
+  })
+
+  test('restores a reward limit when persisting a family debit fails', async () => {
+    await makeManager()
+    await write('coins', { balance: 10, transactions: [{ id: 'credit', userId: 'other', amount: 10, type: 'MANUAL_ADJUSTMENT' }] })
+    const wishlist = { items: [{ id: 'reward', name: 'Treat', description: '', coinCost: 3, userIds: ['other'], targetCompletions: 1 }] }
+    await write('wishlist', wishlist)
+    const originalRename = fs.rename.bind(fs)
+    const rename = spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (to === file('coins')) throw new Error('Disk unavailable')
+      return originalRename(from, to)
+    })
+    try {
+      await expect(actions.redeemFamilyReward('other', 'reward', requestId())).rejects.toThrow('Disk unavailable')
+      expect(await read('wishlist')).toEqual(wishlist)
+      expect((await read('coins')).transactions).toHaveLength(1)
+    } finally { rename.mockRestore() }
+  })
+
+})
