@@ -61,3 +61,12 @@ describe('completion evidence access', () => {
     expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(404)
   })
 })
+
+test('hides retained evidence for a voided completion even when the image file remains', async () => {
+  const filename = path.join(directory, 'data', 'habits.json')
+  const data = JSON.parse(await fs.readFile(filename, 'utf8'))
+  data.habits[0].completionRecords[0].voided = true
+  await fs.writeFile(filename, JSON.stringify(data))
+  const response = await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })
+  expect(response.status).toBe(404)
+})

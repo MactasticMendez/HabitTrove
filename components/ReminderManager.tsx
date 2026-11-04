@@ -20,7 +20,7 @@ export default function ReminderManager() {
     const check = () => {
       const now = DateTime.now().setZone(timezone)
       for (const habit of habits) {
-        if (!habit.userIds?.includes(user.id)) continue
+        if (!habit.userIds?.includes(user.id) || habit.schedule?.type === 'anytime') continue
         const date = reminderDueDate(habit, now, timezone, browserSettings.reminderLeadMinutes ?? 0)
         if (!date) continue
         const key = `habittrove-reminder:${user.id}:${habit.id}`

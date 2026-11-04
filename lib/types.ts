@@ -57,6 +57,9 @@ export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssue
 export type HabitCompletionRecord = {
   id: string
   actorId: UserId
+  beneficiaryId?: UserId
+  requestId?: string
+  voided?: boolean
   rewardedUserIds?: UserId[]
   autoArchived?: boolean
   approval?: 'pending' | 'approved' | 'rejected'
@@ -74,6 +77,7 @@ export type PendingApproval = {
   isTask: boolean
   completionId: string
   actorId: UserId
+  beneficiaryId?: UserId
   submittedAt: string
   evidenceId?: string
 }
@@ -90,11 +94,16 @@ export type CoinBoost = {
   until: string
 }
 
+export type FlexibleSchedule =
+  | { type: 'afterCompletion'; interval: number; unit: 'days' | 'weeks' | 'months' | 'years'; startsOn: string; endsOn?: string }
+  | { type: 'anytime'; recordingPolicy: 'member' | 'manager' | 'both' }
+
 export type Habit = {
   id: string
   name: string
   description: string
   frequency: string
+  schedule?: FlexibleSchedule
   coinReward: number
   targetCompletions?: number // Optional field, default to 1
   completions: string[] // Array of UTC ISO date strings
@@ -106,6 +115,8 @@ export type Habit = {
   userIds?: UserId[]
   drawing?: string // Optional JSON string of drawing data
   taskRepeat?: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  taskRepeatInterval?: number
+  taskRepeatUntil?: string
   taskGoalOccurrences?: number
   checklist?: ChecklistItem[]
   reminderTime?: string
@@ -146,6 +157,7 @@ export interface CoinTransaction {
   userId?: UserId;
   actorId?: UserId;
   completionId?: string;
+  requestId?: string;
 }
 
 export interface UserData {
@@ -171,6 +183,25 @@ export interface CoinsData {
 // Data container types
 export interface WishlistData {
   items: WishlistItemType[];
+}
+
+export type FamilyMemberOverview = {
+  id: UserId
+  username: string
+  avatarPath?: string
+  balance: number
+  status?: StatusDay['status']
+  dueToday: number
+  completedToday: number
+  pendingApprovals: number
+  habits: Habit[]
+  rewards: WishlistItemType[]
+}
+
+export type FamilyOverviewData = {
+  timezone: string
+  weekStartDay: number
+  members: FamilyMemberOverview[]
 }
 
 // Default value functions

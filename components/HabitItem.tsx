@@ -4,6 +4,7 @@ import { settingsAtom, pomodoroAtom, browserSettingsAtom, usersAtom, currentUser
 import { getCompletionsForToday, getNow, getUndoableCompletionIndex, isTaskOverdue, convertMachineReadableFrequencyToHumanReadable } from '@/lib/utils'
 import { getTaskMissedDates, getTaskProgress, isCountedCompletion } from '@/lib/task-schedule'
 import { getPerHabitProgress } from '@/lib/habit-progress'
+import { getNextAfterCompletionDate } from '@/lib/flexible-schedule'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Coins, Edit, Check, Undo2, MoreVertical, Pin } from 'lucide-react'
@@ -49,12 +50,13 @@ const renderUserAvatars = (habit: Habit, currentUser: User | null, usersData: { 
 
 
 export default function HabitItem({ habit, compact = false, onEdit, onDelete }: HabitItemProps) {
-  const { completeHabit, completePastHabit, undoComplete, toggleChecklistItem, logSlip, undoSlip } = useHabits()
+  const { completeHabit, completePastHabit, undoComplete, toggleChecklistItem, logSlip, undoSlip, canRecordHabit, isRecording } = useHabits()
   const [settings] = useAtom(settingsAtom)
   const [_, setPomo] = useAtom(pomodoroAtom)
   const completionsToday = getCompletionsForToday({ habit, timezone: settings.system.timezone })
   const target = habit.targetCompletions || 1
-  const isCompletedToday = completionsToday >= target
+  const anytime = habit.schedule?.type === 'anytime'
+  const isCompletedToday = !anytime && completionsToday >= target
   const [isHighlighted, setIsHighlighted] = useState(false)
   const [photo, setPhoto] = useState<File | undefined>()
   const [photoError, setPhotoError] = useState('')
@@ -64,11 +66,14 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   const [currentUser] = useAtom(currentUserAtom)
   const canWrite = hasPermission(currentUser, 'habit', 'write')
   const canInteract = hasPermission(currentUser, 'habit', 'interact')
+  const canRecord = canRecordHabit(habit)
+  const canUndoAction = canInteract || anytime && !!currentUser &&
+    !!(currentUser.isAdmin || currentUser.managedUserIds?.includes(habit.userIds?.[0] ?? ''))
   const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
   const canUndo = completionsToday > 0 && undoIndex >= 0
   const [browserSettings] = useAtom(browserSettingsAtom)
   const isTasksView = browserSettings.viewType === 'tasks'
-  const isRecurRule = !isTasksView
+  const isRecurRule = !habit.isTask
   const today = DateTime.now().setZone(settings.system.timezone)
   const missedDates = habit.isTask ? getTaskMissedDates(habit, today, settings.system.timezone) : []
   const progress = getPerHabitProgress(habit, today, settings.system.timezone, settings.system.weekStartDay,
@@ -78,6 +83,15 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
     DateTime.fromISO(timestamp).setZone(settings.system.timezone).hasSame(today, 'day'))
   const slipToday = habit.slips?.find(slip => DateTime.fromISO(slip.timestamp).setZone(settings.system.timezone).hasSame(today, 'day'))
   const negativeOwner = !habit.isNegative || habit.userIds?.[0] === currentUser?.id
+  const nextDue = habit.schedule?.type === 'afterCompletion'
+    ? getNextAfterCompletionDate(habit, settings.system.timezone) : null
+  const frequencyLabel = habit.schedule?.type === 'anytime' ? t('anytimeSchedule')
+    : habit.schedule?.type === 'afterCompletion' ? t(nextDue ? 'afterCompletionSchedule' : 'afterCompletionScheduleEnded', {
+      interval: habit.schedule.interval, unit: t(`scheduleUnit_${habit.schedule.unit}`, { count: habit.schedule.interval }),
+      next: nextDue ? nextDue.setLocale(settings.system.language).toLocaleString(DateTime.DATE_MED) : t('scheduleEnded'),
+    }) : convertMachineReadableFrequencyToHumanReadable({
+      frequency: habit.frequency, isRecurRule, timezone: settings.system.timezone,
+    })
 
   const submitCompletion = async (date?: DateTime) => {
     setBusy(true)
@@ -154,11 +168,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
         <div className={compact ? '' : 'mt-auto'}>
           <p className={`text-sm ${compact ? 'line-clamp-1' : ''} ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500'}`}>
             {t('whenLabel', {
-              frequency: convertMachineReadableFrequencyToHumanReadable({
-                frequency: habit.frequency,
-                isRecurRule,
-                timezone: settings.system.timezone
-              })
+              frequency: frequencyLabel
             })}
           </p>
           <div className={`flex items-center ${compact ? 'mt-0.5' : 'mt-2'}`}>
@@ -167,8 +177,10 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           </div>
           {habit.isNegative && <p className="text-xs text-muted-foreground">{t('coinsPerSlip', { count: habit.coinPenalty ?? 0 })}</p>}
           {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
-          {!habit.isTask && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
-          {!habit.isTask && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
+          {anytime && <p className="text-xs text-muted-foreground">{t('actionsToday', { count: completionsToday })}</p>}
+          {anytime && !canRecord && <p className="text-xs text-muted-foreground">{t(habit.schedule?.type === 'anytime' && habit.schedule.recordingPolicy === 'manager' ? 'managerRecords' : 'memberRecords')}</p>}
+          {!habit.isTask && !anytime && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
+          {!habit.isTask && !anytime && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
           {pendingToday && <p className="text-xs text-amber-700 dark:text-amber-300">{t('pendingApproval')}</p>}
           {habit.checklist && habit.checklist.length > 0 && <div className="mt-2 space-y-1">
             <p className="text-xs text-muted-foreground">{t('checklistProgress', { done: habit.checklist.filter(item => item.completed).length, total: habit.checklist.length })}</p>
@@ -181,6 +193,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           {habit.requiresApproval && !habit.archived && <label className="mt-2 block text-xs">
             {t('evidenceLabel')}
             <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-xs"
+              disabled={!canRecord || busy || isRecording(habit.id)}
               onChange={event => {
                 const file = event.target.files?.[0]
                 const invalid = file && (file.size > 2_000_000 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
@@ -191,19 +204,20 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
           {photoError && <p role="alert" className="text-xs text-destructive">{photoError}</p>}
         </div>
       </CardContent>
-      <CardFooter className={compact ? 'min-w-0 justify-between gap-2 p-2 md:col-span-2 2xl:col-span-1' : 'flex-shrink-0 flex justify-between gap-2'}>
+      <CardFooter className={compact ? 'min-w-0 flex-wrap justify-between gap-2 p-2 md:col-span-2 2xl:col-span-1' : 'flex-shrink-0 flex flex-wrap justify-between gap-2'}>
         <div className="flex gap-2">
           <div className="relative">
             <Button
               variant={isCompletedToday ? "secondary" : "default"}
               size="sm"
               onClick={() => submitCompletion()}
-              disabled={!canInteract || !negativeOwner || habit.archived || busy || !!photoError || !!slipToday || (isCompletedToday && completionsToday >= target)}
+              aria-label={anytime ? t('recordActionFor', { name: habit.name }) : undefined}
+              disabled={!canRecord || !negativeOwner || habit.archived || busy || isRecording(habit.id) || !!photoError || !!slipToday || isCompletedToday}
               className={`overflow-hidden w-24 ${compact ? 'sm:w-36' : 'sm:w-auto'} ${habit.archived ? 'cursor-not-allowed' : ''}`}
             >
               <Check className="h-4 w-4 sm:mr-2" />
               <span>
-                {isCompletedToday ? (
+                {anytime ? <><span className="sm:hidden">{t('recordActionButtonMobile')}</span><span className="hidden sm:inline">{t('recordActionButton')}</span></> : isCompletedToday ? (
                   target > 1 ? (
                     <>
                       <span className="sm:hidden">{t('completedStatusCountMobile', { completed: completionsToday, target })}</span>
@@ -221,7 +235,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
                     ) : t(habit.isNegative ? 'avoidButton' : 'completeButton')
                 )}
               </span>
-              {habit.targetCompletions && habit.targetCompletions > 1 && (
+              {!anytime && habit.targetCompletions && habit.targetCompletions > 1 && (
                 <div
                   className="absolute bottom-0 left-0 h-1 bg-white/50"
                   style={{
@@ -251,7 +265,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
                   size="sm"
                   aria-label={`${t('undoButton')}: ${habit.name}`}
                   onClick={async () => await undoComplete(habit)}
-                  disabled={!canInteract}
+                  disabled={!canUndoAction || busy || isRecording(habit.id)}
                   className={compact ? 'w-full' : 'w-10 sm:w-auto'}
                 >
                   <Undo2 className="h-4 w-4" />

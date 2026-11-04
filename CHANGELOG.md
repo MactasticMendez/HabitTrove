@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+## Version 0.8.0
+
 ### Added
+
+* Add guided custom calendar intervals, monthly dates/nth weekdays, yearly dates and schedule start/end dates; add repeat intervals measured from an approved completion ([upstream #143](https://github.com/dohsimpson/HabitTrove/issues/143), [#116](https://github.com/dohsimpson/HabitTrove/issues/116)).
+* Add any-time habits with one assignee, creator-selected member/manager/both recording permissions, independent per-action rewards, optional approval and evidence ([upstream discussion #158](https://github.com/dohsimpson/HabitTrove/discussions/158)).
+* Add a Family overview with scoped member progress, balances, status, pending approvals, item management and confirmed reward redemption from the selected member's balance ([upstream #95](https://github.com/dohsimpson/HabitTrove/issues/95)).
 
 * Add personal folders for habits and tasks, with a folder or flat-list view ([upstream #118](https://github.com/dohsimpson/HabitTrove/issues/118), [#120](https://github.com/dohsimpson/HabitTrove/issues/120)).
 * Add one-use family invitations, configurable SMTP delivery in the Admin panel, and designated managers for assigned members' habits and rewards ([upstream #95](https://github.com/dohsimpson/HabitTrove/issues/95)).
@@ -11,6 +17,9 @@
 
 ### Fixed
 
+* Keep the family reward editor responsive and synchronize its related app data after a family action.
+* Restore mocked clocks after scheduling tests and remove a millisecond-boundary race so the full suite remains isolated and deterministic.
+
 * Restore the task and habit editor layout, stack fields on narrow screens, and keep controls inside the dialog. Add descriptive names to completion and reward stepper buttons.
 
 * Allow an administrator to designate their own account as the family manager when inviting a member, and clarify that administrator access remains available when no manager is chosen.
@@ -18,6 +27,10 @@
 * Place the OIDC sign-in button name save action below its field and help text.
 
 ### Security
+
+* Make any-time and family-redemption requests idempotent, retain undo replay protection, and enforce the selected beneficiary and current manager scope on the server.
+* Keep withdrawn evidence inaccessible even if its file cleanup fails; preserve creator control and pending-approval locks when editing schedules and recording permissions.
+* Bound recurrence intervals and occurrence counts; preserve unchanged legacy schedules while unsafe rules fail closed during evaluation.
 
 * Store only hashes of invitation tokens, expire them after seven days, and consume each token once.
 * Encrypt SMTP passwords at rest, require an administrator's local password to edit SMTP settings, and limit manager edits to their assigned family members.

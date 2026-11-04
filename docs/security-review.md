@@ -1,5 +1,13 @@
 # Security review
 
+## 2026-11-04 scheduling, any-time actions and family oversight (v0.8.0)
+
+Family reads and redemptions reload the acting account and manager scope from one current authentication snapshot. Managers can act only for assigned members; selecting themselves still requires their ordinary edit or redemption permissions. Any-time completions validate the single beneficiary and creator-selected recorder policy on the server. Serialized requests use UUID replay protection, and undo retains a voided record so retrying the original request cannot restore its reward. Evidence on withdrawn records is inaccessible even if file deletion fails. Approval credits the recorded beneficiary rather than the acting manager.
+
+Schedule inputs have bounded intervals, occurrence counts and canonical dates. Calendar evaluation preserves anchored intervals and uses bounded date windows. Unsafe legacy rules fail closed during evaluation while unchanged schedules can be retained during unrelated edits. Schedule modes cannot change after history exists, and pending approval locks the relevant schedule and assignees. Family reward limits and debits share the existing serialized write and rollback path; the single-process and multi-file crash-consistency limits below remain.
+
+Regression tests cover current/revoked manager scope, unrelated-account isolation, forged beneficiaries, recording policies, retry/concurrency protection, undo, approval, reward limits and write rollback. An isolated production build exercised admin, manager, member and unrelated accounts with synthetic data: 20 workflow checks and 21 responsive axe scans at 1440, 390 and 320 pixels passed, with no overflow, reported WCAG violations, page errors or missing translations. These checks do not establish full-app accessibility conformance or real-world completion accuracy. No dependency was added.
+
 ## 2026-11-02 dashboard layout and OIDC button name (v0.7.0)
 
 The OIDC sign-in button name is stored separately from provider credentials. Only an administrator can change it; input is limited to 64 plain-text characters, and React renders it as text. Renaming does not change the active issuer, callback, client secret, or linked accounts and does not require a container restart. The dashboard and compact-row changes affect layout only; they do not change completion or coin authorization. Dashboard sections retain their document order and keyboard reorder controls in the fluid column layout.
