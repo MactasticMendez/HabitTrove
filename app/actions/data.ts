@@ -26,9 +26,10 @@ import {
   getDefaultCoinsData,
   Permission,
   ServerSettings,
-  PendingApproval
+  PendingApproval,
+  FamilyOverviewData
 } from '@/lib/types'
-import { checkPermission, d2t, getNow, uuid } from '@/lib/utils';
+import { checkPermission, d2t, getNow, uuid, isHabitDue } from '@/lib/utils';
 import { saltAndHashPassword } from '@/lib/password'
 import { readAuthData, updateAuthData, verifyStepUpPassword } from '@/lib/auth-store'
 import { emailSchema, newPasswordSchema, signInSchema, usernameSchema } from '@/lib/zod';
@@ -47,6 +48,7 @@ import { log } from '@/lib/logger'
 import { getTaskProgress, isApprovedCompletion, isCountedCompletion, isTaskScheduledOnDate } from '@/lib/task-schedule'
 import sharp from 'sharp'
 import { createHash, randomBytes } from 'crypto'
+import { getNextAfterCompletionDate } from '@/lib/flexible-schedule'
 import { sendFamilyInvitation } from '@/lib/invitation-mail'
 
 
@@ -308,6 +310,91 @@ export async function loadWishlistData(): Promise<WishlistData> {
   }
 }
 
+async function familyAccess(actor: User, memberId?: string): Promise<{ manager: User; members: User[] }> {
+  const authData = await readAuthData()
+  const manager = authData.users.find(account => account.id === actor.id)
+  if (!manager || !manager.isAdmin && !manager.managedUserIds?.length) {
+    throw new PermissionError('Family manager access required')
+  }
+  const allowed = authData.users.filter(account => manager.isAdmin || account.id === manager.id || manager.managedUserIds?.includes(account.id))
+  if (memberId !== undefined && (typeof memberId !== 'string' || memberId.length > 128 || !allowed.some(account => account.id === memberId))) {
+    throw new PermissionError('Family member access is not allowed')
+  }
+  return { manager, members: allowed }
+}
+
+export async function loadFamilyOverview(): Promise<FamilyOverviewData> {
+  const user = await requireUser()
+  const { manager, members } = await familyAccess(user)
+  const [habits, wishlist, coins, settings] = await Promise.all([
+    loadData<HabitsData>('habits'), loadData<WishlistData>('wishlist'), loadData<CoinsData>('coins'), loadSettings(),
+  ])
+  const timezone = settings.system.timezone
+  const today = getNow({ timezone }).startOf('day')
+  return { timezone, weekStartDay: settings.system.weekStartDay, members: members.map(member => {
+    const items = habits.habits.filter(item => item.userIds?.includes(member.id) && familyItemVisible(item, manager))
+    const due = items.filter(item => !item.archived && item.schedule?.type !== 'anytime' && isHabitDue({ habit: item, date: today, timezone }))
+    return {
+      id: member.id, username: member.username, avatarPath: member.avatarPath,
+      balance: coins.transactions.filter(transaction => transaction.userId === member.id).reduce((sum, transaction) => sum + transaction.amount, 0),
+      status: member.statusDays?.find(day => day.date === today.toISODate())?.status,
+      dueToday: due.length,
+      completedToday: due.filter(item => item.completions.filter((timestamp, index) =>
+        isApprovedCompletion(item, index) && completionDay(timestamp, timezone) === today.toISODate()).length >= (item.targetCompletions ?? 1)).length,
+      pendingApprovals: items.reduce((sum, item) => sum + (item.completionRecords?.filter(record =>
+        record?.approval === 'pending' && !record.voided && (record.beneficiaryId ?? record.actorId) === member.id).length ?? 0), 0),
+      habits: items,
+      rewards: wishlist.items.filter(item => item.userIds?.includes(member.id) && familyItemVisible(item, manager)),
+    }
+  }) }
+}
+
+export async function redeemFamilyReward(memberId: string, itemId: string, requestId: string): Promise<void> {
+  return withDataWriteLock(async () => {
+    const user = await requireUser()
+    const { manager, members } = await familyAccess(user, memberId)
+    if (!manager.isAdmin && memberId === manager.id &&
+        (!checkPermission(manager.permissions, 'coins', 'interact') || !checkPermission(manager.permissions, 'wishlist', 'interact'))) {
+      throw new PermissionError('Reward redemption permission required')
+    }
+    if (typeof itemId !== 'string' || !itemId || itemId.length > 200 || !z.string().uuid().safeParse(requestId).success) {
+      throw new Error('Invalid family redemption')
+    }
+    const coins = await loadData<CoinsData>('coins')
+    const prior = coins.transactions.find(transaction => transaction.requestId === requestId)
+    if (prior) {
+      if (prior.actorId !== user.id || prior.userId !== memberId || prior.relatedItemId !== itemId || prior.type !== 'WISH_REDEMPTION') {
+        throw new PermissionError('Request ID is already used')
+      }
+      return
+    }
+    const wishlist = await loadData<WishlistData>('wishlist')
+    const item = wishlist.items.find(candidate => candidate.id === itemId)
+    if (!item || !item.userIds?.includes(memberId) || !familyItemEditable(item, manager) || item.archived ||
+        item.targetCompletions !== undefined && item.targetCompletions < 1) throw new PermissionError('Reward is not available for this member')
+    validateWishlistItem(item)
+    const balance = coins.transactions.filter(transaction => transaction.userId === memberId).reduce((sum, transaction) => sum + transaction.amount, 0)
+    if (balance < item.coinCost) throw new PermissionError('Insufficient coins')
+    const member = members.find(account => account.id === memberId)!
+    const transaction: CoinTransaction = { id: uuid(), amount: -item.coinCost, type: 'WISH_REDEMPTION',
+      description: `Redeemed reward for ${member.username}: ${item.name}`, timestamp: DateTime.now().toUTC().toISO()!,
+      userId: memberId, actorId: user.id, relatedItemId: itemId, requestId }
+    const updatedCoins = { balance: Math.max(0, coins.balance - item.coinCost), transactions: [transaction, ...coins.transactions] }
+    if (!Number.isSafeInteger(updatedCoins.balance)) throw new Error('Invalid coin balance')
+    const updatedWishlist = { items: wishlist.items.map(candidate => {
+      if (candidate.id !== itemId || candidate.targetCompletions === undefined) return candidate
+      const remaining = candidate.targetCompletions - 1
+      return { ...candidate, targetCompletions: remaining || undefined, archived: remaining === 0 || candidate.archived }
+    }) }
+    await saveData('wishlist', updatedWishlist)
+    try { await saveData('coins', updatedCoins) }
+    catch (error) {
+      await saveData('wishlist', wishlist)
+      throw error
+    }
+  })
+}
+
 export async function loadWishlistItems(): Promise<WishlistItemType[]> {
   const data = await loadWishlistData()
   return data.items
@@ -354,6 +441,22 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
       ) {
         throw new PermissionError('Use the completion action to change habit history')
       }
+      const scheduleTypeChanged = stored && (habit.schedule?.type ?? 'calendar') !== (stored.schedule?.type ?? 'calendar')
+      if (scheduleTypeChanged && (stored.completions.length || stored.slips?.length)) {
+        throw new PermissionError('Create a new item to change the schedule mode after recording history')
+      }
+      const recordingPolicyChanged = stored && habit.schedule?.type === 'anytime' &&
+        (stored.schedule?.type !== 'anytime' || habit.schedule.recordingPolicy !== stored.schedule.recordingPolicy)
+      if (recordingPolicyChanged && !user.isAdmin && stored.createdBy !== user.id) {
+        throw new PermissionError('Only the creator may change recording permissions')
+      }
+      if (stored?.completionRecords?.some(record => record?.approval === 'pending') &&
+          (!_.isEqual(habit.schedule, stored.schedule) || habit.frequency !== stored.frequency ||
+           habit.taskRepeat !== stored.taskRepeat || (habit.taskRepeatInterval ?? 1) !== (stored.taskRepeatInterval ?? 1) ||
+           habit.taskRepeatUntil !== stored.taskRepeatUntil || !_.isEqual(habit.userIds, stored.userIds))) {
+        throw new PermissionError('Resolve pending approvals before changing schedules or assignees')
+      }
+      if (habit.userIds?.some(id => !validUserIds.has(id))) throw new Error('Unknown assigned member')
       const approvalChanged = stored && (
         habit.requiresApproval !== undefined && habit.requiresApproval !== stored.requiresApproval ||
         habit.approverIds !== undefined && !_.isEqual(habit.approverIds, stored.approverIds))
@@ -520,7 +623,8 @@ async function saveCompletionAndRewards(
   }
 }
 
-export async function recordHabitCompletion(habitId: string, timestamp: string, evidence?: FormData): Promise<{
+export async function recordHabitCompletion(habitId: string, timestamp: string, evidence?: FormData,
+  options?: { beneficiaryId?: string; requestId?: string }): Promise<{
   habit: Habit
   coins: CoinsData
   rewarded: boolean
@@ -531,13 +635,44 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
   completionTimestamp: string
 }> {
   return withDataWriteLock(async () => {
-    const user = await verifyPermission('habit', 'interact')
+    const user = await requireUser()
+    const request = z.object({ beneficiaryId: z.string().min(1).max(128).optional(),
+      requestId: z.string().uuid().optional() }).strict().parse(options ?? {})
     if (typeof habitId !== 'string' || habitId.length > 200) throw new Error('Invalid habit ID')
     checkedCompletionTimestamp(timestamp)
     const habits = await loadData<HabitsData>('habits')
     const habit = habits.habits.find(item => item.id === habitId)
-    if (!habit || !habit.userIds?.includes(user.id) && !user.isAdmin) throw new PermissionError('Habit interaction is not allowed')
+    if (!habit) throw new PermissionError('Habit interaction is not allowed')
     validateHabit(habit, habit.frequency)
+    const anytime = habit.schedule?.type === 'anytime'
+    let beneficiaryId = user.id
+    if (anytime && habit.schedule?.type === 'anytime') {
+      beneficiaryId = habit.userIds![0]
+      if (!request.requestId || request.beneficiaryId && request.beneficiaryId !== beneficiaryId) {
+        throw new PermissionError('Invalid any-time completion recipient')
+      }
+      const authData = await readAuthData()
+      const actor = authData.users.find(account => account.id === user.id)
+      const isManager = !!actor && (actor.isAdmin || actor.managedUserIds?.includes(beneficiaryId))
+      const isMember = user.id === beneficiaryId && (user.isAdmin || checkPermission(user.permissions, 'habit', 'interact'))
+      const policy = habit.schedule.recordingPolicy
+      if (!(policy !== 'manager' && isMember || policy !== 'member' && isManager)) {
+        throw new PermissionError('Recording this action is not allowed')
+      }
+      const priorIndex = habit.completionRecords?.findIndex(record => record?.requestId === request.requestId) ?? -1
+      if (priorIndex >= 0) {
+        const prior = habit.completionRecords![priorIndex]!
+        if (prior.actorId !== user.id || prior.beneficiaryId !== beneficiaryId) throw new PermissionError('Request ID is already used')
+        return { habit, coins: visibleCoinsData(await loadData<CoinsData>('coins'), user), rewarded: false,
+          rewardAmount: 0, pending: prior.approval === 'pending' && !prior.voided, targetReached: !prior.voided && prior.approval !== 'rejected',
+          completionIndex: priorIndex, completionTimestamp: habit.completions[priorIndex] }
+      }
+    } else {
+      await verifyPermission('habit', 'interact')
+      if (!habit.userIds?.includes(user.id) && !user.isAdmin || request.beneficiaryId && request.beneficiaryId !== user.id) {
+        throw new PermissionError('Habit interaction is not allowed')
+      }
+    }
     if (habit.isNegative && habit.userIds?.[0] !== user.id) throw new PermissionError('Only the assigned user can record avoidance')
     const photo = await checkedEvidence(evidence)
     if (photo && !habit.requiresApproval) throw new Error('Evidence is only accepted for approval submissions')
@@ -549,6 +684,19 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     if (habit.isNegative && habit.slips?.some(slip => completionDay(slip.timestamp, timezone) === day)) {
       throw new PermissionError('A slip is already recorded for this day')
     }
+    if (habit.schedule?.type === 'afterCompletion') {
+      const completionDate = DateTime.fromISO(timestamp, { setZone: true }).setZone(timezone)
+      const due = getNextAfterCompletionDate(habit, timezone, completionDate.endOf('day'))
+      if (habit.completions.some((value, index) => isApprovedCompletion(habit, index) &&
+          completionDay(value, timezone) > day)) throw new PermissionError('Record cycles in date order')
+      if (!due || DateTime.fromISO(timestamp, { setZone: true }).setZone(timezone).startOf('day') < due) {
+        throw new PermissionError('Item is not due yet')
+      }
+      if (habit.completionRecords?.some((record, index) => record?.approval === 'pending' && !record.voided &&
+          completionDay(habit.completions[index], timezone) !== day)) {
+        throw new PermissionError('Resolve the pending cycle before recording another date')
+      }
+    }
     if (habit.taskRepeat && !isTaskScheduledOnDate(habit, DateTime.fromISO(timestamp, { setZone: true }), timezone)) {
       throw new PermissionError('Task is not scheduled for this day')
     }
@@ -558,15 +706,15 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     const count = habit.completions.filter((value, index) =>
       isCountedCompletion(habit, index) && completionDay(value, timezone) === day).length
     const target = habit.targetCompletions ?? 1
-    if (count >= target) throw new PermissionError('Habit is already completed for this day')
+    if (!anytime && count >= target) throw new PermissionError('Habit is already completed for this day')
 
-    if (!(await readAuthData()).users.some(account => account.id === user.id)) {
+    if (!(await readAuthData()).users.some(account => account.id === beneficiaryId)) {
       throw new Error('Invalid completing account')
     }
-    const recipients = [user.id]
-    const targetReached = count + 1 === target
+    const recipients = [beneficiaryId]
+    const targetReached = anytime || count + 1 === target
     const history = habit.completionRecords ?? habit.completions.map(() => null)
-    const alreadyRewarded = habit.completions.some((value, index) =>
+    const alreadyRewarded = !anytime && habit.completions.some((value, index) =>
       isCountedCompletion(habit, index) &&
       completionDay(value, timezone) === day &&
       (history[index] === null || history[index]?.rewardedUserIds !== undefined))
@@ -578,9 +726,10 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     const rewardAmount = boost && now >= DateTime.fromISO(boost.startsAt) && now <= DateTime.fromISO(boost.until) &&
       completionTime >= DateTime.fromISO(boost.startsAt) ? habit.coinReward * boost.multiplier : habit.coinReward
     const autoArchived = !pending && !!habit.isTask && targetReached &&
-      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(habit, timezone) + 1 >= habit.taskGoalOccurrences)
+      (!habit.taskRepeat && habit.schedule?.type !== 'afterCompletion' || !!habit.taskGoalOccurrences && getTaskProgress(habit, timezone) + 1 >= habit.taskGoalOccurrences)
     const record: HabitCompletionRecord = {
       id: uuid(), actorId: user.id,
+      ...(anytime && { beneficiaryId, requestId: request.requestId }),
       ...(rewarded && { rewardedUserIds: recipients }),
       ...(rewarded && { rewardTarget: target }),
       ...((targetReached || pending) && { rewardAmount }),
@@ -593,7 +742,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       ...habit,
       completions: [...habit.completions, timestamp],
       completionRecords: [...(habit.completionRecords ?? habit.completions.map(() => null)), record],
-      checklist: habit.taskRepeat && targetReached && !pending ? habit.checklist?.map(item => ({ ...item, completed: false })) : habit.checklist,
+      checklist: (habit.taskRepeat || habit.schedule?.type === 'afterCompletion') && targetReached && !pending ? habit.checklist?.map(item => ({ ...item, completed: false })) : habit.checklist,
       archived: autoArchived ? true : habit.archived,
     }
     const coins = await loadData<CoinsData>('coins')
@@ -698,18 +847,31 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
   rewardReversed: boolean
 }> {
   return withDataWriteLock(async () => {
-    const user = await verifyPermission('habit', 'interact')
+    const user = await requireUser()
     if (typeof habitId !== 'string' || habitId.length > 200 || !Number.isSafeInteger(completionIndex) ||
         completionIndex < 0 || typeof expectedTimestamp !== 'string' || expectedTimestamp.length > 64) {
       throw new Error('Invalid completion')
     }
     const habits = await loadData<HabitsData>('habits')
     const habit = habits.habits.find(item => item.id === habitId)
-    if (!habit || !habit.userIds?.includes(user.id) && !user.isAdmin) throw new PermissionError('Habit interaction is not allowed')
+    if (!habit) throw new PermissionError('Habit interaction is not allowed')
+    const anytime = habit.schedule?.type === 'anytime'
+    const potentialRecord = habit.completionRecords?.[completionIndex]
+    if (anytime) {
+      const actor = (await readAuthData()).users.find(account => account.id === user.id)
+      const inScope = !!actor && (actor.isAdmin || habit.userIds?.includes(actor.id) && checkPermission(actor.permissions, 'habit', 'interact') ||
+        habit.userIds?.length === 1 && actor.managedUserIds?.includes(habit.userIds[0]))
+      if (!inScope) throw new PermissionError('Habit interaction is not allowed')
+      if (potentialRecord?.actorId !== user.id && !user.isAdmin) throw new PermissionError('Only the person who recorded a completion may undo it')
+    } else {
+      await verifyPermission('habit', 'interact')
+      if (!habit.userIds?.includes(user.id) && !user.isAdmin) throw new PermissionError('Habit interaction is not allowed')
+    }
     validateHabit(habit, habit.frequency)
     if (habit.completions[completionIndex] !== expectedTimestamp) throw new PermissionError('Completion has changed')
     checkedCompletionTimestamp(expectedTimestamp)
     const record = habit.completionRecords?.[completionIndex] ?? null
+    if (record?.voided) throw new PermissionError('Completion was already undone')
     if (record?.approval === 'rejected') throw new PermissionError('Completion was rejected')
     if (!user.isAdmin && (record ? record.actorId !== user.id : habit.userIds?.length !== 1 || habit.userIds[0] !== user.id)) {
       throw new PermissionError('Only the person who recorded a completion may undo it')
@@ -718,15 +880,23 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
     const day = completionDay(expectedTimestamp, timezone)
     const latestForDay = habit.completions.findLastIndex((value, index) =>
       isCountedCompletion(habit, index) && completionDay(value, timezone) === day)
-    if (completionIndex !== latestForDay) throw new PermissionError('Undo the latest completion for this day first')
+    if (!anytime && completionIndex !== latestForDay) throw new PermissionError('Undo the latest completion for this day first')
+    if (habit.schedule?.type === 'afterCompletion' && habit.completions.some((value, index) =>
+        isCountedCompletion(habit, index) && completionDay(value, timezone) > day)) {
+      throw new PermissionError('Undo later cycles before changing this completion')
+    }
     const beforeCount = habit.completions.filter((value, index) =>
       isCountedCompletion(habit, index) && completionDay(value, timezone) === day).length
     const target = habit.targetCompletions ?? 1
     const completionRecords = habit.completionRecords ?? habit.completions.map(() => null)
     const updatedHabit: Habit = {
       ...habit,
-      completions: habit.completions.filter((_, index) => index !== completionIndex),
-      completionRecords: completionRecords.filter((_, index) => index !== completionIndex),
+      completions: anytime ? habit.completions : habit.completions.filter((_, index) => index !== completionIndex),
+      completionRecords: anytime ? completionRecords.map((value, index) => {
+        if (index !== completionIndex || !value) return value
+        const { evidenceId: _evidenceId, evidenceMime: _evidenceMime, ...rest } = value
+        return { ...rest, voided: true }
+      }) : completionRecords.filter((_, index) => index !== completionIndex),
       archived: habit.isTask && (record?.autoArchived || !record && beforeCount === target) ? false : habit.archived,
     }
     const approvedBefore = habit.completions.filter((value, index) =>
@@ -734,7 +904,7 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
     const approvedAfter = updatedHabit.completions.filter((value, index) =>
       completionDay(value, timezone) === day && isApprovedCompletion(updatedHabit, index)).length
     let rewardedRecord = record
-    if (!record?.rewardedUserIds && approvedBefore >= target && approvedAfter < target) {
+    if (!anytime && !record?.rewardedUserIds && approvedBefore >= target && approvedAfter < target) {
       rewardedRecord = completionRecords.find((candidate, index) =>
         index !== completionIndex && completionDay(habit.completions[index], timezone) === day &&
         candidate?.rewardTarget === target && candidate.rewardedUserIds?.length) ?? null
@@ -813,10 +983,10 @@ export async function loadPendingApprovals(): Promise<PendingApproval[]> {
   for (const habit of data.habits) {
     if (!habit.approverIds?.includes(user.id)) continue
     habit.completionRecords?.forEach((record, index) => {
-      if (record?.approval !== 'pending') return
+      if (record?.approval !== 'pending' || record.voided) return
       pending.push({
         habitId: habit.id, habitName: habit.name, isTask: !!habit.isTask,
-        completionId: record.id, actorId: record.actorId,
+        completionId: record.id, actorId: record.actorId, beneficiaryId: record.beneficiaryId,
         submittedAt: habit.completions[index], evidenceId: record.evidenceId,
       })
     })
@@ -840,8 +1010,8 @@ export async function reviewHabitCompletion(
     validateHabit(habit, habit.frequency)
     const index = habit.completionRecords?.findIndex(record => record?.id === completionId) ?? -1
     const record = index >= 0 ? habit.completionRecords?.[index] : null
-    if (!record || record.approval !== 'pending') throw new PermissionError('Completion is no longer pending')
-    const accountExists = (await readAuthData()).users.some(account => account.id === record.actorId)
+    if (!record || record.voided || record.approval !== 'pending') throw new PermissionError('Completion is no longer pending')
+    const accountExists = (await readAuthData()).users.some(account => account.id === (record.beneficiaryId ?? record.actorId))
     if (!accountExists && decision === 'approve') throw new PermissionError('Completing account no longer exists')
     const timezone = (await loadSettings()).system.timezone
     const day = completionDay(habit.completions[index], timezone)
@@ -857,23 +1027,24 @@ export async function reviewHabitCompletion(
     const previouslyRewarded = habit.completions.some((value, position) =>
       position !== index && completionDay(value, timezone) === day &&
       (beforeRecords[position] === null || !!beforeRecords[position]?.rewardedUserIds?.length))
-    const award = decision === 'approve' && approvedCount >= (habit.targetCompletions ?? 1) && !previouslyRewarded
+    const award = decision === 'approve' && (habit.schedule?.type === 'anytime' ||
+      approvedCount >= (habit.targetCompletions ?? 1) && !previouslyRewarded)
     const amount = award ? reviewedRecord.rewardAmount ?? habit.coinReward : 0
     if (award) {
-      reviewedRecord.rewardedUserIds = [record.actorId]
+      reviewedRecord.rewardedUserIds = [record.beneficiaryId ?? record.actorId]
       reviewedRecord.rewardTarget = habit.targetCompletions ?? 1
     }
     const autoArchived = award && !!habit.isTask &&
-      (!habit.taskRepeat || !!habit.taskGoalOccurrences && getTaskProgress(reviewedHabit, timezone) >= habit.taskGoalOccurrences)
+      (!habit.taskRepeat && habit.schedule?.type !== 'afterCompletion' || !!habit.taskGoalOccurrences && getTaskProgress(reviewedHabit, timezone) >= habit.taskGoalOccurrences)
     if (autoArchived) reviewedRecord.autoArchived = true
     const updatedHabit: Habit = {
       ...reviewedHabit,
       archived: autoArchived ? true : habit.archived,
-      checklist: award && habit.taskRepeat ? habit.checklist?.map(item => ({ ...item, completed: false })) : habit.checklist,
+      checklist: award && (habit.taskRepeat || habit.schedule?.type === 'afterCompletion') ? habit.checklist?.map(item => ({ ...item, completed: false })) : habit.checklist,
     }
     const coins = await loadData<CoinsData>('coins')
     const transaction: CoinTransaction | null = award && amount > 0 ? {
-      id: uuid(), userId: record.actorId, actorId: record.actorId, completionId: record.id,
+      id: uuid(), userId: record.beneficiaryId ?? record.actorId, actorId: record.actorId, completionId: record.id,
       amount, type: habit.isTask ? 'TASK_COMPLETION' : 'HABIT_COMPLETION',
       relatedItemId: habit.id, description: `Completed: ${habit.name}`,
       timestamp: DateTime.now().toUTC().toISO()!,
@@ -1623,7 +1794,7 @@ export async function deleteUser(userId: string): Promise<void> {
             ? [fallbackApprover] : remainingApprovers,
         }),
         ...(habit.completionRecords && { completionRecords: habit.completionRecords.map(record => {
-          if (!record || record.actorId !== userId) return record
+          if (!record || record.actorId !== userId && record.beneficiaryId !== userId) return record
           collectEvidence(record)
           const { evidenceId: _evidenceId, evidenceMime: _evidenceMime, ...withoutEvidence } = record
           return record.approval === 'pending'

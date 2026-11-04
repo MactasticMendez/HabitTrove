@@ -60,7 +60,7 @@ const ItemSection = ({
 }: ItemSectionProps) => {
   const t = useTranslations('DailyOverview');
   const tHabitItem = useTranslations('HabitItem');
-  const { completeHabit, undoComplete, logSlip, undoSlip, saveHabit, deleteHabit, archiveHabit, habitFreqMap } = useHabits();
+  const { completeHabit, undoComplete, logSlip, undoSlip, saveHabit, deleteHabit, archiveHabit, habitFreqMap, canRecordHabit, isRecording } = useHabits();
   const [_, setPomo] = useAtom(pomodoroAtom);
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom);
   const [settings] = useAtom(settingsAtom);
@@ -180,13 +180,14 @@ const ItemSection = ({
           .slice(0, currentExpanded ? undefined : 5)
           .map((habit) => {
             const itemIsTask = Boolean(habit.isTask)
+            const anytime = habit.schedule?.type === 'anytime'
             const completionsToday = habit.completions.filter((completion, index) =>
               isCountedCompletion(habit, index) &&
               isSameDate(t2d({ timestamp: completion, timezone: settings.system.timezone }), t2d({ timestamp: d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }), timezone: settings.system.timezone }))
             ).length
             const target = habit.targetCompletions || 1
-            const progress = !itemIsTask ? getPerHabitProgress(habit, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay, pausedDates) : null
-            const isCompleted = completionsToday >= target || (itemIsTask && habit.archived)
+            const progress = !itemIsTask && !anytime ? getPerHabitProgress(habit, getNow({ timezone: settings.system.timezone }), settings.system.timezone, settings.system.weekStartDay, pausedDates) : null
+            const isCompleted = !anytime && (completionsToday >= target || (itemIsTask && habit.archived))
             const undoIndex = getUndoableCompletionIndex(habit, currentUser?.id, getNow({ timezone: settings.system.timezone }), settings.system.timezone)
             const slipToday = habit.slips?.find(slip => DateTime.fromISO(slip.timestamp).setZone(settings.system.timezone).toISODate() === today)
             const canRecordNegative = !habit.isNegative || habit.userIds?.[0] === currentUser?.id
@@ -203,8 +204,8 @@ const ItemSection = ({
                         <div className="flex-shrink-0">
                           <button
                             type="button"
-                            aria-label={`${tHabitItem(isCompleted ? 'undoButton' : habit.isNegative ? 'avoidButton' : 'completeButton')}: ${habit.name}`}
-                            disabled={!canRecordNegative || !!slipToday || isCompleted && undoIndex < 0}
+                            aria-label={`${tHabitItem(anytime ? 'recordActionButton' : isCompleted ? 'undoButton' : habit.isNegative ? 'avoidButton' : 'completeButton')}: ${habit.name}`}
+                            disabled={!canRecordNegative || !!slipToday || isRecording(habit.id) || (!isCompleted && !canRecordHabit(habit)) || isCompleted && undoIndex < 0}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -214,9 +215,9 @@ const ItemSection = ({
                                 completeHabit(habit);
                               }
                             }}
-                            className="relative hover:opacity-70 transition-opacity w-4 h-4"
+                            className="relative flex h-6 w-6 items-center justify-center rounded hover:opacity-70 transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
                           >
-                            {isCompleted ? (
+                            {anytime ? <Plus className="h-4 w-4" aria-hidden="true" /> : isCompleted ? (
                               <CircleCheck className="h-4 w-4 text-green-500" />
                             ) : (
                               <div className="relative h-4 w-4">
@@ -305,17 +306,21 @@ const ItemSection = ({
                     onClick={() => void (slipToday ? undoSlip(habit, slipToday.id) : logSlip(habit))}>
                     {tHabitItem(slipToday ? 'undoSlip' : 'logSlip')}
                   </button>}
+                  {anytime && <span>{tHabitItem('actionsToday', { count: completionsToday })}</span>}
+                  {anytime && undoIndex >= 0 && <button type="button" className="rounded border px-2 py-1 text-foreground"
+                    disabled={isRecording(habit.id)} aria-label={`${tHabitItem('undoButton')}: ${habit.name}`}
+                    onClick={() => void undoComplete(habit)}>{tHabitItem('undoButton')}</button>}
                   {progress && <span className="flex items-center gap-1" aria-label={`${t('individualProgress', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}${progress.graceUsed ? `; ${t('graceUsed')}` : ''}`}>
                     {progress.streak >= 3 && <><Flame aria-hidden="true" className="h-3 w-3 text-orange-600" />{progress.streak}</>}
                     {progress.graceUsed && <span className="text-amber-700 dark:text-amber-300">{t('graceUsed')}</span>}
                     <span>{progress.weeklyDone}/{progress.weeklyDue}</span>
                   </span>}
-                  {habit.targetCompletions && (
+                  {!anytime && habit.targetCompletions && (
                     <span className="bg-secondary px-1.5 py-0.5 rounded-full">
                       {completionsToday}/{target}
                     </span>
                   )}
-                  {habitFreqMap.get(habit.id) !== 'daily' && (
+                  {anytime ? <Badge variant="outline" className="text-xs">{tHabitItem('anytimeSchedule')}</Badge> : habitFreqMap.get(habit.id) !== 'daily' && (
                     <Badge variant="outline" className="text-xs">
                       {habitFreqMap.get(habit.id)}
                     </Badge>
@@ -423,7 +428,7 @@ export default function DailyOverview({
   const dailyHabits = habits.filter(habit =>
     !habit.isTask &&
     !habit.archived &&
-    (!browserSettings.hideNonDaily || getHabitFreq(habit) === 'daily') &&
+    (!browserSettings.hideNonDaily || habit.schedule?.type !== 'anytime' && getHabitFreq(habit) === 'daily') &&
     isHabitDue({ habit, timezone, date: todayDateObj })
   )
 

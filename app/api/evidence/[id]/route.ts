@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     let permittedRecord: HabitCompletionRecord | undefined
     for (const habit of data.habits) {
       const record = habit.completionRecords?.find(item => item?.evidenceId === id)
-      if (record && (record.actorId === user.id || habit.createdBy === user.id ||
+      if (record && !record.voided && (record.actorId === user.id || habit.createdBy === user.id ||
           habit.approverIds?.includes(user.id))) {
         permittedRecord = record
         break

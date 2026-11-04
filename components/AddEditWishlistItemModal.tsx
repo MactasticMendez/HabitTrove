@@ -24,6 +24,7 @@ interface AddEditWishlistItemModalProps {
   setEditingItem: (item: WishlistItemType | null) => void
   addWishlistItem: (item: Omit<WishlistItemType, 'id'>) => Promise<void>
   editWishlistItem: (item: WishlistItemType) => Promise<void>
+  initialUserIds?: string[]
 }
 
 export default function AddEditWishlistItemModal({
@@ -32,7 +33,8 @@ export default function AddEditWishlistItemModal({
   editingItem,
   setEditingItem,
   addWishlistItem,
-  editWishlistItem
+  editWishlistItem,
+  initialUserIds
 }: AddEditWishlistItemModalProps) {
   const t = useTranslations('AddEditWishlistItemModal')
   const [name, setName] = useState(editingItem?.name || '')
@@ -41,8 +43,9 @@ export default function AddEditWishlistItemModal({
   const [targetCompletions, setTargetCompletions] = useState<number | undefined>(editingItem?.targetCompletions)
   const [link, setLink] = useState(editingItem?.link || '')
   const [currentUser] = useAtom(currentUserAtom)
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((editingItem?.userIds || []).filter(id => id !== currentUser?.id))
-  const [includeSelf, setIncludeSelf] = useState(!editingItem || !!editingItem.userIds?.includes(currentUser?.id ?? ''))
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((editingItem?.userIds ?? initialUserIds ?? []).filter(id => id !== currentUser?.id))
+  const [includeSelf, setIncludeSelf] = useState(editingItem || initialUserIds
+    ? !!(editingItem?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') : true)
   const [saving, setSaving] = useState(false)
   const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
     checkPermission(currentUser.permissions, 'wishlist', 'write') ||
@@ -69,11 +72,11 @@ export default function AddEditWishlistItemModal({
       setTargetCompletions(undefined)
       setLink('')
       setDrawing('')
-      setSelectedUserIds([])
-      setIncludeSelf(true)
+      setSelectedUserIds((initialUserIds ?? []).filter(id => id !== currentUser?.id))
+      setIncludeSelf(initialUserIds ? initialUserIds.includes(currentUser?.id ?? '') : true)
     }
     setErrors({})
-  }, [editingItem, currentUser?.id])
+  }, [editingItem, currentUser?.id, initialUserIds])
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {}
@@ -145,22 +148,22 @@ export default function AddEditWishlistItemModal({
           handleClose()
         }
       }} modal={false}>
-        <DialogContent> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
+        <DialogContent aria-describedby={undefined} className="max-h-[90dvh] w-[calc(100vw_-_2rem)] max-w-xl overflow-y-auto"> {/* DialogContent from shadcn/ui is typically z-50, ModalOverlay is z-40 */}
           <DialogHeader>
             <DialogTitle>{editingItem ? t('editTitle') : t('addTitle')}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSave}>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
+          <form onSubmit={handleSave} className="min-w-0">
+            <div className="flex min-w-0 flex-col gap-5 py-4">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="name" className="sm:text-right">
                   {t('nameLabel')}
                 </Label>
-                <div className="col-span-3 flex gap-2">
+                <div className="min-w-0 sm:col-span-3 flex gap-2">
                   <Input
                     id="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="flex-1"
+                    className="min-w-0 flex-1"
                     required
                   />
                   <EmojiPickerButton
@@ -174,28 +177,29 @@ export default function AddEditWishlistItemModal({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="description" className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="description" className="sm:text-right">
                   {t('descriptionLabel')}
                 </Label>
                 <Textarea
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="col-span-3"
+                  className="min-w-0 sm:col-span-3"
                 />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <div className="flex items-center gap-2 justify-end">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <div className="flex items-center gap-2 sm:justify-end">
                   <Label htmlFor="coinReward">
                     {t('costLabel')}
                   </Label>
                 </div>
-                <div className="col-span-3">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center border rounded-lg overflow-hidden">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex shrink-0 items-center overflow-hidden rounded-lg border">
                       <button
                         type="button"
+                        aria-label={t('decreaseCost')}
                         onClick={() => setCoinCost(prev => Math.max(0, prev - 1))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -216,6 +220,7 @@ export default function AddEditWishlistItemModal({
                       />
                       <button
                         type="button"
+                        aria-label={t('increaseCost')}
                         onClick={() => setCoinCost(prev => Math.min(prev + 1, MAX_COIN_LIMIT))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -228,17 +233,18 @@ export default function AddEditWishlistItemModal({
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <div className="flex items-center gap-2 justify-end">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <div className="flex items-center gap-2 sm:justify-end">
                   <Label htmlFor="targetCompletions">
                     {t('redeemableLabel')}
                   </Label>
                 </div>
-                <div className="col-span-3">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center border rounded-lg overflow-hidden">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex shrink-0 items-center overflow-hidden rounded-lg border">
                       <button
                         type="button"
+                        aria-label={t('decreaseRedemptions')}
                         onClick={() => setTargetCompletions(prev => prev !== undefined && prev > 1 ? prev - 1 : undefined)}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -258,6 +264,7 @@ export default function AddEditWishlistItemModal({
                       />
                       <button
                         type="button"
+                        aria-label={t('increaseRedemptions')}
                         onClick={() => setTargetCompletions(prev => Math.min(10, (prev || 0) + 1))}
                         className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 transition-colors"
                       >
@@ -275,18 +282,18 @@ export default function AddEditWishlistItemModal({
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="link" className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label htmlFor="link" className="sm:text-right">
                   {t('linkLabel')}
                 </Label>
-                <div className="col-span-3">
+                <div className="min-w-0 sm:col-span-3">
                   <Input
                     id="link"
                     type="url"
                     placeholder="https://..."
                     value={link}
                     onChange={(e) => setLink(e.target.value)}
-                    className="col-span-3"
+                    className="min-w-0 sm:col-span-3"
                   />
                   {errors.link && (
                     <div className="text-sm text-red-500">
@@ -295,12 +302,12 @@ export default function AddEditWishlistItemModal({
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                <Label className="sm:text-right">
                   {t('drawingLabel')}
                 </Label>
-                <div className="col-span-3">
-                  <div className="flex gap-4 items-center">
+                <div className="min-w-0 sm:col-span-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Button
                       type="button"
                       variant="outline"
@@ -327,17 +334,17 @@ export default function AddEditWishlistItemModal({
                   </div>
                 </div>
               </div>
-              {(currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="col-span-3 col-start-2 flex items-center gap-2 text-sm">
+              {(currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
                 {t('includeSelf')}
               </label>}
               {usersData.users && usersData.users.length > 1 && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <Label htmlFor="sharing-toggle">{t('shareLabel')}</Label>
+                <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <Label id="reward-sharing-label">{t('shareLabel')}</Label>
                   </div>
-                  <div className="col-span-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="min-w-0 sm:col-span-3">
+                    <div role="group" aria-labelledby="reward-sharing-label" className="flex flex-wrap gap-2">
                       {usersData.users.filter(user => user.id !== currentUser?.id && canAssignUser(user.id)).map(user => (
                         <button type="button" key={user.id} aria-label={t('assignUser', { username: user.username })}
                           aria-pressed={selectedUserIds.includes(user.id)}

@@ -1,8 +1,18 @@
 import { DateTime } from 'luxon'
 import { RRule } from 'rrule'
-import { EXCESSIVE_RRULE_TIMES_REASON, getUnsupportedRRuleReason } from './utils'
+import { EXCESSIVE_RRULE_TIMES_REASON, UNSAFE_RRULE_BOUNDS_REASON, getUnsupportedRRuleReason } from './utils'
 import type { Habit, Settings, WishlistItemType } from './types'
 import { MAX_COIN_LIMIT } from './constants'
+import { z } from 'zod'
+
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value =>
+  DateTime.fromISO(value).isValid && DateTime.fromISO(value).toISODate() === value)
+const flexibleScheduleSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('afterCompletion'), interval: z.number().int().min(1).max(365),
+    unit: z.enum(['days', 'weeks', 'months', 'years']), startsOn: calendarDate,
+    endsOn: calendarDate.optional() }).strict(),
+  z.object({ type: z.literal('anytime'), recordingPolicy: z.enum(['member', 'manager', 'both']) }).strict(),
+])
 
 export const supportedLanguages = new Set(['ca', 'de', 'en', 'es', 'fr', 'ja', 'ko', 'ru', 'zh'])
 
@@ -64,6 +74,17 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
       typeof habit.frequency !== 'string' || habit.frequency.length > 512 || !Array.isArray(habit.completions) ||
       habit.completions.length > 20_000) throw new Error('Invalid habit')
   validateReward(habit.coinReward)
+  const schedule = habit.schedule === undefined ? undefined : flexibleScheduleSchema.parse(habit.schedule)
+  if (schedule?.type === 'afterCompletion' && schedule.endsOn && schedule.endsOn < schedule.startsOn) {
+    throw new Error('Schedule end must follow its start')
+  }
+  if (schedule && (habit.taskRepeat || habit.taskRepeatInterval !== undefined || habit.taskRepeatUntil !== undefined)) {
+    throw new Error('Choose one schedule mode')
+  }
+  if (schedule?.type === 'anytime' && (habit.isTask || habit.isNegative || habit.userIds?.length !== 1 ||
+      habit.targetCompletions !== undefined && habit.targetCompletions !== 1 || habit.reminderTime !== undefined)) {
+    throw new Error('Any-time actions require one assignee and one completion per reward')
+  }
   if (habit.isNegative !== undefined && typeof habit.isNegative !== 'boolean') throw new Error('Invalid negative habit')
   if (habit.coinPenalty !== undefined) {
     validateReward(habit.coinPenalty)
@@ -87,7 +108,12 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   if (habit.taskRepeat !== undefined && (!habit.isTask || !['daily', 'weekly', 'monthly', 'yearly'].includes(habit.taskRepeat))) {
     throw new Error('Invalid task recurrence')
   }
-  if (habit.taskGoalOccurrences !== undefined && (!habit.isTask || !habit.taskRepeat ||
+  if (habit.taskRepeatInterval !== undefined && (!habit.taskRepeat || !Number.isSafeInteger(habit.taskRepeatInterval) ||
+      habit.taskRepeatInterval < 1 || habit.taskRepeatInterval > 365)) throw new Error('Invalid task interval')
+  if (habit.taskRepeatUntil !== undefined && (!habit.taskRepeat || !calendarDate.safeParse(habit.taskRepeatUntil).success)) {
+    throw new Error('Invalid task end date')
+  }
+  if (habit.taskGoalOccurrences !== undefined && (!habit.isTask || !habit.taskRepeat && schedule?.type !== 'afterCompletion' ||
       !Number.isSafeInteger(habit.taskGoalOccurrences) || habit.taskGoalOccurrences < 1 || habit.taskGoalOccurrences > 1000)) {
     throw new Error('Invalid task goal')
   }
@@ -124,7 +150,7 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
     try {
       const rule = RRule.fromString(habit.frequency)
       const unsupportedReason = getUnsupportedRRuleReason(rule)
-      if (unsupportedReason && !(unsupportedReason === EXCESSIVE_RRULE_TIMES_REASON &&
+      if (unsupportedReason && !([EXCESSIVE_RRULE_TIMES_REASON, UNSAFE_RRULE_BOUNDS_REASON].includes(unsupportedReason) &&
           existingFrequency === habit.frequency)) throw new Error('Unsupported recurrence rule')
     } catch { throw new Error('Invalid recurrence rule') }
   }
@@ -136,6 +162,9 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
        habit.completionRecords.some(record => record !== null &&
          (!record || typeof record !== 'object' || typeof record.id !== 'string' || record.id.length > 128 ||
           typeof record.actorId !== 'string' || record.actorId.length > 128 ||
+          record.beneficiaryId !== undefined && (typeof record.beneficiaryId !== 'string' || !record.beneficiaryId || record.beneficiaryId.length > 128) ||
+          record.requestId !== undefined && (typeof record.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(record.requestId)) ||
+          record.voided !== undefined && typeof record.voided !== 'boolean' ||
           record.autoArchived !== undefined && typeof record.autoArchived !== 'boolean' ||
           record.approval !== undefined && !['pending', 'approved', 'rejected'].includes(record.approval) ||
           record.rewardAmount !== undefined && (!Number.isSafeInteger(record.rewardAmount) ||
@@ -154,7 +183,7 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
     throw new Error('Invalid habit completion records')
   }
   validateDrawing(habit.drawing)
-  return habit
+  return { ...habit, ...(schedule && { schedule }) }
 }
 
 export function validateSettings(value: Settings): Settings {

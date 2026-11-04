@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeEach, spyOn } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach, spyOn } from "bun:test";
 import {
   cn,
   getTodayInTimezone,
@@ -30,6 +30,7 @@ import {
   prepareDataForHashing,
   generateCryptoHash,
   getUnsupportedRRuleReason,
+  UNSAFE_RRULE_BOUNDS_REASON,
   roundToInteger,
   openWindow
 } from './utils'
@@ -40,6 +41,9 @@ import { getDefaultSettings, getDefaultHabitsData, getDefaultCoinsData, getDefau
 import { RRule, Weekday } from 'rrule';
 import { Habit } from '@/lib/types';
 import { INITIAL_DUE } from './constants';
+
+const originalDateTimeNow = DateTime.now
+afterEach(() => { DateTime.now = originalDateTimeNow })
 
 test('external popups reject unsafe schemes and isolate the opener', () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'window')
@@ -89,6 +93,56 @@ test('every-second-day habits keep their local-day cadence across daylight savin
     date: DateTime.fromObject({ year: 2026, month: 3, day }, { zone: 'America/New_York' }),
   })
   expect([due(6), due(7), due(8), due(9), due(10)]).toEqual([false, true, false, true, false])
+})
+
+test('guided calendar rules preserve interval phase, chosen weekdays and date bounds', () => {
+  const habit: Habit = { id: 'guided', name: 'Guided', description: '', coinReward: 1, completions: [],
+    frequency: new RRule({ freq: RRule.WEEKLY, interval: 2, byweekday: [RRule.MO, RRule.TH],
+      dtstart: new Date('2026-03-02T00:00:00Z'), until: new Date('2026-03-19T23:59:59Z'),
+      tzid: 'America/New_York' }).toString(),
+  }
+  const due = (date: string) => isHabitDue({ habit, timezone: 'America/New_York',
+    date: DateTime.fromISO(date, { zone: 'America/New_York' }) })
+  expect(['2026-03-01', '2026-03-02', '2026-03-05', '2026-03-09', '2026-03-16', '2026-03-19', '2026-03-30']
+    .map(due)).toEqual([false, true, true, false, true, true, false])
+})
+
+test('guided monthly and yearly rules preserve nth weekdays and saved start dates', () => {
+  const habit: Habit = { id: 'monthly', name: 'Review', description: '', coinReward: 1, completions: [],
+    frequency: new RRule({ freq: RRule.MONTHLY, interval: 2, byweekday: RRule.FR.nth(-1),
+      dtstart: new Date('2026-01-01T00:00:00Z') }).toString(),
+  }
+  const due = (item: Habit, date: string) => isHabitDue({ habit: item, timezone: 'UTC', date: DateTime.fromISO(date) })
+  expect(due(habit, '2026-01-30')).toBe(true)
+  expect(due(habit, '2026-02-27')).toBe(false)
+  expect(due(habit, '2026-03-27')).toBe(true)
+  const annual = { ...habit, frequency: new RRule({ freq: RRule.YEARLY, interval: 2, bymonth: 5, bymonthday: 12,
+    dtstart: new Date('2026-06-01T00:00:00Z') }).toString() }
+  expect(due(annual, '2026-05-12')).toBe(false)
+  expect(due(annual, '2027-05-12')).toBe(false)
+  expect(due(annual, '2028-05-12')).toBe(true)
+})
+
+test('anchored calendar matching stays bounded for old start dates and respects finite counts', () => {
+  const habit: Habit = { id: 'old', name: 'Old', description: '', coinReward: 1, completions: [],
+    frequency: new RRule({ freq: RRule.WEEKLY, interval: 2, byweekday: RRule.MO,
+      dtstart: new Date('1900-01-01T00:00:00Z') }).toString() }
+  const day = DateTime.fromISO('2026-11-02', { zone: 'UTC' })
+  const weeks = Math.round(day.diff(DateTime.fromISO('1900-01-01', { zone: 'UTC' }), 'days').days / 7)
+  expect(isHabitDue({ habit, timezone: 'UTC', date: day })).toBe(weeks % 2 === 0)
+  const limited = { ...habit, frequency: new RRule({ freq: RRule.DAILY, count: 2,
+    dtstart: new Date('2026-03-01T00:00:00Z') }).toString() }
+  expect(isHabitDue({ habit: limited, timezone: 'UTC', date: DateTime.fromISO('2026-03-02') })).toBe(true)
+  expect(isHabitDue({ habit: limited, timezone: 'UTC', date: DateTime.fromISO('2026-03-03') })).toBe(false)
+})
+
+test('every-N-day calendar rules allow an inclusive end date', () => {
+  const rule = new RRule({ freq: RRule.DAILY, interval: 3, dtstart: new Date('2026-03-01T00:00:00Z'),
+    until: new Date('2026-03-07T23:59:59Z') })
+  expect(getUnsupportedRRuleReason(rule)).toBeNull()
+  const habit: Habit = { id: 'bounded', name: 'Bounded', description: '', coinReward: 1, completions: [], frequency: rule.toString() }
+  expect(isHabitDue({ habit, timezone: 'UTC', date: DateTime.fromISO('2026-03-07') })).toBe(true)
+  expect(isHabitDue({ habit, timezone: 'UTC', date: DateTime.fromISO('2026-03-10') })).toBe(false)
 })
 
 test('calendar history includes completed archived tasks without showing future dates', () => {
@@ -185,6 +239,28 @@ describe('getUnsupportedRRuleReason', () => {
     expect(getUnsupportedRRuleReason(new RRule({
       freq: RRule.DAILY, interval: 2, dtstart: new Date('2026-03-07T00:00:00Z'),
     }))).toBeNull();
+  });
+
+  test('bounds intervals, finite counts and saved calendar dates', () => {
+    for (const interval of [0, -1, 366, 1.5]) {
+      expect(getUnsupportedRRuleReason(new RRule({ freq: RRule.WEEKLY, interval })))
+        .toBe(UNSAFE_RRULE_BOUNDS_REASON)
+    }
+    for (const count of [0, -1, 10_001, 1.5]) {
+      expect(getUnsupportedRRuleReason(new RRule({ freq: RRule.DAILY, count })))
+        .toBe(UNSAFE_RRULE_BOUNDS_REASON)
+    }
+    expect(getUnsupportedRRuleReason(new RRule({ freq: RRule.DAILY,
+      dtstart: new Date('2026-03-02T00:00:00Z'), until: new Date('2026-03-01T00:00:00Z') })))
+      .toBe(UNSAFE_RRULE_BOUNDS_REASON)
+    const invalid = new RRule({ freq: RRule.DAILY })
+    invalid.origOptions.dtstart = new Date(NaN)
+    expect(getUnsupportedRRuleReason(invalid)).toBe(UNSAFE_RRULE_BOUNDS_REASON)
+    invalid.origOptions.dtstart = new Date('2026-03-01T00:00:00Z')
+    invalid.origOptions.until = new Date(NaN)
+    expect(getUnsupportedRRuleReason(invalid)).toBe(UNSAFE_RRULE_BOUNDS_REASON)
+    expect(getUnsupportedRRuleReason(new RRule({ freq: RRule.DAILY, count: 10_000 }))).toBeNull()
+    expect(getUnsupportedRRuleReason(new RRule({ freq: RRule.WEEKLY, interval: 365 }))).toBeNull()
   });
 
   test('should return null for DAILY frequency without interval', () => {
@@ -471,6 +547,7 @@ describe('isSameDate', () => {
 })
 
 describe('transaction calculations', () => {
+  beforeEach(() => { DateTime.now = () => DateTime.fromISO('2024-01-01T16:00:00Z') as DateTime<true> })
   const testTransactions: CoinTransaction[] = [
     {
       id: '1',

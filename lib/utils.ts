@@ -9,6 +9,7 @@ import _ from "lodash"
 import { v4 as uuidv4 } from 'uuid'
 import stableStringify from 'json-stable-stringify';
 import { getTaskMissedDates, isCountedCompletion, isTaskScheduledOnDate } from './task-schedule'
+import { isAfterCompletionDue } from './flexible-schedule'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -358,6 +359,49 @@ export function convertMachineReadableFrequencyToHumanReadable({
   }
 }
 
+function anchoredRuleOccursOnDay(rrule: RRule, day: DateTime): boolean {
+  const start = rrule.origOptions.dtstart!
+  const floatingDay = DateTime.utc(day.year, day.month, day.day)
+  const floatingEnd = floatingDay.endOf('day')
+  if (floatingEnd.toMillis() < start.getTime() ||
+      rrule.origOptions.until && floatingDay.toMillis() > rrule.origOptions.until.getTime()) return false
+
+  const options = { ...rrule.origOptions, tzid: undefined }
+  if (!options.count) {
+    const anchor = DateTime.fromJSDate(start, { zone: 'UTC' })
+    const interval = options.interval ?? 1
+    let periodStart = floatingDay
+    if (options.freq === RRule.DAILY) {
+      if (Math.floor(floatingDay.diff(anchor.startOf('day'), 'days').days) % interval !== 0) return false
+    } else if (options.freq === RRule.WEEKLY) {
+      const weekStart = (date: DateTime) => date.startOf('day').minus({
+        days: ((date.weekday - 1) - rrule.options.wkst + 7) % 7,
+      })
+      periodStart = weekStart(floatingDay)
+      if (Math.round(periodStart.diff(weekStart(anchor), 'days').days / 7) % interval !== 0) return false
+      if (!options.byweekday) options.byweekday = rrule.options.byweekday
+    } else if (options.freq === RRule.MONTHLY) {
+      if (((floatingDay.year - anchor.year) * 12 + floatingDay.month - anchor.month) % interval !== 0) return false
+      periodStart = floatingDay.startOf('month')
+      if (!options.bymonthday && !options.byweekday) options.bymonthday = anchor.day
+    } else if (options.freq === RRule.YEARLY) {
+      if ((floatingDay.year - anchor.year) % interval !== 0) return false
+      periodStart = floatingDay.startOf('year')
+      if (!options.byyearday && !options.byweekno && !options.byweekday && !options.bymonthday) {
+        options.bymonth = options.bymonth ?? anchor.month
+        options.bymonthday = anchor.day
+      }
+    }
+    // Evaluate just this recurrence period, retaining the saved interval's phase.
+    options.interval = 1
+    options.dtstart = new Date(Math.max(periodStart.toMillis(), start.getTime()))
+    options.byhour = options.byhour ?? rrule.options.byhour
+    options.byminute = options.byminute ?? rrule.options.byminute
+    options.bysecond = options.bysecond ?? rrule.options.bysecond
+  }
+  return new RRule(options).between(floatingDay.toJSDate(), floatingEnd.toJSDate(), true).length > 0
+}
+
 export function isHabitDue({
   habit,
   timezone,
@@ -369,6 +413,12 @@ export function isHabitDue({
   date: DateTime
   includeArchivedCompletions?: boolean
 }): boolean {
+  if (habit.schedule?.type === 'anytime') return !habit.archived
+  if (habit.schedule?.type === 'afterCompletion') {
+    return habit.archived
+      ? includeArchivedCompletions && getCompletionsForDate({ habit, date, timezone }) > 0
+      : isAfterCompletionDue(habit, date, timezone)
+  }
   // handle task
   if (habit.isTask) {
     return habit.archived
@@ -388,14 +438,9 @@ export function isHabitDue({
   const rrule = deserializeRRule(ruleText)
   if (!rrule) return false
   if (getUnsupportedRRuleReason(rrule)) return false
-  const interval = rrule.origOptions.interval ?? 1
-  if (rrule.origOptions.freq === RRule.DAILY && interval > 1) {
-    const start = rrule.origOptions.dtstart!
-    const firstDay = DateTime.fromObject({
-      year: start.getUTCFullYear(), month: start.getUTCMonth() + 1, day: start.getUTCDate(),
-    }, { zone: timezone }).startOf('day')
-    const days = Math.round(startOfDay.diff(firstDay, 'days').days)
-    return days >= 0 && days % interval === 0
+  if (rrule.origOptions.dtstart) {
+    // RRule's UTC fields represent local calendar components, independent of DST offsets.
+    return anchoredRuleOccursOnDay(rrule, startOfDay)
   }
   rrule.origOptions.tzid = timezone
   rrule.options.tzid = rrule.origOptions.tzid
@@ -411,6 +456,7 @@ export function isHabitDue({
 }
 
 export function isHabitCompleted(habit: Habit, timezone: string): boolean {
+  if (habit.schedule?.type === 'anytime') return false
   return getCompletionsForToday({ habit, timezone: timezone }) >= (habit.targetCompletions || 1)
 }
 
@@ -432,7 +478,13 @@ export function isHabitDueToday({
 
 export function getHabitFreq(habit: Habit): Freq {
   if (habit.isTask) {
+    if (habit.schedule?.type === 'afterCompletion') {
+      return ({ days: 'daily', weeks: 'weekly', months: 'monthly', years: 'yearly' } as const)[habit.schedule.unit]
+    }
     return habit.taskRepeat ?? 'daily'
+  }
+  if (habit.schedule?.type === 'afterCompletion') {
+    return ({ days: 'daily', weeks: 'weekly', months: 'monthly', years: 'yearly' } as const)[habit.schedule.unit]
   }
   const rrule = deserializeRRule(habit.frequency)
   if (!rrule) return 'daily'
@@ -455,10 +507,17 @@ export function getHabitFreq(habit: Habit): Freq {
  * @returns A string message explaining why the rule is unsupported, or null if it's supported.
  */
 export const EXCESSIVE_RRULE_TIMES_REASON = 'Recurrence rules with more than 256 times per day are not supported.'
+export const UNSAFE_RRULE_BOUNDS_REASON = 'Recurrence rules need an interval of 1–365, a count of 1–10000, and valid date bounds.'
 
 export function getUnsupportedRRuleReason(rrule: RRule): string | null {
   const freq = rrule.origOptions.freq;
-  const interval = rrule.origOptions.interval || 1; // RRule defaults interval to 1
+  const interval = rrule.origOptions.interval ?? 1;
+  const { count, dtstart, until } = rrule.origOptions
+  if (!Number.isSafeInteger(interval) || interval < 1 || interval > 365 ||
+      count != null && (!Number.isSafeInteger(count) || count < 1 || count > 10_000) ||
+      [dtstart, until].some(value => value != null &&
+        (!(value instanceof Date) || !Number.isFinite(value.getTime()))) ||
+      dtstart && until && until < dtstart) return UNSAFE_RRULE_BOUNDS_REASON
   const timeCombinations = (rrule.options.byhour?.length ?? 1) *
     (rrule.options.byminute?.length ?? 1) * (rrule.options.bysecond?.length ?? 1)
 
@@ -476,7 +535,7 @@ export function getUnsupportedRRuleReason(rrule: RRule): string | null {
     return 'Secondly frequency is not supported.';
   }
   if (freq === RRule.DAILY && interval > 1 &&
-      (interval > 365 || !rrule.origOptions.dtstart || rrule.origOptions.count || rrule.origOptions.until ||
+      (interval > 365 || !rrule.origOptions.dtstart || rrule.origOptions.count ||
         rrule.origOptions.byweekday || rrule.origOptions.bymonthday || rrule.origOptions.bymonth)) {
     return 'Every-N-days rules need a start date, an interval at most 365, and no extra filters.';
   }
