@@ -495,7 +495,8 @@ describe('getNow', () => {
 
 describe('getNowInMilliseconds', () => {
   test('should return current time in milliseconds', () => {
-    const now = DateTime.now().setZone('UTC')
+    const now = DateTime.fromISO('2026-11-04T06:29:28.883Z')
+    DateTime.now = () => now
     expect(getNowInMilliseconds()).toBe(now.toMillis().toString())
   })
 })

@@ -18,7 +18,7 @@
 ### Fixed
 
 * Keep the family reward editor responsive and synchronize its related app data after a family action.
-* Restore mocked clocks after scheduling tests so the full suite remains isolated.
+* Restore mocked clocks after scheduling tests and remove a millisecond-boundary race so the full suite remains isolated and deterministic.
 
 * Restore the task and habit editor layout, stack fields on narrow screens, and keep controls inside the dialog. Add descriptive names to completion and reward stepper buttons.
 
