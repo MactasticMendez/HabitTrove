@@ -7,7 +7,7 @@ import { getCurrentUser } from '@/lib/server-helpers'
 import { log } from '@/lib/logger'
 import { usesPostgres } from '@/lib/storage-mode'
 import { currentDatabaseClient } from '@/lib/db/client'
-import { getFamiliesEnabled, withFamilyScope, withFreshFamilyActor } from '@/lib/family-scope'
+import { getFamiliesEnabled, withFamilyScope } from '@/lib/family-scope'
 
 function sanitizePathSegments(pathSegments?: string[]): string[] | null {
   if (!pathSegments || pathSegments.length === 0) {
@@ -130,11 +130,7 @@ export async function GET(
       return referenced.rowCount ? serve() : NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
     const familyId = (await cookies()).get('habittrove-family')?.value
-    if (familyId) return await withFamilyScope(user, async scope => scope ? authorize(scope.memberIds) : NextResponse.json({ error: 'File not found' }, { status: 404 }), familyId, { readOnly: true })
-    return await withFreshFamilyActor(user, async () => {
-      const memberships = await currentDatabaseClient()!.query('SELECT 1 FROM family_memberships WHERE user_id=$1 AND active LIMIT 1', [user.id])
-      return memberships.rowCount ? NextResponse.json({ error: 'File not found' }, { status: 404 }) : authorize([user.id])
-    }, { readOnly: true })
+    return await withFamilyScope(user, async scope => authorize([...new Set([user.id, ...(scope?.memberIds ?? [])])]), familyId, { readOnly: true })
   } catch (error) {
     if (error instanceof Error && ['Unauthorized', 'Family access denied', 'Invalid family'].includes(error.message)) return NextResponse.json({ error: 'File not found' }, { status: 404 })
     if (getErrorCode(error) === 'ENOENT') {

@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 import { getDefaultSettings, type Settings } from './types';
 import { log } from './logger';
 import { usesPostgres } from './storage-mode';
+import { familyBackupRequired, captureFamilyDatabaseSource, readFamilyBackupSettings, type CapturedFamilySource } from './family-backup';
 import { captureDatabaseSource, withProtectedAssetCapture, type CapturedSource } from './db-migration';
 
 const backupDir = () => path.join(process.cwd(), 'backups');
@@ -74,11 +75,12 @@ export async function runBackup(options: { scheduled?: boolean } = {}) {
   let leaseOwner: string | undefined;
   try {
     let settings: Settings;
-    let databaseSource: CapturedSource | undefined;
+    let databaseSource: CapturedSource | CapturedFamilySource | undefined;
     if (usesPostgres()) {
       databaseSource = await withProtectedAssetCapture(async () => {
-        const source = await captureDatabaseSource(dataDir());
-        if (source.snapshot.settings.system.autoBackupEnabled && options.scheduled) {
+        const source = await familyBackupRequired() ? await captureFamilyDatabaseSource(dataDir()) : await captureDatabaseSource(dataDir());
+        const sourceSettings = source.manifest.version === 2 ? readFamilyBackupSettings(source as CapturedFamilySource) : (source as CapturedSource).snapshot.settings;
+        if (sourceSettings.system.autoBackupEnabled && options.scheduled) {
           const { currentDatabaseClient } = await import('./db/client');
           const owner = randomUUID();
           const claimed = await currentDatabaseClient()!.query(
@@ -90,7 +92,7 @@ export async function runBackup(options: { scheduled?: boolean } = {}) {
         return source;
       });
       if (!databaseSource) return;
-      settings = databaseSource.snapshot.settings;
+      settings = databaseSource.manifest.version === 2 ? readFamilyBackupSettings(databaseSource as CapturedFamilySource) : (databaseSource as CapturedSource).snapshot.settings;
     } else try {
       settings = JSON.parse(await fs.readFile(path.join(dataDir(), 'settings.json'), 'utf8')) as Settings;
     } catch (error) {
@@ -134,9 +136,14 @@ export async function runBackup(options: { scheduled?: boolean } = {}) {
     try {
       archive.pipe(output);
       if (databaseSource) {
-        const files = { auth: 'auth.json', habits: 'habits.json', coins: 'coins.json', wishlist: 'wishlist.json', settings: 'settings.json', adminConfig: 'admin-config.json' } as const;
-        for (const [key, name] of Object.entries(files)) if (key in databaseSource.snapshot) {
-          archive.append(JSON.stringify(databaseSource.snapshot[key as keyof typeof databaseSource.snapshot], null, 2), { name, mode: 0o600 });
+        if (databaseSource.manifest.version === 2) {
+          archive.append(JSON.stringify(databaseSource.snapshot, null, 2), { name: 'family-database.json', mode: 0o600 });
+        } else {
+          const legacySource = databaseSource as CapturedSource;
+          const files = { auth: 'auth.json', habits: 'habits.json', coins: 'coins.json', wishlist: 'wishlist.json', settings: 'settings.json', adminConfig: 'admin-config.json' } as const;
+          for (const [key, name] of Object.entries(files)) if (key in legacySource.snapshot) {
+            archive.append(JSON.stringify(legacySource.snapshot[key as keyof typeof legacySource.snapshot], null, 2), { name, mode: 0o600 });
+          }
         }
         for (const [name, bytes] of databaseSource.assets) archive.append(bytes, { name, mode: 0o600 });
         archive.append(JSON.stringify(databaseSource.manifest, null, 2), { name: 'manifest.json', mode: 0o600 });

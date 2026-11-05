@@ -18,4 +18,4 @@ export type LegacyFamilyMapping = {
   familyId: string; userIds: string[]; habitIds: string[]; wishlistIds: string[]; ledgerIds: string[];
   managers: { managerId: string; memberId: string }[]; expectedSourceHash?: string
 }
-export type LegacyFamilyMappingPreview = { sourceHash: string; users: number; habits: number; rewards: number; transactions: number }
+export type LegacyFamilyMappingPreview = { sourceHash: string; users: number; habits: number; rewards: number; transactions: number; legacyManagerAssignments: { managerId: string; memberId: string }[]; discardedLegacyManagerAssignments: { managerId: string; memberId: string }[] }

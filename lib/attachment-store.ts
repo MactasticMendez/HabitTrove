@@ -24,6 +24,34 @@ async function verifyDirectories(filename: string): Promise<void> {
   }
 }
 
+async function withEvidenceMaintenance<T>(operation: () => Promise<T>): Promise<T> {
+  const client = currentDatabaseClient()!
+  const prior = (await client.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value
+  await client.query("SELECT set_config('habittrove.evidence_maintenance','true',true)")
+  try { return await operation() }
+  finally { await client.query("SELECT set_config('habittrove.evidence_maintenance',$1,true)", [prior ?? '']).catch(() => undefined) }
+}
+
+// The caller has already authorized the item mutation in this same family transaction.
+export async function scheduleHabitEvidenceRemoval(habitId: string, evidenceId: string, completionId: string, relativePath: string): Promise<void> {
+  if (typeof habitId !== 'string' || !habitId || habitId.length > 255 || typeof completionId !== 'string' || !completionId || completionId.length > 255 ||
+      typeof evidenceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(evidenceId) || typeof relativePath !== 'string' || !new RegExp(`^evidence/${evidenceId}\\.(jpg|png|webp)$`).test(relativePath)) {
+    throw new Error('Invalid protected evidence identity')
+  }
+  attachmentPath(relativePath)
+  if (!usesPostgres()) return scheduleAttachmentRemoval(evidenceId, relativePath)
+  await withStorageTransaction(async () => {
+    if (!await getFamiliesEnabled()) return scheduleAttachmentRemoval(evidenceId, relativePath)
+    const client = currentDatabaseClient()!
+    const scope = (await client.query("SELECT current_setting('habittrove.actor_id',true) AS actor_id,current_setting('habittrove.family_id',true) AS family_id,current_setting('habittrove.scope_validated',true) AS validated")).rows[0]
+    if (!scope.actor_id || !scope.family_id || scope.validated !== 'true') throw new Error('Validated family context required')
+    const removed = await withEvidenceMaintenance(() => client.query(`DELETE FROM attachments
+      WHERE family_id=$1 AND habit_id=$2 AND completion_id=$3 AND id=$4 AND path=$5 RETURNING id`,
+    [scope.family_id, habitId, completionId, evidenceId, relativePath]))
+    if (removed.rowCount) await scheduleAttachmentRemoval(evidenceId, relativePath)
+  })
+}
+
 export async function registerAttachment(input: Omit<AttachmentMetadata, 'sha256'> & { bytes: Uint8Array }): Promise<void> {
   if (!usesPostgres()) return
   const filename = attachmentPath(input.path)
@@ -66,7 +94,9 @@ export async function scheduleAttachmentRemoval(id: string, relativePath: string
     await removeAttachmentMetadata(id)
     const cleanup = () => withProtectedAssetCleanup(async () => {
       // Generated paths are immutable. Check retained metadata in the original authorized scope.
-      const retained = await currentDatabaseClient()!.query('SELECT 1 FROM attachments WHERE path=$1 LIMIT 1', [relativePath])
+      const findRetained = () => currentDatabaseClient()!.query('SELECT 1 FROM attachments WHERE path=$1 LIMIT 1', [relativePath])
+      const retained = familiesEnabled && relativePath.startsWith('evidence/')
+        ? await withEvidenceMaintenance(findRetained) : await findRetained()
       if (!retained.rowCount) await removeFile()
     })
     await afterStorageCommit(async () => {

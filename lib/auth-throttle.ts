@@ -9,13 +9,13 @@ const maxVerifications = 4
 const legacyAttempts = new Map<string, { attempts: number; expires: number }>()
 let localVerifications = 0
 
-type Purpose = 'login' | 'step-up'
+type Purpose = 'login' | 'step-up' | 'invite'
 function key(purpose: Purpose, userId: string): string {
   return createHash('sha256').update(JSON.stringify([purpose, userId])).digest('hex')
 }
 
 // Reserve before scrypt so concurrent requests cannot all pass the failure limit.
-// Call only for an existing account: unknown usernames never create tracker rows.
+// Call only for an existing account or validated live invitation: unknown input never creates tracker rows.
 export async function reserveAuthenticationAttempt(purpose: Purpose, userId: string): Promise<boolean> {
   const hash = key(purpose, userId)
   if (!usesPostgres()) {

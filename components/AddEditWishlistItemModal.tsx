@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { usersAtom, currentUserAtom } from '@/lib/atoms'
+import { usersAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms'
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -43,15 +43,18 @@ export default function AddEditWishlistItemModal({
   const [targetCompletions, setTargetCompletions] = useState<number | undefined>(editingItem?.targetCompletions)
   const [link, setLink] = useState(editingItem?.link || '')
   const [currentUser] = useAtom(currentUserAtom)
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((editingItem?.userIds ?? initialUserIds ?? []).filter(id => id !== currentUser?.id))
-  const [includeSelf, setIncludeSelf] = useState(editingItem || initialUserIds
-    ? !!(editingItem?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') : true)
+  const [serverSettings] = useAtom(serverSettingsAtom)
+  const [usersData] = useAtom(usersAtom)
+  const canIncludeSelf = !serverSettings.familiesEnabled || serverSettings.familyMember === true && usersData.users.some(user => user.id === currentUser?.id)
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((editingItem?.userIds ?? initialUserIds ?? [])
+    .filter(id => id !== currentUser?.id && (!serverSettings.familiesEnabled || usersData.users.some(user => user.id === id))))
+  const [includeSelf, setIncludeSelf] = useState(canIncludeSelf && (editingItem || initialUserIds
+    ? !!(editingItem?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') : true))
   const [saving, setSaving] = useState(false)
   const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
     checkPermission(currentUser.permissions, 'wishlist', 'write') ||
     !!currentUser.managedUserIds?.includes(userId))
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
-  const [usersData] = useAtom(usersAtom)
   const [drawing, setDrawing] = useState<string>(editingItem?.drawing || '')
   const [isDrawingModalOpen, setIsDrawingModalOpen] = useState(false)
 
@@ -63,8 +66,8 @@ export default function AddEditWishlistItemModal({
       setTargetCompletions(editingItem.targetCompletions)
       setLink(editingItem.link || '')
       setDrawing(editingItem.drawing || '')
-      setSelectedUserIds((editingItem.userIds || []).filter(id => id !== currentUser?.id))
-      setIncludeSelf(!!editingItem.userIds?.includes(currentUser?.id ?? ''))
+      setSelectedUserIds((editingItem.userIds || []).filter(id => id !== currentUser?.id && (!serverSettings.familiesEnabled || usersData.users.some(user => user.id === id))))
+      setIncludeSelf(canIncludeSelf && !!editingItem.userIds?.includes(currentUser?.id ?? ''))
     } else {
       setName('')
       setDescription('')
@@ -72,11 +75,11 @@ export default function AddEditWishlistItemModal({
       setTargetCompletions(undefined)
       setLink('')
       setDrawing('')
-      setSelectedUserIds((initialUserIds ?? []).filter(id => id !== currentUser?.id))
-      setIncludeSelf(initialUserIds ? initialUserIds.includes(currentUser?.id ?? '') : true)
+      setSelectedUserIds((initialUserIds ?? []).filter(id => id !== currentUser?.id && (!serverSettings.familiesEnabled || usersData.users.some(user => user.id === id))))
+      setIncludeSelf(canIncludeSelf && (initialUserIds ? initialUserIds.includes(currentUser?.id ?? '') : true))
     }
     setErrors({})
-  }, [editingItem, currentUser?.id, initialUserIds])
+  }, [editingItem, currentUser?.id, initialUserIds, canIncludeSelf, serverSettings.familiesEnabled, usersData.users])
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {}
@@ -94,7 +97,7 @@ export default function AddEditWishlistItemModal({
     if (link && !isValidUrl(link)) {
       newErrors.link = t('errorInvalidUrl')
     }
-    if (!includeSelf && selectedUserIds.length === 0) {
+    if (!(canIncludeSelf && includeSelf) && selectedUserIds.length === 0) {
       newErrors.assignment = t('assignmentRequired')
     }
     setErrors(newErrors)
@@ -125,7 +128,7 @@ export default function AddEditWishlistItemModal({
       coinCost,
       targetCompletions: targetCompletions || undefined,
       link: link.trim() || undefined,
-      userIds: [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
+      userIds: [...selectedUserIds, ...(canIncludeSelf && includeSelf && currentUser ? [currentUser.id] : [])],
       drawing: drawing && drawing !== '[]' ? drawing : undefined
     }
 
@@ -334,11 +337,11 @@ export default function AddEditWishlistItemModal({
                   </div>
                 </div>
               </div>
-              {(currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
+              {canIncludeSelf && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={includeSelf} onChange={event => setIncludeSelf(event.target.checked)} />
                 {t('includeSelf')}
               </label>}
-              {usersData.users && usersData.users.length > 1 && (
+              {usersData.users && (usersData.users.length > 1 || !canIncludeSelf && usersData.users.length > 0) && (
                 <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                   <div className="flex items-center gap-2 sm:justify-end">
                     <Label id="reward-sharing-label">{t('shareLabel')}</Label>
@@ -362,7 +365,7 @@ export default function AddEditWishlistItemModal({
                           }}
                         >
                           <Avatar className="h-7 w-7">
-                          <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
+                          <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} alt="" />
                           <AvatarFallback>{user.username[0]}</AvatarFallback>
                           </Avatar>
                         </button>

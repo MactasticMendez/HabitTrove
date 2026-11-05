@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { currentUserAtom, settingsAtom, usersAtom } from '@/lib/atoms'
+import { currentUserAtom, settingsAtom, usersAtom, serverSettingsAtom } from '@/lib/atoms'
 import { saveStatusDays } from '@/app/actions/data'
 import type { StatusDay } from '@/lib/types'
 import { useTranslations } from 'next-intl'
@@ -16,6 +16,8 @@ export default function StatusDaysSettings() {
   const t = useTranslations('StatusDays')
   const [currentUser] = useAtom(currentUserAtom)
   const [settings] = useAtom(settingsAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
+  const canUsePreferences = !serverSettings.familiesEnabled || serverSettings.familyMember === true
   const [, setUsers] = useAtom(usersAtom)
   const [date, setDate] = useState(DateTime.now().setZone(settings.system.timezone).toISODate() ?? '')
   const [status, setStatus] = useState<StatusDay['status']>('sick')
@@ -24,7 +26,7 @@ export default function StatusDaysSettings() {
   const days = currentUser?.statusDays ?? []
 
   const save = async (next: StatusDay[]) => {
-    if (!currentUser) return
+    if (!currentUser || !canUsePreferences) return
     setBusy(true)
     setError('')
     try {
@@ -38,6 +40,7 @@ export default function StatusDaysSettings() {
     }
   }
 
+  if (!canUsePreferences) return null
   return <Card className="mb-6">
     <CardHeader><CardTitle>{t('title')}</CardTitle></CardHeader>
     <CardContent className="space-y-4">

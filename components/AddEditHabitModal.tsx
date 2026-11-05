@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { RRule } from 'rrule'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { settingsAtom, usersAtom, currentUserAtom } from '@/lib/atoms'
+import { settingsAtom, usersAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
@@ -113,16 +113,20 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
   const scheduleHasPending = !!habit?.completionRecords?.some(record => record?.approval === 'pending')
   const [pickedTaskDate, setPickedTaskDate] = useState<DateTime | null>(null)
   const [currentUser] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
+  const [usersData] = useAtom(usersAtom)
+  const users = usersData.users
+  const canIncludeSelf = !serverSettings.familiesEnabled || serverSettings.familyMember === true && users.some(user => user.id === currentUser?.id)
+  const initialRecipients = (habit?.userIds ?? initialUserIds ?? [])
+    .filter(id => !serverSettings.familiesEnabled || users.some(user => user.id === id))
   const canAssignUser = (userId: string) => !!currentUser && (currentUser.isAdmin ||
     checkPermission(currentUser.permissions, 'habit', 'write') ||
     !!currentUser.managedUserIds?.includes(userId))
-  const [includeSelf, setIncludeSelf] = useState((habit?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') ?? !habit)
-  const [negativeOwnerId, setNegativeOwnerId] = useState(habit?.userIds?.[0] ?? initialUserIds?.[0] ?? currentUser?.id ?? '')
+  const [includeSelf, setIncludeSelf] = useState(canIncludeSelf && ((habit?.userIds ?? initialUserIds)?.includes(currentUser?.id ?? '') ?? !habit))
+  const [negativeOwnerId, setNegativeOwnerId] = useState(initialRecipients[0] ?? (canIncludeSelf ? currentUser?.id : undefined) ?? '')
   const [isQuickDatesOpen, setIsQuickDatesOpen] = useState(false)
   const [approvalError, setApprovalError] = useState('')
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>((habit?.userIds ?? initialUserIds ?? []).filter(id => id !== currentUser?.id))
-  const [usersData] = useAtom(usersAtom)
-  const users = usersData.users
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialRecipients.filter(id => id !== currentUser?.id))
   const canConfigureApproval = !habit || !!currentUser?.isAdmin || habit.createdBy === currentUser?.id
   const suggestedApprovers = approverQuery.trim()
     ? users.filter(user => !approverIds.includes(user.id) &&
@@ -197,7 +201,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isNegative && !isAnytime && !includeSelf && !selectedUserIds.length) {
+    if (!isNegative && !isAnytime && !(canIncludeSelf && includeSelf) && !selectedUserIds.length) {
       setSaveError(true)
       return
     }
@@ -222,7 +226,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
       completions: habit?.completions || [],
       frequency: getFrequencyUpdate(),
       schedule,
-      userIds: isNegative || isAnytime ? [negativeOwnerId] : [...selectedUserIds, ...(includeSelf && currentUser ? [currentUser.id] : [])],
+      userIds: isNegative || isAnytime ? [negativeOwnerId] : [...selectedUserIds, ...(canIncludeSelf && includeSelf && currentUser ? [currentUser.id] : [])],
       drawing: drawing && drawing !== '[]' ? drawing : undefined,
       taskRepeat: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' ? taskRepeat as Habit['taskRepeat'] : undefined,
       taskRepeatInterval: isTask && scheduleMode === 'calendar' && taskRepeat !== 'none' ? taskRepeatInterval : undefined,
@@ -237,7 +241,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
         startsAt: DateTime.now().toUTC().toISO()!,
         until: boostUntil,
       } : undefined,
-    }, selectedFolderId)
+    }, canIncludeSelf ? selectedFolderId : undefined)
     } catch { setSaveError(true) }
   }
 
@@ -683,16 +687,17 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
               {(isAnytime || isNegative && (currentUser?.isAdmin || currentUser?.managedUserIds?.length)) && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="negative-assignee" className="sm:text-right">{t(isAnytime ? 'anytimeAssignee' : 'negativeAssignee')}</Label>
                 <select id="negative-assignee" className="min-w-0 sm:col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={negativeOwnerId} disabled={scheduleHasPending} onChange={event => setNegativeOwnerId(event.target.value)}>
+                  value={negativeOwnerId} disabled={scheduleHasPending} required onChange={event => setNegativeOwnerId(event.target.value)}>
+                  <option value="" disabled>{t(isAnytime ? 'anytimeAssignee' : 'negativeAssignee')}</option>
                   {users.filter(user => user.id === currentUser?.id || currentUser?.isAdmin || currentUser?.managedUserIds?.includes(user.id))
                     .map(user => <option key={user.id} value={user.id}>{user.username}</option>)}
                 </select>
               </div>}
-              {!isNegative && !isAnytime && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
+              {!isNegative && !isAnytime && canIncludeSelf && (currentUser?.isAdmin || currentUser?.managedUserIds?.length) && <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={includeSelf} disabled={scheduleHasPending} onChange={event => setIncludeSelf(event.target.checked)} />
                 {t('includeSelf')}
               </label>}
-              {!isNegative && !isAnytime && users && users.length > 1 && (
+              {!isNegative && !isAnytime && users && (users.length > 1 || !canIncludeSelf && users.length > 0) && (
                 <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                   <div className="flex items-center gap-2 sm:justify-end">
                     <Label id="sharing-label">{t('shareLabel')}</Label>
@@ -717,7 +722,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                           }}
                         >
                           <Avatar className="h-7 w-7">
-                          <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
+                          <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} alt="" />
                           <AvatarFallback>{user.username[0]}</AvatarFallback>
                           </Avatar>
                         </button>
@@ -726,7 +731,7 @@ export default function AddEditHabitModal({ onClose, onSave, habit, isTask, fold
                   </div>
                 </div>
               )}
-              {folders && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
+              {canIncludeSelf && folders && <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-4 sm:gap-4">
                 <Label htmlFor="item-folder" className="sm:text-right">{t('folderLabel')}</Label>
                 <select id="item-folder" className="min-w-0 sm:col-span-3 flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={selectedFolderId} onChange={event => setSelectedFolderId(event.target.value)}>

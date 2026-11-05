@@ -23,7 +23,8 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
   const currentUserId = session?.user.id
   const users = useAtomValue(usersAtom)
   const serverSettings = useAtomValue(serverSettingsAtom)
-  const currentAccount = users.users.find(user => user.id === currentUserId)
+  const currentAccount = users.currentUser?.id === currentUserId
+    ? users.currentUser : users.users.find(user => user.id === currentUserId)
   const [showRefreshBanner, setShowRefreshBanner] = useState(false);
 
   // clientFreshnessTokenAtom is async, useAtomValue will suspend until it's resolved.
@@ -90,6 +91,8 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
 export default function ClientWrapper({ children }: { children: ReactNode }) {
   const [isMounted, setIsMounted] = useState(false);
   const pathname = usePathname()
+  const serverSettings = useAtomValue(serverSettingsAtom)
+  const { status } = useSession()
 
   // block client-side hydration until mounted (this is crucial to wait for all jotai atoms to load),
   // to prevent SSR hydration errors in the children components
@@ -102,7 +105,10 @@ export default function ClientWrapper({ children }: { children: ReactNode }) {
   }
 
   if (pathname.startsWith('/invite/')) {
-    return <InviteAcceptance token={pathname.slice('/invite/'.length)} />
+    if (status === 'loading') return <LoadingSpinner />
+    return <InviteAcceptance token={pathname.slice('/invite/'.length)}
+      familiesEnabled={serverSettings.familiesEnabled} signedIn={status === 'authenticated'}
+      authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} />
   }
 
   return (

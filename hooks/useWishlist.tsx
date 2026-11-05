@@ -47,7 +47,7 @@ export function useWishlist() {
     if (!handlePermissionCheck(user, 'wishlist', 'write', tCommon)) return
     const newItem = { ...item, id: Date.now().toString() }
     const newItems = [...wishlist.items, newItem]
-    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const newWishListData = { items: newItems, revision: wishlist.revision, familyId: wishlist.familyId }
     const saved = await saveWishlistItems(newWishListData)
     setWishlist(saved)
   }
@@ -57,7 +57,7 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === updatedItem.id ? updatedItem : item
     )
-    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const newWishListData = { items: newItems, revision: wishlist.revision, familyId: wishlist.familyId }
     const saved = await saveWishlistItems(newWishListData)
     setWishlist(saved)
   }
@@ -65,7 +65,7 @@ export function useWishlist() {
   const deleteWishlistItem = async (id: string) => {
     if (!handlePermissionCheck(user, 'wishlist', 'write', tCommon)) return
     const newItems = wishlist.items.filter(item => item.id !== id)
-    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const newWishListData = { items: newItems, revision: wishlist.revision, familyId: wishlist.familyId }
     const saved = await saveWishlistItems(newWishListData)
     setWishlist(saved)
   }
@@ -123,7 +123,7 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === id ? { ...item, archived: true } : item
     )
-    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const newWishListData = { items: newItems, revision: wishlist.revision, familyId: wishlist.familyId }
     const saved = await saveWishlistItems(newWishListData)
     setWishlist(saved)
   }
@@ -133,7 +133,7 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === id ? { ...item, archived: false } : item
     )
-    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const newWishListData = { items: newItems, revision: wishlist.revision, familyId: wishlist.familyId }
     const saved = await saveWishlistItems(newWishListData)
     setWishlist(saved)
   }

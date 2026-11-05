@@ -18,11 +18,11 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { Permission } from '@/lib/types';
+import { Permission, PublicUser } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { useAtom, useAtomValue } from 'jotai';
 import { serverSettingsAtom, usersAtom, currentUserAtom } from '@/lib/atoms';
-import { createUser, updateUser, updateUserPassword, uploadAvatar } from '@/app/actions/data';
+import { createUser, updateUser, updateUserPassword, uploadAvatar, loadUsersPublicData } from '@/app/actions/data';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { User as UserIcon } from 'lucide-react';
 import _ from 'lodash';
@@ -31,17 +31,19 @@ import { PermissionSelector } from './PermissionSelector';
 
 interface UserFormProps {
   userId?: string;  // if provided, we're editing; if not, we're creating
+  account?: PublicUser;
   onCancel: () => void;
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }
 
-export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps) {
+export default function UserForm({ userId, account, onCancel, onSuccess }: UserFormProps) {
   const t = useTranslations('UserForm');
   const accountText = useTranslations('AccountSecurity');
   const [users, setUsersData] = useAtom(usersAtom);
   const serverSettings = useAtomValue(serverSettingsAtom)
-  const user = userId ? users.users.find(u => u.id === userId) : undefined;
+  const user = userId ? account?.id === userId ? account : users.currentUser?.id === userId ? users.currentUser : users.users.find(u => u.id === userId) : undefined;
   const [currentUser] = useAtom(currentUserAtom)
+  const canEditLegacyPermissions = !!currentUser?.isAdmin && !serverSettings.familiesEnabled
   const getDefaultPermissions = (): Permission[] => [{
     habit: {
       write: true,
@@ -77,6 +79,11 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const refreshFamilyDirectory = async () => {
+    try { setUsersData(await loadUsersPublicData()) }
+    catch { window.location.reload() }
+  }
+
   const handleDeleteUser = async () => {
     if (!user) return;
 
@@ -107,7 +114,8 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
       });
 
       if (response.ok) {
-        setUsersData(prev => ({
+        if (serverSettings.familiesEnabled) await refreshFamilyDirectory()
+        else setUsersData(prev => ({
           ...prev,
           users: prev.users.filter(u => u.id !== user.id),
         }));
@@ -116,7 +124,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
           description: t('toastUserDeletedDescription', { username: user.username }),
           variant: 'default'
         });
-        onSuccess();
+        await onSuccess();
       } else {
         const errorData = await response.json();
         toast({
@@ -159,7 +167,8 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
 
       if (isEditing) {
         const profileChanged = username !== user.username || email !== (user.email || '') || avatarPath !== user.avatarPath ||
-          (currentUser?.isAdmin && (!_.isEqual(permissions, user.permissions) || isAdmin !== user.isAdmin || authentikSubject || removeAuthentik || !_.isEqual(managedUserIds, user.managedUserIds ?? [])));
+          (currentUser?.isAdmin && (isAdmin !== user.isAdmin || authentikSubject || removeAuthentik)) ||
+          (canEditLegacyPermissions && (!_.isEqual(permissions, user.permissions) || !_.isEqual(managedUserIds, user.managedUserIds ?? [])));
         const passwordChanged = (disablePassword && user.hasPassword) || !!password;
         if (profileChanged && passwordChanged) {
           setError(accountText('saveSeparately'));
@@ -171,11 +180,11 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
             username,
             ...(email !== (user.email || '') && { email }),
             avatarPath,
-            ...(currentUser?.isAdmin && !_.isEqual(permissions, user.permissions) && { permissions }),
+            ...(canEditLegacyPermissions && !_.isEqual(permissions, user.permissions) && { permissions }),
             ...(currentUser?.isAdmin && isAdmin !== user.isAdmin && { isAdmin }),
             ...(currentUser?.isAdmin && authentikSubject && { authentikSubject }),
             ...(currentUser?.isAdmin && removeAuthentik && { authentikSubject: null }),
-            ...(currentUser?.isAdmin && !_.isEqual(managedUserIds, user.managedUserIds ?? []) && { managedUserIds }),
+            ...(canEditLegacyPermissions && !_.isEqual(managedUserIds, user.managedUserIds ?? []) && { managedUserIds }),
           });
         }
 
@@ -186,20 +195,23 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
           await updateUserPassword(user.id, password, currentPassword);
         }
 
-        setUsersData(prev => ({
-          ...prev,
-          users: prev.users.map(u =>
-            u.id === user.id ? {
-              ...u,
+        if (!serverSettings.familiesEnabled) setUsersData(prev => {
+          const updateAccount = (account: PublicUser): PublicUser => ({
+              ...account,
               username,
               email,
               avatarPath,
-              ...(currentUser?.isAdmin && { permissions, isAdmin, managedUserIds }),
-              hasPassword: disablePassword ? false : (password ? true : !!u.hasPassword),
-              hasAuthentik: removeAuthentik ? false : (authentikSubject ? true : !!u.hasAuthentik),
-            } : u
-          ),
-        }));
+              ...(currentUser?.isAdmin && { isAdmin }),
+              ...(canEditLegacyPermissions && { permissions, managedUserIds }),
+              hasPassword: disablePassword ? false : (password ? true : !!account.hasPassword),
+              hasAuthentik: removeAuthentik ? false : (authentikSubject ? true : !!account.hasAuthentik),
+          })
+          return {
+            ...prev,
+            ...(prev.currentUser?.id === user.id && { currentUser: updateAccount(prev.currentUser) }),
+            users: prev.users.map(account => account.id === user.id ? updateAccount(account) : account),
+          }
+        });
 
         toast({
           title: t('toastUserUpdatedTitle'),
@@ -216,13 +228,13 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
         } else if (password) {
           formData.append('password', password);
         }
-        formData.append('permissions', JSON.stringify(isAdmin ? undefined : permissions));
-        formData.append('isAdmin', JSON.stringify(isAdmin));
+        if (!serverSettings.familiesEnabled) formData.append('permissions', JSON.stringify(isAdmin ? undefined : permissions));
+        if (currentUser?.isAdmin) formData.append('isAdmin', JSON.stringify(isAdmin));
         formData.append('avatarPath', avatarPath || '');
         if (authentikSubject) formData.append('authentikSubject', authentikSubject);
 
         const newUser = await createUser(formData);
-        setUsersData(prev => ({
+        if (!serverSettings.familiesEnabled) setUsersData(prev => ({
           ...prev,
           users: [...prev.users, newUser]
         }));
@@ -234,9 +246,10 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
         });
       }
 
+      if (serverSettings.familiesEnabled) await refreshFamilyDirectory()
       setPassword('');
       setError('');
-      onSuccess();
+      await onSuccess();
       if (user && currentUser?.id === user.id &&
           (email !== (user.email || '') || !!password || (disablePassword && user.hasPassword) ||
            authentikSubject || removeAuthentik || isAdmin !== user.isAdmin || !_.isEqual(permissions, user.permissions))) {
@@ -394,13 +407,18 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
         )}
 
 
-        {currentUser && currentUser.isAdmin && <PermissionSelector
+        {currentUser?.isAdmin && serverSettings.familiesEnabled && <div className="space-y-2 rounded border p-3">
+          <div className="flex items-center justify-between gap-3"><Label htmlFor="site-administrator">{accountText('siteAdministrator')}</Label>
+            <Switch id="site-administrator" checked={isAdmin} onCheckedChange={setIsAdmin} /></div>
+          <p className="text-sm text-muted-foreground">{accountText('siteAdministratorDescription')}</p>
+        </div>}
+        {canEditLegacyPermissions && <PermissionSelector
           permissions={permissions}
           isAdmin={isAdmin}
           onPermissionsChange={setPermissions}
           onAdminChange={setIsAdmin}
         />}
-        {currentUser?.isAdmin && isEditing && <fieldset className="space-y-2 rounded border p-3">
+        {canEditLegacyPermissions && isEditing && <fieldset className="space-y-2 rounded border p-3">
           <legend className="px-1 font-medium">{t('managedFamilyMembers')}</legend>
           <p className="text-sm text-muted-foreground">{t('managedFamilyHelp')}</p>
           {users.users.filter(candidate => candidate.id !== user.id).map(candidate => <label key={candidate.id} className="flex items-center gap-2">
@@ -419,7 +437,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
               <Button
                 type="button"
                 variant="destructive"
-                className="mr-auto"
+                className="mr-auto bg-red-700 text-white hover:bg-red-800"
                 disabled={serverSettings.isDemo || isDeleting}
               >
                 {isDeleting ? t('deletingButtonText') : t('deleteAccountButton')}
@@ -437,7 +455,7 @@ export default function UserForm({ userId, onCancel, onSuccess }: UserFormProps)
                 <AlertDialogAction
                   onClick={handleDeleteUser}
                   disabled={isDeleting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  className="bg-red-700 text-white hover:bg-red-800"
                 >
                   {isDeleting ? t('deletingButtonText') : t('confirmDeleteButtonText')}
                 </AlertDialogAction>

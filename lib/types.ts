@@ -1,6 +1,7 @@
 import type { RRule } from "rrule"
 import { v4 as uuid } from "uuid"
 import type { DateTime } from "luxon"
+import type { FamilyRole } from './family-types'
 
 export type UserId = string
 
@@ -47,6 +48,7 @@ export type User = SafeUser & {
   personalFolders?: PersonalFolder[]
   statusDays?: StatusDay[]
   managedUserIds?: UserId[]
+  personalSettings?: { ui?: UISettings; language?: string }
 }
 
 export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssuer' | 'authVersion'> & {
@@ -167,11 +169,13 @@ export interface UserData {
 
 export interface PublicUserData {
   users: PublicUser[]
+  currentUser?: PublicUser
 }
 
 export interface HabitsData {
   habits: Habit[];
   revision?: number;
+  familyId?: string;
 }
 
 
@@ -186,6 +190,7 @@ export interface CoinsData {
 export interface WishlistData {
   items: WishlistItemType[];
   revision?: number;
+  familyId?: string;
 }
 
 export type FamilyMemberOverview = {
@@ -319,6 +324,9 @@ export interface ServerSettings {
   isDemo: boolean
   authentikEnabled: boolean
   oidcDisplayName: string
+  familiesEnabled?: boolean
+  familyRole?: FamilyRole | 'site-admin'
+  familyMember?: boolean
 }
 
 export type ParsedResultType = DateTime<true> | RRule | string | null // null if invalid
