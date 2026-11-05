@@ -217,7 +217,7 @@
     "todaySuffix": "今日"
   },
   "WishlistItem": {
-    "usesLeftSingular": "使用可能回数: 1回",
+    "usesLeftSingular": "使用可能回数: {count}回",
     "usesLeftPlural": "使用可能回数: {count}回",
     "coinsSuffix": "コイン",
     "redeem": "使用する",

@@ -97,6 +97,14 @@ describe('GET /api/avatars/[...path]', () => {
     expect(await response.json()).toEqual({ error: 'Invalid avatar path' })
   })
 
+  test('rejects symlinked parent directories even within the avatar directory', async () => {
+    const target = path.join(directory, 'data', 'avatars', 'original')
+    await fs.mkdir(target)
+    await fs.writeFile(path.join(target, 'avatar.png'), 'avatar-binary')
+    await fs.symlink(target, path.join(directory, 'data', 'avatars', 'linked'))
+    expect((await request(['linked', 'avatar.png'])).status).toBe(400)
+  })
+
   test('returns 404 when a file is missing', async () => {
     const response = await request(['missing.png'])
     expect(response.status).toBe(404)

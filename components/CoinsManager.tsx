@@ -111,6 +111,7 @@ export default function CoinsManager() {
         <h1 className="text-xl xs:text-3xl font-bold mr-6">{t('title')}</h1>
         {currentUser?.isAdmin && (
           <select
+            aria-label="Coin account"
             className="w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2"
             value={selectedUser}
             onChange={(e) => setSelectedUser(e.target.value)}
@@ -154,6 +155,7 @@ export default function CoinsManager() {
                   <div className="relative w-32">
                     <Input
                       type="number"
+                      aria-label="Coin adjustment"
                       value={amount}
                       onChange={(e) => {
                         const rawValue = e.target.value;
@@ -284,6 +286,7 @@ export default function CoinsManager() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">{t('showLabel')}</span>
                   <select
+                    aria-label={`${t('showLabel')} ${t('entriesSuffix')}`}
                     className="border rounded p-1"
                     value={pageSize}
                     onChange={(e) => {
@@ -384,7 +387,7 @@ export default function CoinsManager() {
                           <div className="flex-shrink-0 text-right"> {/* Ensure amount stays on the right */}
                             <span
                               className={`font-mono ${transaction.amount >= 0
-                                ? 'text-green-600 dark:text-green-400'
+                                ? 'text-green-700 dark:text-green-400'
                                 : 'text-red-600 dark:text-red-400'
                                 }`}
                             >

@@ -1,4 +1,7 @@
 import { z } from "zod"
+import { assertDatabaseTarget, currentDatabaseClient, withStorageTransaction } from './db/client'
+import { readAuthDocument, readDocument } from './db/repository'
+import { usesPostgres } from './storage-mode'
 
 const optionalUrl = z.preprocess(value => value === '' ? undefined : value, z.url().optional())
 const optionalName = z.preprocess(value => value === '' ? undefined : value, z.string().min(1).optional())
@@ -46,6 +49,9 @@ declare global {
 export function init() {
   try {
     zodEnv.parse(process.env)
+    if (usesPostgres()) {
+      assertDatabaseTarget(process.env.DATABASE_URL!)
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       const { fieldErrors, formErrors } = err.flatten()
@@ -60,5 +66,45 @@ export function init() {
         `Invalid environment variables:\n ${errorMessage}`,
       )
     }
+    throw err
+  }
+}
+
+// Read-only validation: provisioning and imports belong to the offline CLI.
+export async function validateRuntimeStorage(): Promise<void> {
+  if (!usesPostgres()) return
+  try {
+    await withStorageTransaction(async () => {
+      const client = currentDatabaseClient()!
+      const identity = (await client.query(`SELECT current_database() AS database, current_user AS username,
+        rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+        FROM pg_roles WHERE rolname=current_user`)).rows[0]
+      const target = new URL(process.env.DATABASE_URL!)
+      if (!identity || identity.database !== decodeURIComponent(target.pathname.slice(1)) ||
+          identity.username !== decodeURIComponent(target.username) || identity.rolsuper || identity.rolcreatedb ||
+          identity.rolcreaterole || identity.rolreplication || identity.rolbypassrls) {
+        throw new Error('Invalid runtime database identity or privileges')
+      }
+      const owners = await client.query(`SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='habittrove' AND pg_has_role(current_user,c.relowner,'MEMBER') LIMIT 1`)
+      if (owners.rowCount) throw new Error('Runtime database login must not own application tables')
+      const elevated = await client.query(`SELECT 1 FROM pg_roles WHERE
+        (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR left(rolname,3)='pg_')
+        AND pg_has_role(current_user,oid,'MEMBER') LIMIT 1`)
+      if (elevated.rowCount) throw new Error('Runtime database login must not inherit privileged roles')
+      const databasePrivileges = await client.query(`SELECT 1 FROM pg_database WHERE datname=current_database()
+        AND (pg_has_role(current_user,datdba,'MEMBER') OR has_database_privilege(current_user,oid,'CREATE'))`)
+      if (databasePrivileges.rowCount) throw new Error('Runtime database login must not own or create database schemas')
+      const schemaPrivileges = await client.query(`SELECT 1 FROM pg_namespace
+        WHERE pg_has_role(current_user,nspowner,'MEMBER') OR has_schema_privilege(current_user,oid,'CREATE') LIMIT 1`)
+      if (schemaPrivileges.rowCount) throw new Error('Runtime database login must not own schemas or create schema objects')
+      const accounts = await readAuthDocument()
+      if (!accounts?.users.length || !accounts.users.some(user => user.isAdmin)) throw new Error('Missing initialized accounts')
+      for (const kind of ['habits', 'wishlist', 'coins', 'settings'] as const) {
+        if (!await readDocument(kind)) throw new Error('Missing imported application data')
+      }
+    }, { readOnly: true })
+  } catch {
+    throw new Error('HabitTrove database startup validation failed; verify configuration, migration and imported data')
   }
 }

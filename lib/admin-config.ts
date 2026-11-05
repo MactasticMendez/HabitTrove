@@ -4,6 +4,9 @@ import { readFileSync } from 'fs'
 import path from 'path'
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, randomUUID } from 'crypto'
 import { z } from 'zod'
+import { usesPostgres } from './storage-mode'
+import { afterStorageCommit, currentDatabaseClient, withStorageTransaction } from './db/client'
+import { readAdminDocument, writeAdminDocument } from './db/repository'
 
 export const logLevels = ['debug', 'info', 'warn', 'error'] as const
 export type LogLevel = typeof logLevels[number]
@@ -72,6 +75,12 @@ type StoredAdminConfig = z.infer<typeof storedSchema>
 
 const configPath = () => path.join(process.cwd(), 'data', 'admin-config.json')
 let writeQueue: Promise<void> = Promise.resolve()
+let cachedLogLevel: LogLevel = 'info'
+let logRefresh: ReturnType<typeof setInterval> | undefined
+
+class StoredAdminConfigError extends Error {
+  constructor() { super('Saved administrator configuration is damaged') }
+}
 
 function secretKey(): Buffer {
   const authSecret = process.env.AUTH_SECRET
@@ -94,7 +103,7 @@ function encryptSecret(secret: string, key = secretKey()): string {
 
 function decryptSecret(value: string, key = secretKey()): string {
   const parts = value.split('.')
-  if (parts.length !== 3) throw new Error('Invalid OIDC configuration')
+  if (parts.length !== 3) throw new StoredAdminConfigError()
   try {
     const [iv, tag, encrypted] = parts.map(part => Buffer.from(part, 'base64url'))
     if (iv.length !== 12 || tag.length !== 16) throw new Error('Invalid encrypted secret')
@@ -102,17 +111,29 @@ function decryptSecret(value: string, key = secretKey()): string {
     decipher.setAuthTag(tag)
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
   } catch {
-    throw new Error('Cannot decrypt OIDC configuration')
+    throw new StoredAdminConfigError()
   }
 }
 
 async function readStoredConfig(): Promise<StoredAdminConfig | undefined> {
-  try {
-    return storedSchema.parse(JSON.parse(await fs.readFile(configPath(), 'utf8')))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    throw error
+  let stored: unknown
+  if (usesPostgres()) {
+    // Keep connection and schema errors distinct from damaged saved values.
+    stored = await readAdminDocument()
+  } else {
+    let raw: string
+    try {
+      raw = await fs.readFile(configPath(), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+    try { stored = JSON.parse(raw) } catch { throw new StoredAdminConfigError() }
   }
+  if (stored === undefined) return undefined
+  const parsed = storedSchema.safeParse(stored)
+  if (!parsed.success) throw new StoredAdminConfigError()
+  return parsed.data
 }
 
 function environmentOidcConfig(): OidcConfig | undefined {
@@ -140,25 +161,67 @@ export async function readEffectiveOidcConfig(): Promise<OidcConfig | undefined>
 }
 
 export async function getLegacyOidcIssuer(): Promise<string | undefined> {
-  return (await readStoredConfig())?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER
+  if (!usesPostgres()) return (await readStoredConfig())?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER
+  return (await startupConfiguration()).legacyIssuer
 }
 
 export async function readStartupOidcConfig(): Promise<OidcConfig | undefined> {
   try {
     return await readEffectiveOidcConfig()
-  } catch {
+  } catch (error) {
+    if (!(error instanceof StoredAdminConfigError)) throw error
     console.error('Saved OIDC configuration could not be loaded; OIDC sign-in is disabled')
     return undefined
   }
 }
 
-const activeOidcConfig = readStartupOidcConfig()
+type StartupConfiguration = { oidc?: OidcConfig; legacyIssuer?: string; damaged?: boolean }
+let activeConfiguration: Promise<StartupConfiguration> | undefined
 
-export function getActiveOidcConfig(): Promise<OidcConfig | undefined> {
-  return activeOidcConfig
+function startupConfiguration(): Promise<StartupConfiguration> {
+  // Build evaluation must not open a database connection or freeze the runtime provider.
+  if (process.env.NEXT_PHASE === 'phase-production-build') return Promise.resolve({})
+  return activeConfiguration ??= (async () => {
+    try {
+      const stored = await readStoredConfig()
+      return { oidc: effectiveOidcConfig(stored), legacyIssuer: stored?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER }
+    } catch (error) {
+      if (!(error instanceof StoredAdminConfigError)) throw error
+      console.error('Saved OIDC configuration could not be loaded; OIDC sign-in is disabled')
+      return { damaged: true }
+    }
+  })()
+}
+
+export async function getActiveOidcConfig(): Promise<OidcConfig | undefined> {
+  return (await startupConfiguration()).oidc
+}
+
+export async function refreshApplicationLogLevel(): Promise<void> {
+  try {
+    const stored = await readStoredConfig()
+    effectiveOidcConfig(stored)
+    cachedLogLevel = stored?.logLevel ?? 'info'
+  } catch (error) {
+    if (!(error instanceof StoredAdminConfigError)) throw error
+    cachedLogLevel = 'info'
+  }
+}
+
+export async function initializeAdminConfiguration(): Promise<void> {
+  await startupConfiguration()
+  await refreshApplicationLogLevel()
+  if (usesPostgres() && !logRefresh) {
+    logRefresh = setInterval(() => {
+      // Logging cannot query the database, including when this refresh fails.
+      void refreshApplicationLogLevel().catch(() => undefined)
+    }, 30_000)
+    logRefresh.unref()
+  }
 }
 
 export function getApplicationLogLevel(): LogLevel {
+  if (usesPostgres()) return cachedLogLevel
   try {
     return storedSchema.parse(JSON.parse(readFileSync(configPath(), 'utf8'))).logLevel
   } catch {
@@ -210,12 +273,18 @@ export async function getAdminConfigSummary() {
 }
 
 export async function readSmtpConfig(): Promise<SmtpConfig | undefined> {
-  const stored = (await readStoredConfig())?.smtpOverride
-  if (!stored) return undefined
-  const { encryptedPassword, ...publicFields } = stored
-  return smtpSchema.parse({ ...publicFields,
-    password: encryptedPassword ? decryptSecret(encryptedPassword, smtpSecretKey()) : '',
-  })
+  if ((await startupConfiguration()).damaged) return undefined
+  try {
+    const stored = (await readStoredConfig())?.smtpOverride
+    if (!stored) return undefined
+    const { encryptedPassword, ...publicFields } = stored
+    return smtpSchema.parse({ ...publicFields,
+      password: encryptedPassword ? decryptSecret(encryptedPassword, smtpSecretKey()) : '',
+    })
+  } catch (error) {
+    if (!(error instanceof StoredAdminConfigError) && !(error instanceof z.ZodError)) throw error
+    return undefined
+  }
 }
 
 export async function saveSmtpConfig(input: { enabled: boolean; host: string; port: number; secure: boolean;
@@ -239,6 +308,18 @@ export async function saveSmtpConfig(input: { enabled: boolean; host: string; po
 }
 
 async function updateStoredConfig(update: (current: StoredAdminConfig) => StoredAdminConfig): Promise<void> {
+  if (usesPostgres()) {
+    // Capture restart-bound issuer/provider before the first saved change.
+    await startupConfiguration()
+    const joinedTransaction = !!currentDatabaseClient()
+    await withStorageTransaction(async () => {
+      const next = storedSchema.parse(update((await readStoredConfig()) ?? { version: 1, logLevel: 'info' }))
+      await writeAdminDocument(next)
+    })
+    if (joinedTransaction) await afterStorageCommit(refreshApplicationLogLevel)
+    else await refreshApplicationLogLevel()
+    return
+  }
   const prior = writeQueue
   let release: () => void = () => {}
   writeQueue = new Promise<void>(resolve => { release = resolve })

@@ -50,6 +50,10 @@ import sharp from 'sharp'
 import { createHash, randomBytes } from 'crypto'
 import { getNextAfterCompletionDate } from '@/lib/flexible-schedule'
 import { sendFamilyInvitation } from '@/lib/invitation-mail'
+import { usesPostgres } from '@/lib/storage-mode'
+import { withStorageTransaction } from '@/lib/db/client'
+import { readDocument, writeDocument, getDocumentRevision, StaleDocumentError, readAttachmentMetadata, upsertAttachmentMetadata } from '@/lib/db/repository'
+import { registerAttachment, scheduleAttachmentRemoval } from '@/lib/attachment-store'
 
 
 
@@ -65,6 +69,7 @@ const permissionSchema = z.array(z.object({
 let dataWriteQueue: Promise<void> = Promise.resolve()
 
 async function withDataWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (usesPostgres()) return withStorageTransaction(operation)
   const prior = dataWriteQueue
   let release: () => void = () => {}
   dataWriteQueue = new Promise<void>(resolve => { release = resolve })
@@ -82,6 +87,19 @@ function validateAvatarPath(avatarPath: unknown): string | undefined {
     throw new Error('Invalid avatar path')
   }
   return avatarPath
+}
+
+async function assignAvatar(data: UserData, avatarPath: string, targetId: string, actor: User): Promise<void> {
+  if (!usesPostgres()) return
+  const filename = path.basename(avatarPath)
+  const attachment = await readAttachmentMetadata(`avatar:${filename}`)
+  if (!attachment || attachment.path !== `avatars/${filename}` || (!actor.isAdmin && attachment.owner_id !== actor.id)) {
+    throw new PermissionError('Avatar upload is no longer available')
+  }
+  if (data.users.some(user => user.id !== targetId && user.avatarPath === avatarPath)) {
+    throw new PermissionError('Avatar is already assigned; upload a new image')
+  }
+  await upsertAttachmentMetadata({ ...attachment, owner_id: targetId })
 }
 
 function validateAuthentikSubject(subject: unknown): string | undefined {
@@ -206,6 +224,12 @@ function getDefaultData<T>(type: DataType): T {
   return DATA_DEFAULTS[type]() as T;
 }
 
+async function assertDocumentRevision(type: Exclude<DataType, 'auth'>, revision: number | undefined): Promise<void> {
+  if (usesPostgres() && (!Number.isSafeInteger(revision) || revision !== await getDocumentRevision(type))) {
+    throw new StaleDocumentError()
+  }
+}
+
 async function ensureDataDir() {
   const dataDir = path.join(process.cwd(), 'data')
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
@@ -238,7 +262,14 @@ export async function triggerManualBackup(): Promise<{ success: boolean; message
   }
 }
 
-async function loadData<T>(type: DataType): Promise<T> {
+async function loadData<T>(type: Exclude<DataType, 'auth'>): Promise<T> {
+  if (usesPostgres()) {
+    return withStorageTransaction(async () => {
+      const stored = await readDocument<T>(type)
+      if (stored === undefined) throw new Error(`Database ${type} data is not initialized; run the migration`)
+      return { ...stored, revision: await getDocumentRevision(type) }
+    }, { readOnly: true })
+  }
   await ensureDataDir()
   const filePath = path.join(process.cwd(), 'data', `${type}.json`)
 
@@ -258,8 +289,13 @@ async function loadData<T>(type: DataType): Promise<T> {
   }
 }
 
-async function saveData<T>(type: DataType, data: T): Promise<void> {
+async function saveData<T>(type: Exclude<DataType, 'auth'>, data: T): Promise<void> {
   await requireUser()
+  if (usesPostgres()) {
+    const stored = { ...data } as T & { revision?: number }
+    delete stored.revision
+    return writeDocument(type, stored)
+  }
   await ensureDataDir()
   const filePath = path.join(process.cwd(), 'data', `${type}.json`)
   const temporary = `${filePath}.${process.pid}.${uuid()}.tmp`
@@ -389,7 +425,7 @@ export async function redeemFamilyReward(memberId: string, itemId: string, reque
     await saveData('wishlist', updatedWishlist)
     try { await saveData('coins', updatedCoins) }
     catch (error) {
-      await saveData('wishlist', wishlist)
+      if (!usesPostgres()) await saveData('wishlist', wishlist)
       throw error
     }
   })
@@ -400,13 +436,15 @@ export async function loadWishlistItems(): Promise<WishlistItemType[]> {
   return data.items
 }
 
-export async function saveWishlistItems(data: WishlistData): Promise<void> {
+export async function saveWishlistItems(data: WishlistData): Promise<WishlistData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('wishlist', 'write')
     const existingData = await loadData<WishlistData>('wishlist')
+    await assertDocumentRevision('wishlist', data?.revision)
     if (!data || !Array.isArray(data.items)) throw new Error('Invalid reward list')
     const items = mergeOwnedItems(data.items.map(validateWishlistItem), existingData.items, user, true, [], 'wishlist')
-    return saveData('wishlist', { items })
+    await saveData('wishlist', { items })
+    return loadWishlistData()
   })
 }
 
@@ -421,12 +459,13 @@ export async function loadHabitsData(): Promise<HabitsData> {
   }
 }
 
-export async function saveHabitsData(data: HabitsData): Promise<void> {
+export async function saveHabitsData(data: HabitsData): Promise<HabitsData> {
   return withDataWriteLock(async () => {
     const user = await requireUser()
     const canWrite = !!(user.isAdmin || checkPermission(user.permissions, 'habit', 'write') || user.managedUserIds?.length)
     if (!canWrite) await verifyPermission('habit', 'interact')
     const existingData = await loadData<HabitsData>('habits')
+    await assertDocumentRevision('habits', data?.revision)
     if (!data || !Array.isArray(data.habits)) throw new Error('Invalid habit list')
     const previous = new Map(existingData.habits.map(habit => [habit.id, habit]))
     const validUserIds = new Set((await readAuthData()).users.map(account => account.id))
@@ -500,10 +539,11 @@ export async function saveHabitsData(data: HabitsData): Promise<void> {
     for (const removed of existingData.habits.filter(habit => !retainedIds.has(habit.id))) {
       for (const record of removed.completionRecords ?? []) {
         if (!record?.evidenceId || !record.evidenceMime) continue
-        try { await fs.rm(evidencePath(record.evidenceId, record.evidenceMime), { force: true }) }
+        try { await scheduleAttachmentRemoval(record.evidenceId, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
         catch (error) { log('error', 'Could not remove deleted evidence', error) }
       }
     }
+    return loadHabitsData()
   })
 }
 
@@ -529,7 +569,7 @@ export async function reorderHabitItems(orderedIds: string[], isTask: boolean): 
     const habits = existing.habits.map(habit => positions.has(habit.id)
       ? { ...habit, position: positions.get(habit.id)! } : habit)
     await saveData('habits', { habits })
-    return { habits: habits.filter(habit => familyItemVisible(habit, user)) }
+    return loadHabitsData()
   })
 }
 
@@ -611,6 +651,11 @@ async function saveCompletionAndRewards(
   beforeCoins: CoinsData,
   afterCoins: CoinsData,
 ): Promise<void> {
+  if (usesPostgres()) {
+    await saveData('habits', afterHabits)
+    if (afterCoins !== beforeCoins) await saveData('coins', afterCoins)
+    return
+  }
   await saveData('habits', afterHabits)
   if (afterCoins === beforeCoins) return
   try {
@@ -663,7 +708,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       if (priorIndex >= 0) {
         const prior = habit.completionRecords![priorIndex]!
         if (prior.actorId !== user.id || prior.beneficiaryId !== beneficiaryId) throw new PermissionError('Request ID is already used')
-        return { habit, coins: visibleCoinsData(await loadData<CoinsData>('coins'), user), rewarded: false,
+        return { habit, coins: await visibleCoinsData(await loadData<CoinsData>('coins'), user), rewarded: false,
           rewardAmount: 0, pending: prior.approval === 'pending' && !prior.voided, targetReached: !prior.voided && prior.approval !== 'rejected',
           completionIndex: priorIndex, completionTimestamp: habit.completions[priorIndex] }
       }
@@ -763,6 +808,9 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       await fs.writeFile(evidencePath(record.id, photo.mime), photo.bytes, { flag: 'wx', mode: 0o600 })
     }
     try {
+      if (photo) await registerAttachment({ id: record.id, habit_id: habit.id, completion_id: record.id,
+        owner_id: record.beneficiaryId ?? record.actorId, path: `evidence/${path.basename(evidencePath(record.id, photo.mime))}`,
+        mime_type: photo.mime, bytes: photo.bytes })
       await saveCompletionAndRewards(habits, {
         ...habits, habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item),
       }, coins, updatedCoins)
@@ -771,7 +819,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       throw error
     }
     return {
-      habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user), rewarded,
+      habit: updatedHabit, coins: await visibleCoinsData(updatedCoins, user), rewarded,
       rewardAmount: rewarded ? rewardAmount : 0, pending, targetReached,
       completionIndex: updatedHabit.completions.length - 1, completionTimestamp: timestamp,
     }
@@ -809,7 +857,7 @@ export async function recordHabitSlip(habitId: string, timestamp: string): Promi
         description: `Slip: ${habit.name}`, timestamp: d2t({ dateTime: getNow({}) }) }, ...coins.transactions],
     } : coins
     await saveCompletionAndRewards(habits, { habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item) }, coins, updatedCoins)
-    return { habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user), penalty }
+    return { habit: updatedHabit, coins: await visibleCoinsData(updatedCoins, user), penalty }
   })
 }
 
@@ -837,7 +885,7 @@ export async function undoHabitSlip(habitId: string, slipId: string): Promise<{ 
         description: `Undid slip: ${habit.name}`, timestamp: d2t({ dateTime: getNow({}) }) }, ...coins.transactions],
     } : coins
     await saveCompletionAndRewards(habits, { habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item) }, coins, updatedCoins)
-    return { habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user) }
+    return { habit: updatedHabit, coins: await visibleCoinsData(updatedCoins, user) }
   })
 }
 
@@ -969,10 +1017,10 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
       ...habits, habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item),
     }, coins, updatedCoins)
     if (record?.evidenceId && record.evidenceMime) {
-      try { await fs.rm(evidencePath(record.evidenceId, record.evidenceMime), { force: true }) }
+      try { await scheduleAttachmentRemoval(record.evidenceId, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
       catch (error) { log('error', 'Could not remove withdrawn evidence', error) }
     }
-    return { habit: updatedHabit, coins: visibleCoinsData(updatedCoins, user), rewardReversed: transactions.length > 0 }
+    return { habit: updatedHabit, coins: await visibleCoinsData(updatedCoins, user), rewardReversed: transactions.length > 0 }
   })
 }
 
@@ -1058,7 +1106,7 @@ export async function reviewHabitCompletion(
     }, coins, updatedCoins)
     return {
       habit: user.isAdmin || updatedHabit.userIds?.includes(user.id) ? updatedHabit : null,
-      coins: visibleCoinsData(updatedCoins, user),
+      coins: await visibleCoinsData(updatedCoins, user),
       approved: decision === 'approve',
     }
   })
@@ -1068,19 +1116,24 @@ export async function reviewHabitCompletion(
 // Coins specific functions
 export async function loadCoinsData(): Promise<CoinsData> {
   try {
-    const user = await getCurrentUser()
-    if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultCoinsData()
-    const data = await loadData<CoinsData>('coins')
-    return visibleCoinsData(data, user)
-  } catch {
+    const read = async () => {
+      const user = await getCurrentUser()
+      if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultCoinsData()
+      const data = await loadData<CoinsData>('coins')
+      return visibleCoinsData(data, user)
+    }
+    return await (usesPostgres() ? withStorageTransaction(read, { readOnly: true }) : read())
+  } catch (error) {
+    if (usesPostgres()) throw error
     return getDefaultCoinsData()
   }
 }
 
-function visibleCoinsData(data: CoinsData, user: User): CoinsData {
-  if (user.isAdmin) return data
+async function visibleCoinsData(data: CoinsData, user: User): Promise<CoinsData> {
+  const revision = usesPostgres() ? await getDocumentRevision('coins') : data.revision
+  if (user.isAdmin) return { ...data, revision }
   const transactions = data.transactions.filter(transaction => transaction.userId === user.id)
-  return { balance: transactions.reduce((total, transaction) => total + transaction.amount, 0), transactions }
+  return { balance: transactions.reduce((total, transaction) => total + transaction.amount, 0), transactions, revision }
 }
 
 function validateHabitInteractionChanges(submitted: HabitsData['habits'], existing: HabitsData['habits'], userId: string): void {
@@ -1109,10 +1162,11 @@ function validateHabitInteractionChanges(submitted: HabitsData['habits'], existi
   if (changes > 1) throw new PermissionError('Only one habit can be changed at a time')
 }
 
-export async function saveCoinsData(data: CoinsData): Promise<void> {
+export async function saveCoinsData(data: CoinsData): Promise<CoinsData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('coins', 'write')
     const existingData = await loadData<CoinsData>('coins')
+    await assertDocumentRevision('coins', data?.revision)
     const visible = existingData.transactions.filter(transaction => user.isAdmin || transaction.userId === user.id)
     if (!Array.isArray(data.transactions) || data.transactions.length !== visible.length) {
       throw new PermissionError('Only transaction notes may be changed')
@@ -1129,7 +1183,8 @@ export async function saveCoinsData(data: CoinsData): Promise<void> {
       const submitted = submittedById.get(transaction.id)
       return submitted ? { ...transaction, note: submitted.note } : transaction
     })
-    return saveData('coins', { ...existingData, transactions })
+    await saveData('coins', { ...existingData, transactions })
+    return loadCoinsData()
   })
 }
 
@@ -1262,7 +1317,8 @@ export async function loadSettings(): Promise<Settings> {
     if (!user || (!user.email && process.env.DEMO !== 'true')) return defaultSettings
     const data = await loadData<Settings>('settings')
     return { ...defaultSettings, ...data }
-  } catch {
+  } catch (error) {
+    if (usesPostgres()) throw error
     return defaultSettings
   }
 }
@@ -1399,9 +1455,20 @@ export async function uploadAvatar(formData: FormData): Promise<string> {
     await fs.mkdir(avatarsDir, { recursive: true, mode: 0o700 })
     const priorFiles = (await fs.readdir(avatarsDir)).filter(name => isGeneratedAvatarForUser(name, user.id)).sort()
     const filename = `${user.id}-${Date.now()}-${uuid()}${ext}`
-    await fs.writeFile(path.join(avatarsDir, filename), Buffer.from(await file.arrayBuffer()), { flag: 'wx', mode: 0o600 })
-    for (const old of priorFiles.slice(0, Math.max(0, priorFiles.length - 2))) {
-      await fs.unlink(path.join(avatarsDir, old))
+    const bytes = Buffer.from(await file.arrayBuffer())
+    await fs.writeFile(path.join(avatarsDir, filename), bytes, { flag: 'wx', mode: 0o600 })
+    try {
+      await registerAttachment({ id: `avatar:${filename}`, owner_id: user.id,
+        path: `avatars/${filename}`, mime_type: mimeType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'image/avif', bytes })
+    } catch (error) {
+      await fs.rm(path.join(avatarsDir, filename), { force: true }).catch(() => undefined)
+      throw error
+    }
+    const referenced = new Set((await readAuthData()).users.map(account => account.avatarPath).filter(Boolean).map(value => path.basename(value!)))
+    const unreferenced = priorFiles.filter(name => !referenced.has(name))
+    const keep = Math.max(0, 2 - priorFiles.filter(name => referenced.has(name)).length)
+    for (const old of unreferenced.slice(0, Math.max(0, unreferenced.length - keep))) {
+      await scheduleAttachmentRemoval(`avatar:${old}`, `avatars/${old}`)
     }
     return `/data/avatars/${filename}`
   })
@@ -1566,7 +1633,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     throw new Error('A password or OIDC subject is required')
   }
 
-  const newUser = await updateAuthData(data => {
+  const newUser = await updateAuthData(async data => {
     if (!data.users.find(user => user.id === administrator.id)?.isAdmin) throw new PermissionError('Administrator access required')
     if (data.users.some(user => user.username === username)) throw new Error('Username already exists')
     if (email && data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already exists')
@@ -1580,6 +1647,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
       ...(authentikSubject && { authentikSubject, oidcIssuer }),
       ...(avatarPath && { avatarPath }),
     }
+    if (avatarPath) await assignAvatar(data, avatarPath, user.id, administrator)
     data.users.push(user)
     return user
   })
@@ -1596,7 +1664,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   }
   const oidcIssuer = updates.authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
   if (updates.authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
-  return updateAuthData(data => {
+  return updateAuthData(async data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     if (!actor) throw new PermissionError('User not authenticated')
     const userIndex = data.users.findIndex(user => user.id === userId)
@@ -1648,6 +1716,10 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     throw new Error('Invalid managed family members')
   }
 
+  if (usesPostgres() && validatedUpdates.avatarPath && validatedUpdates.avatarPath !== existingUser.avatarPath) {
+    await assignAvatar(data, validatedUpdates.avatarPath, userId, actor)
+  }
+
   const subject = 'authentikSubject' in validatedUpdates ? validatedUpdates.authentikSubject : existingUser.authentikSubject
   if (subject && data.users.some(user => user.id !== userId && user.authentikSubject === subject)) {
     throw new Error('OIDC identity is already linked')
@@ -1686,20 +1758,24 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
     throw new PermissionError('Cannot change another user\'s password')
   }
   if (newPassword !== undefined) newPasswordSchema.parse(newPassword)
+  const before = (await readAuthData()).users.find(user => user.id === userId)
+  if (!before) throw new Error('User not found')
+  if (currentUser.id === userId) {
+    if (!before.password) throw new PermissionError('An administrator must set the initial local password')
+    if (typeof currentPassword !== 'string' || currentPassword.length > 128 ||
+        !(await verifyStepUpPassword(before, currentPassword))) {
+      throw new PermissionError('Current password is incorrect')
+    }
+  }
+  const passwordHash = newPassword ? saltAndHashPassword(newPassword) : undefined
   await updateAuthData(async data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     const userIndex = data.users.findIndex(user => user.id === userId)
     if (!actor || (!actor.isAdmin && actor.id !== userId)) throw new PermissionError('Cannot change another user\'s password')
     if (userIndex === -1) throw new Error('User not found')
     const target = data.users[userIndex]
-    if (actor.id === target.id && !target.password) {
-      throw new PermissionError('An administrator must set the initial local password')
-    }
-    if (actor.id === target.id && target.password) {
-      if (typeof currentPassword !== 'string' || currentPassword.length > 128 ||
-          !(await verifyStepUpPassword(target, currentPassword))) {
-        throw new PermissionError('Current password is incorrect')
-      }
+    if (target.password !== before.password || (target.authVersion ?? 0) !== (before.authVersion ?? 0)) {
+      throw new PermissionError('Account changed; reload before changing the password')
     }
     if (target.isAdmin && newPassword === undefined && process.env.DEMO !== 'true') {
       throw new Error('Administrator accounts require a password')
@@ -1709,7 +1785,7 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
     }
     data.users[userIndex] = {
       ...target,
-      password: newPassword ? saltAndHashPassword(newPassword) : undefined,
+      password: passwordHash,
       authVersion: (target.authVersion ?? 0) + 1,
     }
   })
@@ -1746,8 +1822,11 @@ export async function deleteUser(userId: string): Promise<void> {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
       throw error
     })
-    for (const filename of avatarFiles.filter(name => isGeneratedAvatarForUser(name, userId))) {
-      await fs.unlink(path.join(avatarsDir, filename))
+    const assignedAvatar = targetUser.avatarPath ? path.basename(targetUser.avatarPath) : undefined
+    for (const filename of avatarFiles.filter(name =>
+      (isGeneratedAvatarForUser(name, userId) || name === assignedAvatar) &&
+      !remainingUsers.some(user => user.avatarPath === `/data/avatars/${name}`))) {
+      await scheduleAttachmentRemoval(`avatar:${filename}`, `avatars/${filename}`)
     }
     // Load all necessary data
     const wishlistData = await loadData<WishlistData>('wishlist')
@@ -1832,7 +1911,7 @@ export async function deleteUser(userId: string): Promise<void> {
 
     })
     for (const file of new Set(evidenceToRemove)) {
-      try { await fs.rm(file, { force: true }) }
+      try { await scheduleAttachmentRemoval(path.basename(file, path.extname(file)), `evidence/${path.basename(file)}`) }
       catch (error) { log('error', 'Could not remove deleted account evidence', error) }
     }
   })

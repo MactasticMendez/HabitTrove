@@ -8,9 +8,8 @@ services:
     build: .
     image: habittrove:local
     environment:
+      - DATABASE_URL=${DATABASE_URL:?Set the restricted HabitTrove runtime database URL}
       - AUTH_SECRET=${AUTH_SECRET:?Set a strong AUTH_SECRET}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-}
       - AUTH_URL=${AUTH_URL:-}
       - AUTHENTIK_ISSUER=${AUTHENTIK_ISSUER:-}
       - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID:-}
@@ -18,3 +17,22 @@ services:
       - OIDC_ISSUER=${OIDC_ISSUER:-}
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+
+  # Explicitly opt in for isolated development/tests; production uses its existing database.
+  postgres-test:
+    image: postgres:17.11
+    profiles: [database-test]
+    ports:
+      - "127.0.0.1:15432:5432"
+    environment:
+      POSTGRES_USER: habittrove_test_owner
+      # PostgreSQL refuses an empty password when this optional service is started.
+      POSTGRES_PASSWORD: ${POSTGRES_TEST_PASSWORD:-}
+      POSTGRES_DB: postgres
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U habittrove_test_owner -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
