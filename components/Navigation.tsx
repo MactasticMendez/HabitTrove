@@ -2,7 +2,7 @@
 
 import { Home, Calendar, Gift, Coins, ClipboardCheck, Users } from 'lucide-react'
 import { useAtom } from 'jotai'
-import { browserSettingsAtom, currentUserAtom } from '@/lib/atoms'
+import { browserSettingsAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms'
 import { useEffect, useState, ElementType } from 'react'
 import { useTranslations } from 'next-intl'
 import { HabitIcon, TaskIcon } from '@/lib/constants'
@@ -29,6 +29,7 @@ export default function Navigation({ className, viewPort }: NavigationProps) {
   const [isMobileView, setIsMobileView] = useState(false)
   const [browserSettings] = useAtom(browserSettingsAtom)
   const [currentUser] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
   const isTasksView = browserSettings.viewType === 'tasks'
 
   const currentNavItems: NavItemType[] = [
@@ -43,7 +44,7 @@ export default function Navigation({ className, viewPort }: NavigationProps) {
     { icon: Gift, label: t('wishlist'), href: '/wishlist', position: 'main' },
     { icon: Coins, label: t('coins'), href: '/coins', position: 'main' },
     { icon: ClipboardCheck, label: t('approvals'), href: '/approvals', position: 'main' },
-    ...(currentUser?.isAdmin || currentUser?.managedUserIds?.length
+    ...(serverSettings.familiesEnabled || currentUser?.isAdmin || currentUser?.managedUserIds?.length
       ? [{ icon: Users, label: t('family'), href: '/family', position: 'main' as const }]
       : []),
   ]

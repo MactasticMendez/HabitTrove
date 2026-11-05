@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PasswordEntryForm from './PasswordEntryForm';
 import UserForm from './UserForm';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
@@ -17,8 +17,9 @@ import { signIn, signInWithAuthentik } from '@/app/actions/user';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/hooks/use-toast';
 import { Description } from '@radix-ui/react-dialog';
-import { SafeUser } from '@/lib/types';
+import { SafeUser, PublicUserData } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { loadAdministrationUsers } from '@/app/actions/data';
 
 export function AnonymousSignIn({ onSuccess, authentikEnabled, oidcDisplayName, isDemo }: {
   onSuccess: () => void;
@@ -65,7 +66,7 @@ export function AnonymousSignIn({ onSuccess, authentikEnabled, oidcDisplayName, 
         <Button type="submit" disabled={busy}>{passwordForm('loginButton')}</Button>
       </form>
       {authentikEnabled && (
-        <form action={signInWithAuthentik}>
+        <form action={signInWithAuthentik.bind(null, '/')}>
           <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: oidcDisplayName })}</Button>
         </form>
       )}
@@ -163,7 +164,7 @@ function UserSelectionView({
   onCreateUser: () => void,
 }) {
   return (
-    <div className="grid grid-cols-3 gap-4 p-2 max-h-80 overflow-y-auto">
+    <div className="grid grid-cols-2 min-[400px]:grid-cols-3 gap-4 p-2 max-h-80 overflow-y-auto">
       {users
         .filter(user => user.id !== currentUserFromHook?.id) // Show other users
         .map((user) => (
@@ -187,10 +188,24 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState('');
-  const [usersData, setUsersData] = useAtom(usersAtom);
-  const users = usersData.users;
+  const [usersData] = useAtom(usersAtom);
   const [currentUser] = useAtom(currentUserAtom);
   const [serverSettings] = useAtom(serverSettingsAtom);
+  const accountText = useTranslations('AccountSecurity')
+  const [administrationUsers, setAdministrationUsers] = useState<PublicUserData | null>(null)
+  const [administrationError, setAdministrationError] = useState(false)
+  const useAdministrationDirectory = !!serverSettings.familiesEnabled && !!currentUser?.isAdmin
+  const users = useAdministrationDirectory ? administrationUsers?.users ?? [] : usersData.users
+
+  useEffect(() => {
+    let active = true
+    setAdministrationUsers(null)
+    setAdministrationError(false)
+    if (useAdministrationDirectory) loadAdministrationUsers().then(value => {
+      if (active) setAdministrationUsers(value)
+    }).catch(() => { if (active) setAdministrationError(true) })
+    return () => { active = false }
+  }, [useAdministrationDirectory, currentUser?.id])
 
 
   const handleUserSelect = (userId: string) => {
@@ -207,11 +222,15 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
     setIsCreating(true);
   };
 
-  const handleFormSuccess = () => {
+  const handleFormSuccess = async () => {
+    if (useAdministrationDirectory) {
+      try { setAdministrationUsers(await loadAdministrationUsers()); setAdministrationError(false) }
+      catch { setAdministrationError(true) }
+    }
     setSelectedUser(undefined);
     setIsCreating(false);
     setIsEditing(false);
-    onClose();
+    if (!useAdministrationDirectory) onClose();
   };
 
   const handleFormCancel = () => {
@@ -223,16 +242,18 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90dvh] w-[calc(100vw_-_2rem)] overflow-y-auto sm:max-w-md">
         <Description></Description>
         <DialogHeader>
           <DialogTitle>{isCreating ? t('createNewUserTitle') : t('selectUserTitle')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
+          {administrationError && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{accountText('administrationUsersError')}</p>}
           {!currentUser ? (
             <AnonymousSignIn onSuccess={onClose} authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
-          ) : !selectedUser && !isCreating && !isEditing ? (
+          ) : useAdministrationDirectory && !administrationUsers && !administrationError ? <p role="status">{accountText('loadingAccounts')}</p>
+          : !selectedUser && !isCreating && !isEditing ? (
             <UserSelectionView
               users={users}
               currentUserFromHook={currentUser}
@@ -243,6 +264,7 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
           ) : isCreating || isEditing ? (
             <UserForm
               userId={isEditing ? selectedUser : undefined}
+              account={isEditing ? administrationUsers?.users.find(user => user.id === selectedUser) : undefined}
               onCancel={handleFormCancel}
               onSuccess={handleFormSuccess}
             />

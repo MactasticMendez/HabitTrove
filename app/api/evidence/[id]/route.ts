@@ -23,7 +23,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   try {
     const familiesEnabled = usesPostgres() && await getFamiliesEnabled()
-    const serve = async () => {
+    const serve = async (selectedFamilyId?: string) => {
+      if (familiesEnabled && !selectedFamilyId) return NextResponse.json({ error: 'Not found' }, { status: 404 })
       let permittedRecord: HabitCompletionRecord | undefined
       let expectedHash: string | undefined
       if (usesPostgres()) {
@@ -31,8 +32,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           JOIN completions c ON c.habit_id=a.habit_id AND c.id=a.completion_id AND c.evidence_id=a.id
           JOIN habits h ON h.id=c.habit_id
           WHERE a.id=$1 AND NOT COALESCE(c.voided,false) AND c.evidence_mime=a.mime_type
-          AND (c.actor_id=$2 OR h.created_by=$2 OR EXISTS(SELECT 1 FROM habit_approvers p WHERE p.habit_id=h.id AND p.user_id=$2))
-          ${familiesEnabled ? 'AND NOT a.inaccessible AND a.family_id=c.family_id AND c.family_id=h.family_id' : ''}`, [id, user.id])
+          AND (c.actor_id=$2 OR h.created_by=$2 OR EXISTS(SELECT 1 FROM habit_approvers p WHERE p.habit_id=h.id AND p.user_id=$2 ${familiesEnabled ? 'AND p.family_id=$3' : ''}))
+          ${familiesEnabled ? 'AND NOT a.inaccessible AND a.family_id=$3 AND c.family_id=$3 AND h.family_id=$3' : ''}`,
+        familiesEnabled ? [id, user.id, selectedFamilyId] : [id, user.id])
         const attachment = result.rows[0]
         if (attachment && /^[a-f0-9]{64}$/.test(attachment.sha256 ?? '') && attachment.mime_type in extensions && attachment.path === `evidence/${id}.${extensions[attachment.mime_type as keyof typeof extensions]}`) {
           permittedRecord = { id, actorId: user.id, evidenceId: id, evidenceMime: attachment.mime_type }
@@ -82,8 +84,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if (!usesPostgres()) return await serve()
     if (!familiesEnabled) return await withStorageTransaction(serve, { readOnly: true })
     const familyId = (await cookies()).get('habittrove-family')?.value
-    if (!familyId) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return await withFamilyScope(user, async (scope) => scope ? serve() : NextResponse.json({ error: 'Not found' }, { status: 404 }), familyId, { readOnly: true })
+    return await withFamilyScope(user, async (scope) => scope ? serve(scope.familyId) : NextResponse.json({ error: 'Not found' }, { status: 404 }), familyId, { readOnly: true })
   } catch (error) {
     if (error instanceof Error && ['Unauthorized', 'Family access denied', 'Invalid family'].includes(error.message)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return NextResponse.json({ error: 'Not found' }, { status: 404 })

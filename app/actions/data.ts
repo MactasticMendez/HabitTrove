@@ -30,7 +30,7 @@ import {
   FamilyOverviewData
 } from '@/lib/types'
 import { checkPermission, d2t, getNow, uuid, isHabitDue } from '@/lib/utils';
-import { saltAndHashPassword } from '@/lib/password'
+import { saltAndHashPassword, saltAndHashPasswordAsync } from '@/lib/password'
 import { readAuthData, updateAuthData, verifyStepUpPassword } from '@/lib/auth-store'
 import { emailSchema, newPasswordSchema, signInSchema, usernameSchema } from '@/lib/zod';
 import _ from 'lodash';
@@ -53,7 +53,15 @@ import { sendFamilyInvitation } from '@/lib/invitation-mail'
 import { usesPostgres } from '@/lib/storage-mode'
 import { withStorageTransaction } from '@/lib/db/client'
 import { readDocument, writeDocument, getDocumentRevision, StaleDocumentError, readAttachmentMetadata, upsertAttachmentMetadata } from '@/lib/db/repository'
-import { registerAttachment, scheduleAttachmentRemoval } from '@/lib/attachment-store'
+import { registerAttachment, scheduleAttachmentRemoval, scheduleHabitEvidenceRemoval } from '@/lib/attachment-store'
+import { cookies } from 'next/headers'
+import { currentDatabaseClient } from '@/lib/db/client'
+import { getFamiliesEnabled, withFamilyScope, withFreshFamilyActor } from '@/lib/family-scope'
+import { getFamilyScopedUser, readFamilyDirectory, readFamilySettings, saveFamilySettings,
+  savePersonalSettings, saveFamilyPreferences, readCurrentGlobalWalletBalance, requireCurrentFamilyContext } from '@/lib/family-actor'
+import { preflightNewHouseholdInvite, withHouseholdInviteEmail } from '@/lib/family-store'
+import { acquirePasswordVerification, reserveAuthenticationAttempt, clearAuthenticationAttempts } from '@/lib/auth-throttle'
+import { readCompletionLedger } from '@/lib/db/repository'
 
 
 
@@ -79,6 +87,57 @@ async function withDataWriteLock<T>(operation: () => Promise<T>): Promise<T> {
   } finally {
     release()
   }
+}
+
+async function withSelectedFamilyAction<T>(operation: () => Promise<T>, readOnly = false,
+  withoutFamily?: (actor: User) => Promise<T>): Promise<T> {
+  if (!usesPostgres() || !await getFamiliesEnabled()) return operation()
+  const actor = await getCurrentUser()
+  if (!actor) return operation()
+  const selected = (await cookies()).get('habittrove-family')?.value
+  const invoke = () => withFamilyScope(actor, async scope => {
+    if (!scope) {
+      if (withoutFamily) return withoutFamily(actor)
+      throw new PermissionError('Choose or create a family before changing family data')
+    }
+    return operation()
+  }, selected, { readOnly })
+  try { return await invoke() }
+  catch (error) {
+    if (readOnly && withoutFamily && error instanceof Error && ['Family access denied', 'Invalid family'].includes(error.message)) {
+      return withFreshFamilyActor(actor, () => withoutFamily(actor), { readOnly: true })
+    }
+    throw error
+  }
+}
+
+async function withGlobalIdentityAction<T>(operation: () => Promise<T>, readOnly: boolean): Promise<T> {
+  if (!usesPostgres() || !await getFamiliesEnabled()) return operation()
+  const actor = await getCurrentUser()
+  return actor ? withFreshFamilyActor(actor, operation, { readOnly }) : operation()
+}
+
+async function withIdentityWrite<T>(actor: User, operation: () => Promise<T>): Promise<T> {
+  return usesPostgres() ? withFreshFamilyActor(actor, operation) : operation()
+}
+
+async function getCurrentDataUser(): Promise<User | null> {
+  const actor = await getCurrentUser()
+  const client = currentDatabaseClient()
+  if (!actor || !client || !await getFamiliesEnabled()) return actor ?? null
+  const state = (await client.query("SELECT current_setting('habittrove.scope_validated',true) AS valid")).rows[0]
+  return state.valid === 'true' ? getFamilyScopedUser(actor) : actor
+}
+
+async function readDataUsers(): Promise<UserData> {
+  const actor = await requireUser()
+  return usesPostgres() && await getFamiliesEnabled() ? readFamilyDirectory(actor) : readAuthData()
+}
+
+async function walletBalance(data: CoinsData, actor: User, userId = actor.id): Promise<number> {
+  return usesPostgres() && await getFamiliesEnabled()
+    ? readCurrentGlobalWalletBalance(actor, userId)
+    : data.transactions.filter(row => row.userId === userId).reduce((total, row) => total + row.amount, 0)
 }
 
 function validateAvatarPath(avatarPath: unknown): string | undefined {
@@ -155,7 +214,7 @@ function familyItemEditable(item: { userIds?: string[] }, user: User): boolean {
 }
 
 async function requireUser(): Promise<User> {
-  const user = await getCurrentUser()
+  const user = await getCurrentDataUser()
   if (!user) throw new PermissionError('User not authenticated')
   if (!user.email && process.env.DEMO !== 'true') throw new PermissionError('Email is required before using this account')
   return user
@@ -224,7 +283,11 @@ function getDefaultData<T>(type: DataType): T {
   return DATA_DEFAULTS[type]() as T;
 }
 
-async function assertDocumentRevision(type: Exclude<DataType, 'auth'>, revision: number | undefined): Promise<void> {
+async function assertDocumentRevision(type: Exclude<DataType, 'auth'>, revision: number | undefined, familyId?: string): Promise<void> {
+  if ((type === 'habits' || type === 'wishlist') && usesPostgres() && await getFamiliesEnabled()) {
+    const context = await requireCurrentFamilyContext(await requireUser())
+    if (familyId !== context.familyId) throw new PermissionError('Data belongs to another family; reload before saving')
+  }
   if (usesPostgres() && (!Number.isSafeInteger(revision) || revision !== await getDocumentRevision(type))) {
     throw new StaleDocumentError()
   }
@@ -335,8 +398,8 @@ async function calculateServerFreshnessToken(): Promise<string | null> {
 }
 
 // Wishlist specific functions
-export async function loadWishlistData(): Promise<WishlistData> {
-  const user = await getCurrentUser()
+async function loadWishlistDataImpl(): Promise<WishlistData> {
+  const user = await getCurrentDataUser()
   if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultWishlistData()
 
   const data = await loadData<WishlistData>('wishlist')
@@ -347,9 +410,9 @@ export async function loadWishlistData(): Promise<WishlistData> {
 }
 
 async function familyAccess(actor: User, memberId?: string): Promise<{ manager: User; members: User[] }> {
-  const authData = await readAuthData()
-  const manager = authData.users.find(account => account.id === actor.id)
-  if (!manager || !manager.isAdmin && !manager.managedUserIds?.length) {
+  const authData = await readDataUsers()
+  const manager = usesPostgres() && await getFamiliesEnabled() ? await getFamilyScopedUser(actor) : authData.users.find(account => account.id === actor.id)
+  if (!manager || !manager.isAdmin && !manager.managedUserIds?.length && !await getFamiliesEnabled()) {
     throw new PermissionError('Family manager access required')
   }
   const allowed = authData.users.filter(account => manager.isAdmin || account.id === manager.id || manager.managedUserIds?.includes(account.id))
@@ -359,12 +422,15 @@ async function familyAccess(actor: User, memberId?: string): Promise<{ manager: 
   return { manager, members: allowed }
 }
 
-export async function loadFamilyOverview(): Promise<FamilyOverviewData> {
+async function loadFamilyOverviewImpl(): Promise<FamilyOverviewData> {
   const user = await requireUser()
   const { manager, members } = await familyAccess(user)
-  const [habits, wishlist, coins, settings] = await Promise.all([
-    loadData<HabitsData>('habits'), loadData<WishlistData>('wishlist'), loadData<CoinsData>('coins'), loadSettings(),
-  ])
+  const habits = await loadData<HabitsData>('habits')
+  const wishlist = await loadData<WishlistData>('wishlist')
+  const coins = await loadData<CoinsData>('coins')
+  const settings = await loadSettings()
+  const balances = new Map<string, number>()
+  for (const member of members) balances.set(member.id, await walletBalance(coins, manager, member.id))
   const timezone = settings.system.timezone
   const today = getNow({ timezone }).startOf('day')
   return { timezone, weekStartDay: settings.system.weekStartDay, members: members.map(member => {
@@ -372,7 +438,7 @@ export async function loadFamilyOverview(): Promise<FamilyOverviewData> {
     const due = items.filter(item => !item.archived && item.schedule?.type !== 'anytime' && isHabitDue({ habit: item, date: today, timezone }))
     return {
       id: member.id, username: member.username, avatarPath: member.avatarPath,
-      balance: coins.transactions.filter(transaction => transaction.userId === member.id).reduce((sum, transaction) => sum + transaction.amount, 0),
+      balance: balances.get(member.id) ?? 0,
       status: member.statusDays?.find(day => day.date === today.toISODate())?.status,
       dueToday: due.length,
       completedToday: due.filter(item => item.completions.filter((timestamp, index) =>
@@ -385,7 +451,7 @@ export async function loadFamilyOverview(): Promise<FamilyOverviewData> {
   }) }
 }
 
-export async function redeemFamilyReward(memberId: string, itemId: string, requestId: string): Promise<void> {
+async function redeemFamilyRewardImpl(memberId: string, itemId: string, requestId: string): Promise<void> {
   return withDataWriteLock(async () => {
     const user = await requireUser()
     const { manager, members } = await familyAccess(user, memberId)
@@ -409,14 +475,14 @@ export async function redeemFamilyReward(memberId: string, itemId: string, reque
     if (!item || !item.userIds?.includes(memberId) || !familyItemEditable(item, manager) || item.archived ||
         item.targetCompletions !== undefined && item.targetCompletions < 1) throw new PermissionError('Reward is not available for this member')
     validateWishlistItem(item)
-    const balance = coins.transactions.filter(transaction => transaction.userId === memberId).reduce((sum, transaction) => sum + transaction.amount, 0)
+    const balance = await walletBalance(coins, manager, memberId)
     if (balance < item.coinCost) throw new PermissionError('Insufficient coins')
     const member = members.find(account => account.id === memberId)!
     const transaction: CoinTransaction = { id: uuid(), amount: -item.coinCost, type: 'WISH_REDEMPTION',
       description: `Redeemed reward for ${member.username}: ${item.name}`, timestamp: DateTime.now().toUTC().toISO()!,
       userId: memberId, actorId: user.id, relatedItemId: itemId, requestId }
-    const updatedCoins = { balance: Math.max(0, coins.balance - item.coinCost), transactions: [transaction, ...coins.transactions] }
-    if (!Number.isSafeInteger(updatedCoins.balance)) throw new Error('Invalid coin balance')
+    const updatedCoins = { balance: usesPostgres() && await getFamiliesEnabled() ? coins.balance - item.coinCost : Math.max(0, coins.balance - item.coinCost), transactions: [transaction, ...coins.transactions] }
+    if (!Number.isFinite(updatedCoins.balance) || Math.abs(updatedCoins.balance) > Number.MAX_SAFE_INTEGER) throw new Error('Invalid coin balance')
     const updatedWishlist = { items: wishlist.items.map(candidate => {
       if (candidate.id !== itemId || candidate.targetCompletions === undefined) return candidate
       const remaining = candidate.targetCompletions - 1
@@ -436,12 +502,16 @@ export async function loadWishlistItems(): Promise<WishlistItemType[]> {
   return data.items
 }
 
-export async function saveWishlistItems(data: WishlistData): Promise<WishlistData> {
+async function saveWishlistItemsImpl(data: WishlistData): Promise<WishlistData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('wishlist', 'write')
     const existingData = await loadData<WishlistData>('wishlist')
-    await assertDocumentRevision('wishlist', data?.revision)
+    await assertDocumentRevision('wishlist', data?.revision, data?.familyId)
     if (!data || !Array.isArray(data.items)) throw new Error('Invalid reward list')
+    if (usesPostgres() && await getFamiliesEnabled()) {
+      const members = new Set((await readDataUsers()).users.map(account => account.id))
+      if (data.items.some(item => item.userIds?.some(id => !members.has(id)))) throw new PermissionError('Reward assignees must belong to the selected family')
+    }
     const items = mergeOwnedItems(data.items.map(validateWishlistItem), existingData.items, user, true, [], 'wishlist')
     await saveData('wishlist', { items })
     return loadWishlistData()
@@ -449,8 +519,8 @@ export async function saveWishlistItems(data: WishlistData): Promise<WishlistDat
 }
 
 // Habits specific functions
-export async function loadHabitsData(): Promise<HabitsData> {
-  const user = await getCurrentUser()
+async function loadHabitsDataImpl(): Promise<HabitsData> {
+  const user = await getCurrentDataUser()
   if (!user || (!user.email && process.env.DEMO !== 'true')) return getDefaultHabitsData()
   const data = await loadData<HabitsData>('habits')
   return {
@@ -459,16 +529,16 @@ export async function loadHabitsData(): Promise<HabitsData> {
   }
 }
 
-export async function saveHabitsData(data: HabitsData): Promise<HabitsData> {
+async function saveHabitsDataImpl(data: HabitsData): Promise<HabitsData> {
   return withDataWriteLock(async () => {
     const user = await requireUser()
     const canWrite = !!(user.isAdmin || checkPermission(user.permissions, 'habit', 'write') || user.managedUserIds?.length)
     if (!canWrite) await verifyPermission('habit', 'interact')
     const existingData = await loadData<HabitsData>('habits')
-    await assertDocumentRevision('habits', data?.revision)
+    await assertDocumentRevision('habits', data?.revision, data?.familyId)
     if (!data || !Array.isArray(data.habits)) throw new Error('Invalid habit list')
     const previous = new Map(existingData.habits.map(habit => [habit.id, habit]))
-    const validUserIds = new Set((await readAuthData()).users.map(account => account.id))
+    const validUserIds = new Set((await readDataUsers()).users.map(account => account.id))
     const submitted = data.habits.map(habit => {
       const stored = habit && typeof habit.id === 'string' ? previous.get(habit.id) : undefined
       if (
@@ -539,7 +609,7 @@ export async function saveHabitsData(data: HabitsData): Promise<HabitsData> {
     for (const removed of existingData.habits.filter(habit => !retainedIds.has(habit.id))) {
       for (const record of removed.completionRecords ?? []) {
         if (!record?.evidenceId || !record.evidenceMime) continue
-        try { await scheduleAttachmentRemoval(record.evidenceId, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
+        try { await scheduleHabitEvidenceRemoval(removed.id, record.evidenceId, record.id, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
         catch (error) { log('error', 'Could not remove deleted evidence', error) }
       }
     }
@@ -547,7 +617,7 @@ export async function saveHabitsData(data: HabitsData): Promise<HabitsData> {
   })
 }
 
-export async function reorderHabitItems(orderedIds: string[], isTask: boolean): Promise<HabitsData> {
+async function reorderHabitItemsImpl(orderedIds: string[], isTask: boolean): Promise<HabitsData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'write')
     if (!user.isAdmin && !checkPermission(user.permissions, 'habit', 'write')) {
@@ -573,7 +643,7 @@ export async function reorderHabitItems(orderedIds: string[], isTask: boolean): 
   })
 }
 
-export async function toggleTaskChecklistItem(habitId: string, itemId: string, completed: boolean): Promise<Habit> {
+async function toggleTaskChecklistItemImpl(habitId: string, itemId: string, completed: boolean): Promise<Habit> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'interact')
     if (typeof habitId !== 'string' || habitId.length > 200 || typeof itemId !== 'string' ||
@@ -668,7 +738,7 @@ async function saveCompletionAndRewards(
   }
 }
 
-export async function recordHabitCompletion(habitId: string, timestamp: string, evidence?: FormData,
+async function recordHabitCompletionImpl(habitId: string, timestamp: string, evidence?: FormData,
   options?: { beneficiaryId?: string; requestId?: string }): Promise<{
   habit: Habit
   coins: CoinsData
@@ -696,8 +766,8 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       if (!request.requestId || request.beneficiaryId && request.beneficiaryId !== beneficiaryId) {
         throw new PermissionError('Invalid any-time completion recipient')
       }
-      const authData = await readAuthData()
-      const actor = authData.users.find(account => account.id === user.id)
+      const actor = usesPostgres() && await getFamiliesEnabled()
+        ? user : (await readAuthData()).users.find(account => account.id === user.id)
       const isManager = !!actor && (actor.isAdmin || actor.managedUserIds?.includes(beneficiaryId))
       const isMember = user.id === beneficiaryId && (user.isAdmin || checkPermission(user.permissions, 'habit', 'interact'))
       const policy = habit.schedule.recordingPolicy
@@ -753,7 +823,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
     const target = habit.targetCompletions ?? 1
     if (!anytime && count >= target) throw new PermissionError('Habit is already completed for this day')
 
-    if (!(await readAuthData()).users.some(account => account.id === beneficiaryId)) {
+    if (!(await readDataUsers()).users.some(account => account.id === beneficiaryId)) {
       throw new Error('Invalid completing account')
     }
     const recipients = [beneficiaryId]
@@ -802,7 +872,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
       balance: coins.balance + rewardAmount * transactions.length,
       transactions: [...transactions, ...coins.transactions],
     } : coins
-    if (!Number.isSafeInteger(updatedCoins.balance)) throw new Error('Invalid coin balance')
+    if (!Number.isFinite(updatedCoins.balance) || Math.abs(updatedCoins.balance) > Number.MAX_SAFE_INTEGER) throw new Error('Invalid coin balance')
     if (photo) {
       await fs.mkdir(path.join(process.cwd(), 'data', 'evidence'), { recursive: true, mode: 0o700 })
       await fs.writeFile(evidencePath(record.id, photo.mime), photo.bytes, { flag: 'wx', mode: 0o600 })
@@ -826,7 +896,7 @@ export async function recordHabitCompletion(habitId: string, timestamp: string, 
   })
 }
 
-export async function recordHabitSlip(habitId: string, timestamp: string): Promise<{ habit: Habit; coins: CoinsData; penalty: number }> {
+async function recordHabitSlipImpl(habitId: string, timestamp: string): Promise<{ habit: Habit; coins: CoinsData; penalty: number }> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'interact')
     if (typeof habitId !== 'string' || habitId.length > 200) throw new Error('Invalid habit ID')
@@ -861,7 +931,7 @@ export async function recordHabitSlip(habitId: string, timestamp: string): Promi
   })
 }
 
-export async function undoHabitSlip(habitId: string, slipId: string): Promise<{ habit: Habit; coins: CoinsData }> {
+async function undoHabitSlipImpl(habitId: string, slipId: string): Promise<{ habit: Habit; coins: CoinsData }> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('habit', 'interact')
     if (typeof habitId !== 'string' || habitId.length > 200 || !/^[0-9a-f-]{36}$/i.test(slipId)) {
@@ -889,7 +959,7 @@ export async function undoHabitSlip(habitId: string, slipId: string): Promise<{ 
   })
 }
 
-export async function undoHabitCompletion(habitId: string, completionIndex: number, expectedTimestamp: string): Promise<{
+async function undoHabitCompletionImpl(habitId: string, completionIndex: number, expectedTimestamp: string): Promise<{
   habit: Habit
   coins: CoinsData
   rewardReversed: boolean
@@ -906,7 +976,8 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
     const anytime = habit.schedule?.type === 'anytime'
     const potentialRecord = habit.completionRecords?.[completionIndex]
     if (anytime) {
-      const actor = (await readAuthData()).users.find(account => account.id === user.id)
+      const actor = usesPostgres() && await getFamiliesEnabled()
+        ? user : (await readAuthData()).users.find(account => account.id === user.id)
       const inScope = !!actor && (actor.isAdmin || habit.userIds?.includes(actor.id) && checkPermission(actor.permissions, 'habit', 'interact') ||
         habit.userIds?.length === 1 && actor.managedUserIds?.includes(habit.userIds[0]))
       if (!inScope) throw new PermissionError('Habit interaction is not allowed')
@@ -970,10 +1041,12 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
     const coins = await loadData<CoinsData>('coins')
     const transactions: CoinTransaction[] = []
     if (rewardedRecord?.rewardedUserIds) {
+      const eventLedger = usesPostgres() && await getFamiliesEnabled()
+        ? await readCompletionLedger(habit.id, rewardedRecord.id) : coins.transactions
       for (const recipientId of rewardedRecord.rewardedUserIds) {
-        const award = coins.transactions.find(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
+        const award = eventLedger.find(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
           (tx.type === 'HABIT_COMPLETION' || tx.type === 'TASK_COMPLETION') && tx.amount > 0)
-        const alreadyReversed = coins.transactions.some(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
+        const alreadyReversed = eventLedger.some(tx => tx.completionId === rewardedRecord.id && tx.userId === recipientId &&
           (tx.type === 'HABIT_UNDO' || tx.type === 'TASK_UNDO'))
         if (!award || alreadyReversed) continue
         transactions.push({
@@ -988,7 +1061,9 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
       const creditType: TransactionType = habit.isTask ? 'TASK_COMPLETION' : 'HABIT_COMPLETION'
       const undoType: TransactionType = habit.isTask ? 'TASK_UNDO' : 'HABIT_UNDO'
       const openAwards: CoinTransaction[] = []
-      for (const transaction of [...coins.transactions].reverse()) {
+      const legacyLedger = usesPostgres() && await getFamiliesEnabled()
+        ? await readCompletionLedger(habit.id, undefined, recipientId) : coins.transactions
+      for (const transaction of [...legacyLedger].reverse()) {
         if (transaction.userId !== recipientId || transaction.relatedItemId !== habit.id) continue
         if (transaction.type === creditType) openAwards.push(transaction)
         if (transaction.type === undoType) openAwards.pop()
@@ -1012,19 +1087,19 @@ export async function undoHabitCompletion(habitId: string, completionIndex: numb
       balance: coins.balance + transactions.reduce((total, transaction) => total + transaction.amount, 0),
       transactions: [...transactions, ...coins.transactions],
     } : coins
-    if (!Number.isSafeInteger(updatedCoins.balance)) throw new Error('Invalid coin balance')
+    if (!Number.isFinite(updatedCoins.balance) || Math.abs(updatedCoins.balance) > Number.MAX_SAFE_INTEGER) throw new Error('Invalid coin balance')
     await saveCompletionAndRewards(habits, {
       ...habits, habits: habits.habits.map(item => item.id === habit.id ? updatedHabit : item),
     }, coins, updatedCoins)
     if (record?.evidenceId && record.evidenceMime) {
-      try { await scheduleAttachmentRemoval(record.evidenceId, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
+      try { await scheduleHabitEvidenceRemoval(habit.id, record.evidenceId, record.id, `evidence/${path.basename(evidencePath(record.evidenceId, record.evidenceMime))}`) }
       catch (error) { log('error', 'Could not remove withdrawn evidence', error) }
     }
     return { habit: updatedHabit, coins: await visibleCoinsData(updatedCoins, user), rewardReversed: transactions.length > 0 }
   })
 }
 
-export async function loadPendingApprovals(): Promise<PendingApproval[]> {
+async function loadPendingApprovalsImpl(): Promise<PendingApproval[]> {
   const user = await requireUser()
   const data = await loadData<HabitsData>('habits')
   const pending: PendingApproval[] = []
@@ -1042,7 +1117,7 @@ export async function loadPendingApprovals(): Promise<PendingApproval[]> {
   return pending.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).slice(0, 100)
 }
 
-export async function reviewHabitCompletion(
+async function reviewHabitCompletionImpl(
   habitId: string,
   completionId: string,
   decision: 'approve' | 'reject',
@@ -1059,7 +1134,7 @@ export async function reviewHabitCompletion(
     const index = habit.completionRecords?.findIndex(record => record?.id === completionId) ?? -1
     const record = index >= 0 ? habit.completionRecords?.[index] : null
     if (!record || record.voided || record.approval !== 'pending') throw new PermissionError('Completion is no longer pending')
-    const accountExists = (await readAuthData()).users.some(account => account.id === (record.beneficiaryId ?? record.actorId))
+    const accountExists = (await readDataUsers()).users.some(account => account.id === (record.beneficiaryId ?? record.actorId))
     if (!accountExists && decision === 'approve') throw new PermissionError('Completing account no longer exists')
     const timezone = (await loadSettings()).system.timezone
     const day = completionDay(habit.completions[index], timezone)
@@ -1100,7 +1175,7 @@ export async function reviewHabitCompletion(
     const updatedCoins = transaction ? {
       balance: coins.balance + amount, transactions: [transaction, ...coins.transactions],
     } : coins
-    if (!Number.isSafeInteger(updatedCoins.balance)) throw new Error('Invalid coin balance')
+    if (!Number.isFinite(updatedCoins.balance) || Math.abs(updatedCoins.balance) > Number.MAX_SAFE_INTEGER) throw new Error('Invalid coin balance')
     await saveCompletionAndRewards(data, {
       ...data, habits: data.habits.map(item => item.id === habit.id ? updatedHabit : item),
     }, coins, updatedCoins)
@@ -1114,7 +1189,7 @@ export async function reviewHabitCompletion(
 
 
 // Coins specific functions
-export async function loadCoinsData(): Promise<CoinsData> {
+async function loadCoinsDataImpl(): Promise<CoinsData> {
   try {
     const read = async () => {
       const user = await getCurrentUser()
@@ -1131,9 +1206,9 @@ export async function loadCoinsData(): Promise<CoinsData> {
 
 async function visibleCoinsData(data: CoinsData, user: User): Promise<CoinsData> {
   const revision = usesPostgres() ? await getDocumentRevision('coins') : data.revision
-  if (user.isAdmin) return { ...data, revision }
+  if (user.isAdmin && !(usesPostgres() && await getFamiliesEnabled())) return { ...data, revision }
   const transactions = data.transactions.filter(transaction => transaction.userId === user.id)
-  return { balance: transactions.reduce((total, transaction) => total + transaction.amount, 0), transactions, revision }
+  return { balance: await walletBalance(data, user), transactions, revision }
 }
 
 function validateHabitInteractionChanges(submitted: HabitsData['habits'], existing: HabitsData['habits'], userId: string): void {
@@ -1162,12 +1237,13 @@ function validateHabitInteractionChanges(submitted: HabitsData['habits'], existi
   if (changes > 1) throw new PermissionError('Only one habit can be changed at a time')
 }
 
-export async function saveCoinsData(data: CoinsData): Promise<CoinsData> {
+async function saveCoinsDataImpl(data: CoinsData): Promise<CoinsData> {
   return withDataWriteLock(async () => {
     const user = await verifyPermission('coins', 'write')
     const existingData = await loadData<CoinsData>('coins')
     await assertDocumentRevision('coins', data?.revision)
-    const visible = existingData.transactions.filter(transaction => user.isAdmin || transaction.userId === user.id)
+    const familyMode = usesPostgres() && await getFamiliesEnabled()
+    const visible = existingData.transactions.filter(transaction => (!familyMode && user.isAdmin) || transaction.userId === user.id)
     if (!Array.isArray(data.transactions) || data.transactions.length !== visible.length) {
       throw new PermissionError('Only transaction notes may be changed')
     }
@@ -1188,7 +1264,7 @@ export async function saveCoinsData(data: CoinsData): Promise<CoinsData> {
   })
 }
 
-export async function addCoins({
+async function addCoinsImpl({
   amount,
   description,
   type = 'MANUAL_ADJUSTMENT',
@@ -1252,6 +1328,9 @@ async function validateCoinTransaction(
   amount: number,
   targetUserId: string
 ): Promise<void> {
+  if (usesPostgres() && await getFamiliesEnabled() && !(await readDataUsers()).users.some(user => user.id === targetUserId)) {
+    throw new PermissionError('Coin actions require an active member of the selected family')
+  }
   if (type === 'MANUAL_ADJUSTMENT') return
   if (!relatedItemId) throw new Error('Related item is required')
   if (type === 'WISH_REDEMPTION') {
@@ -1309,21 +1388,28 @@ async function validateHabitRewardBalance(
   }
 }
 
-export async function loadSettings(): Promise<Settings> {
+async function loadSettingsImpl(): Promise<Settings> {
   const defaultSettings = getDefaultSettings()
 
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentDataUser()
     if (!user || (!user.email && process.env.DEMO !== 'true')) return defaultSettings
     const data = await loadData<Settings>('settings')
-    return { ...defaultSettings, ...data }
+    const base = { ...defaultSettings, ...data }
+    if (usesPostgres() && await getFamiliesEnabled()) {
+      const state = (await currentDatabaseClient()!.query("SELECT current_setting('habittrove.scope_validated',true) AS valid")).rows[0]
+      if (state.valid === 'true') return readFamilySettings(user, base)
+      return { ...base, ui: { ...base.ui, ...user.personalSettings?.ui },
+        system: { ...base.system, ...(user.personalSettings?.language ? { language: user.personalSettings.language } : {}) } }
+    }
+    return base
   } catch (error) {
     if (usesPostgres()) throw error
     return defaultSettings
   }
 }
 
-export async function saveSettings(settings: Settings): Promise<void> {
+async function saveSettingsImpl(settings: Settings): Promise<void> {
   return withDataWriteLock(async () => {
     const user = await requireUser()
     validateSettings(settings)
@@ -1335,6 +1421,12 @@ export async function saveSettings(settings: Settings): Promise<void> {
       system: { ...defaults.system, ...stored.system },
       profile: { ...defaults.profile, ...stored.profile },
     })
+    if (usesPostgres() && await getFamiliesEnabled()) {
+      const global = user.isAdmin ? { ...existing, profile: settings.profile,
+        system: { ...existing.system, autoBackupEnabled: settings.system.autoBackupEnabled } } : existing
+      if (!_.isEqual(global, existing)) await saveData('settings', global)
+      return saveFamilySettings(user, settings, global)
+    }
     if (process.env.DEMO === 'true' && !_.isEqual(settings.system, existing.system)) {
       throw new PermissionError('System changes are disabled in demo mode')
     }
@@ -1348,7 +1440,7 @@ export async function saveSettings(settings: Settings): Promise<void> {
   })
 }
 
-export async function removeCoins({
+async function removeCoinsImpl({
   amount,
   description,
   type = 'MANUAL_ADJUSTMENT',
@@ -1390,9 +1482,7 @@ export async function removeCoins({
       await validateHabitRewardBalance(type, relatedItemId!, targetUserId, data.transactions)
     }
     if (type === 'WISH_REDEMPTION') {
-      const balance = data.transactions
-        .filter(transaction => transaction.userId === targetUserId)
-        .reduce((sum, transaction) => sum + transaction.amount, 0)
+      const balance = await walletBalance(data, currentUser, targetUserId)
       if (balance < amount) throw new PermissionError('Insufficient coins')
     }
     const newTransaction: CoinTransaction = {
@@ -1407,7 +1497,7 @@ export async function removeCoins({
     }
 
     const newData: CoinsData = {
-      balance: Math.max(0, data.balance - amount),
+      balance: usesPostgres() && await getFamiliesEnabled() ? data.balance - amount : Math.max(0, data.balance - amount),
       transactions: [newTransaction, ...data.transactions]
     }
 
@@ -1428,7 +1518,7 @@ export async function removeCoins({
   })
 }
 
-export async function uploadAvatar(formData: FormData): Promise<string> {
+async function uploadAvatarImpl(formData: FormData): Promise<string> {
   const user = await requireUser()
   const file = formData.get('avatar')
   if (!(file instanceof File)) throw new Error('No file provided')
@@ -1489,15 +1579,33 @@ async function loadUsersData(): Promise<UserData> {
   return readAuthData()
 }
 
-export async function loadUsersPublicData(): Promise<PublicUserData> {
-  const viewer = await getCurrentUser()
-  if (!viewer) return { users: [] }
-  if (!viewer.email && process.env.DEMO !== 'true') return sanitizeUserData({ users: [viewer] }, viewer.id, !!viewer.isAdmin)
-  const data = await loadUsersData()
-  return sanitizeUserData(data, viewer.id, !!viewer.isAdmin)
+export async function loadAdministrationUsers(): Promise<PublicUserData> {
+  const actor = await getCurrentUser()
+  if (!actor?.isAdmin || !actor.email || process.env.DEMO === 'true') throw new PermissionError('Administrator access required')
+  const read = async () => {
+    const data = await readAuthData()
+    const fresh = data.users.find(user => user.id === actor.id)
+    if (!fresh?.isAdmin || !fresh.email || (fresh.authVersion ?? 0) !== (actor.authVersion ?? 0)) {
+      throw new PermissionError('Administrator access required')
+    }
+    return sanitizeUserData(data, fresh.id, true)
+  }
+  return usesPostgres() ? withStorageTransaction(read, { readOnly: true }) : read()
 }
 
-export async function savePersonalFolders(folders: PersonalFolder[]): Promise<PersonalFolder[]> {
+async function loadUsersPublicDataImpl(): Promise<PublicUserData> {
+  const viewer = await getCurrentDataUser()
+  if (!viewer) return { users: [] }
+  if (!viewer.email && process.env.DEMO !== 'true') return sanitizeUserData({ users: [viewer] }, viewer.id, !!viewer.isAdmin)
+  const data = usesPostgres() && await getFamiliesEnabled() ? await readFamilyDirectory(viewer) : await loadUsersData()
+  const visible = sanitizeUserData(data, viewer.id, !!viewer.isAdmin)
+  if (usesPostgres() && await getFamiliesEnabled() && !visible.users.some(user => user.id === viewer.id)) {
+    visible.currentUser = sanitizeUserData({ users: [viewer] }, viewer.id, !!viewer.isAdmin).users[0]
+  }
+  return visible
+}
+
+async function savePersonalFoldersImpl(folders: PersonalFolder[]): Promise<PersonalFolder[]> {
   const actor = await requireUser()
   if (process.env.DEMO === 'true') throw new PermissionError('Folder changes are disabled in demo mode')
   if (!Array.isArray(folders) || folders.length > 50 || folders.some(folder =>
@@ -1517,6 +1625,10 @@ export async function savePersonalFolders(folders: PersonalFolder[]): Promise<Pe
     const habits = await loadData<HabitsData>('habits')
     const visibleIds = new Set(habits.habits.filter(item => familyItemVisible(item, actor)).map(item => item.id))
     if (assignments.some(id => !visibleIds.has(id))) throw new PermissionError('Cannot file an inaccessible item')
+    if (usesPostgres() && await getFamiliesEnabled()) {
+      return (await saveFamilyPreferences(actor, { folders: folders.map(folder => ({ ...folder,
+        name: folder.name.trim(), itemIds: [...folder.itemIds] })) })).folders
+    }
     return updateAuthData(data => {
       const user = data.users.find(candidate => candidate.id === actor.id)
       if (!user) throw new PermissionError('User not authenticated')
@@ -1528,7 +1640,7 @@ export async function savePersonalFolders(folders: PersonalFolder[]): Promise<Pe
   })
 }
 
-export async function saveStatusDays(days: StatusDay[]): Promise<StatusDay[]> {
+async function saveStatusDaysImpl(days: StatusDay[]): Promise<StatusDay[]> {
   const actor = await requireUser()
   if (process.env.DEMO === 'true') throw new PermissionError('Status changes are disabled in demo mode')
   const today = DateTime.now().setZone((await loadSettings()).system.timezone).startOf('day')
@@ -1537,6 +1649,9 @@ export async function saveStatusDays(days: StatusDay[]): Promise<StatusDay[]> {
     !DateTime.fromISO(day.date).isValid || !['sick', 'travel', 'rest', 'other'].includes(day.status) ||
     Math.abs(DateTime.fromISO(day.date).diff(today, 'days').days) > 366) ||
     new Set(days.map(day => day.date)).size !== days.length) throw new Error('Invalid status dates')
+  if (usesPostgres() && await getFamiliesEnabled()) {
+    return (await saveFamilyPreferences(actor, { statusDays: [...days].sort((a, b) => a.date.localeCompare(b.date)) })).statusDays
+  }
   return updateAuthData(data => {
     const user = data.users.find(candidate => candidate.id === actor.id)
     if (!user) throw new PermissionError('User not authenticated')
@@ -1549,12 +1664,14 @@ const inviteLifetimeMs = 7 * 24 * 60 * 60 * 1000
 
 export async function listFamilyInvites(): Promise<{ tokenHash: string; email: string; expiresAt: string; managedBy?: string }[]> {
   await requireAdmin()
+  if (usesPostgres() && await getFamiliesEnabled()) throw new PermissionError('Use invitations for the selected family')
   return ((await readAuthData()).invites ?? []).filter(invite => DateTime.fromISO(invite.expiresAt).toMillis() > Date.now())
     .map(({ tokenHash, email, expiresAt, managedBy }) => ({ tokenHash, email, expiresAt, managedBy }))
 }
 
 export async function createFamilyInvite(rawEmail: string, managedBy?: string): Promise<{ token: string; sent: boolean }> {
   const actor = await requireAdmin()
+  if (usesPostgres() && await getFamiliesEnabled()) throw new PermissionError('Use invitations for the selected family')
   if (process.env.DEMO === 'true') throw new PermissionError('Invitations are disabled in demo mode')
   const email = validateEmail(rawEmail)!
   const token = randomBytes(32).toString('base64url')
@@ -1577,6 +1694,7 @@ export async function createFamilyInvite(rawEmail: string, managedBy?: string): 
 
 export async function revokeFamilyInvite(tokenHash: string): Promise<void> {
   await requireAdmin()
+  if (usesPostgres() && await getFamiliesEnabled()) throw new PermissionError('Use invitations for the selected family')
   if (!/^[0-9a-f]{64}$/.test(tokenHash)) throw new Error('Invalid invitation')
   await updateAuthData(data => { data.invites = (data.invites ?? []).filter(invite => invite.tokenHash !== tokenHash) })
 }
@@ -1586,21 +1704,52 @@ export async function acceptFamilyInvite(token: string, username: string, passwo
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Invalid invitation')
   usernameSchema.parse(username)
   newPasswordSchema.parse(password)
+  if (usesPostgres() && currentDatabaseClient()) throw new Error('Invitation password hashing must run outside storage transactions')
+  const household = usesPostgres() && await getFamiliesEnabled()
   const tokenHash = createHash('sha256').update(token).digest('hex')
-  await updateAuthData(data => {
+  const validLegacyOffer = (data: UserData) => {
     const invite = data.invites?.find(candidate => candidate.tokenHash === tokenHash)
-    if (!invite || DateTime.fromISO(invite.expiresAt).toMillis() <= Date.now()) throw new Error('Invitation expired or already used')
+    const expiresAt = invite ? DateTime.fromISO(invite.expiresAt).toMillis() : NaN
+    if (!invite || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invitation expired or already used')
     if (data.users.some(user => user.username.toLowerCase() === username.toLowerCase() ||
       user.email?.toLowerCase() === invite.email)) throw new Error('Account already exists')
-    const account: User = { id: uuid(), username, email: invite.email,
-      password: saltAndHashPassword(password), isAdmin: false, authVersion: 0,
-      permissions: [{ habit: { write: true, interact: true }, wishlist: { write: true, interact: true },
-        coins: { write: true, interact: true } }] }
-    data.users.push(account)
-    const manager = data.users.find(user => user.id === invite.managedBy)
-    if (manager) manager.managedUserIds = [...new Set([...(manager.managedUserIds ?? []), account.id])]
-    data.invites = data.invites!.filter(candidate => candidate.tokenHash !== tokenHash)
-  })
+    return invite
+  }
+  const attemptKey = household
+    ? await preflightNewHouseholdInvite(token, username)
+    : validLegacyOffer(await readAuthData()).tokenHash
+  const release = await acquirePasswordVerification()
+  if (!release) throw new Error('Too many password requests; try again shortly')
+  try {
+    if (!await reserveAuthenticationAttempt('invite', attemptKey)) throw new Error('Too many invitation attempts; try again later')
+    const passwordHash = await saltAndHashPasswordAsync(password)
+    if (household) {
+      await withHouseholdInviteEmail(token, email => updateAuthData(async data => {
+        if (data.users.some(user => user.username.toLowerCase() === username.toLowerCase() || user.email?.toLowerCase() === email)) {
+          throw new Error('Account already exists; sign in to accept this invitation')
+        }
+        const account: User = { id: uuid(), username, email, password: passwordHash, isAdmin: false, authVersion: 0 }
+        data.users.push(account)
+        await clearAuthenticationAttempts('invite', attemptKey)
+        return account
+      }))
+      return
+    }
+    await updateAuthData(async data => {
+      const invite = validLegacyOffer(data)
+      const account: User = { id: uuid(), username, email: invite.email,
+        password: passwordHash, isAdmin: false, authVersion: 0,
+        permissions: [{ habit: { write: true, interact: true }, wishlist: { write: true, interact: true },
+          coins: { write: true, interact: true } }] }
+      data.users.push(account)
+      const manager = data.users.find(user => user.id === invite.managedBy)
+      if (manager) manager.managedUserIds = [...new Set([...(manager.managedUserIds ?? []), account.id])]
+      data.invites = data.invites!.filter(candidate => candidate.tokenHash !== tokenHash)
+      await clearAuthenticationAttempts('invite', attemptKey)
+    })
+  } finally {
+    await release()
+  }
 }
 
 export async function createUser(formData: FormData): Promise<PublicUser> {
@@ -1633,7 +1782,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     throw new Error('A password or OIDC subject is required')
   }
 
-  const newUser = await updateAuthData(async data => {
+  const newUser = await withIdentityWrite(administrator, () => updateAuthData(async data => {
     if (!data.users.find(user => user.id === administrator.id)?.isAdmin) throw new PermissionError('Administrator access required')
     if (data.users.some(user => user.username === username)) throw new Error('Username already exists')
     if (email && data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already exists')
@@ -1650,7 +1799,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     if (avatarPath) await assignAvatar(data, avatarPath, user.id, administrator)
     data.users.push(user)
     return user
-  })
+  }))
   return sanitizeUserData({ users: [newUser] }, administrator.id, true).users[0]
 }
 
@@ -1664,7 +1813,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   }
   const oidcIssuer = updates.authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
   if (updates.authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
-  return updateAuthData(async data => {
+  return withIdentityWrite(currentUser, () => updateAuthData(async data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     if (!actor) throw new PermissionError('User not authenticated')
     const userIndex = data.users.findIndex(user => user.id === userId)
@@ -1748,7 +1897,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   }
   data.users[userIndex] = updatedUser
   return sanitizeUserData({ users: [updatedUser] }, actor.id, !!actor.isAdmin).users[0]
-  })
+  }))
 }
 
 export async function updateUserPassword(userId: string, newPassword?: string, currentPassword?: string): Promise<void> {
@@ -1768,7 +1917,7 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
     }
   }
   const passwordHash = newPassword ? saltAndHashPassword(newPassword) : undefined
-  await updateAuthData(async data => {
+  await withIdentityWrite(currentUser, () => updateAuthData(async data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     const userIndex = data.users.findIndex(user => user.id === userId)
     if (!actor || (!actor.isAdmin && actor.id !== userId)) throw new PermissionError('Cannot change another user\'s password')
@@ -1788,10 +1937,10 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
       password: passwordHash,
       authVersion: (target.authVersion ?? 0) + 1,
     }
-  })
+  }))
 }
 
-export async function deleteUser(userId: string): Promise<void> {
+async function deleteUserImpl(userId: string): Promise<void> {
   if (process.env.DEMO === 'true') throw new PermissionError('Account deletion is disabled in demo mode')
   return withDataWriteLock(async () => {
     const currentUser = await requireUser()
@@ -1810,6 +1959,10 @@ export async function deleteUser(userId: string): Promise<void> {
     if (targetUser.isAdmin && authData.users.filter(user => user.isAdmin).length === 1) {
       throw new Error('Cannot delete the last administrator')
     }
+    const familiesEnabled = usesPostgres() && await getFamiliesEnabled()
+    if (familiesEnabled && (await currentDatabaseClient()!.query('SELECT 1 FROM habittrove.family_memberships WHERE user_id=$1 LIMIT 1', [userId])).rowCount) {
+      throw new PermissionError('Accounts with family history are retained; remove family membership to revoke access')
+    }
     const remainingUsers = authData.users.filter(user => user.id !== userId)
     for (const user of remainingUsers) {
       if (user.managedUserIds) user.managedUserIds = user.managedUserIds.filter(id => id !== userId)
@@ -1827,6 +1980,10 @@ export async function deleteUser(userId: string): Promise<void> {
       (isGeneratedAvatarForUser(name, userId) || name === assignedAvatar) &&
       !remainingUsers.some(user => user.avatarPath === `/data/avatars/${name}`))) {
       await scheduleAttachmentRemoval(`avatar:${filename}`, `avatars/${filename}`)
+    }
+    if (familiesEnabled) {
+      authData.users = remainingUsers
+      return
     }
     // Load all necessary data
     const wishlistData = await loadData<WishlistData>('wishlist')
@@ -1917,10 +2074,14 @@ export async function deleteUser(userId: string): Promise<void> {
   })
 }
 
-export async function updateLastNotificationReadTimestamp(userId: string, timestamp: string): Promise<void> {
+async function updateLastNotificationReadTimestampImpl(userId: string, timestamp: string): Promise<void> {
   const currentUser = await requireUser()
   if (currentUser.id !== userId) throw new PermissionError('Cannot update another user')
   if (!Number.isFinite(Date.parse(timestamp))) throw new Error('Invalid timestamp')
+  if (usesPostgres() && await getFamiliesEnabled()) {
+    await saveFamilyPreferences(currentUser, { lastNotificationReadTimestamp: timestamp })
+    return
+  }
   await updateAuthData(data => {
     const userIndex = data.users.findIndex(user => user.id === userId)
     if (userIndex === -1) throw new Error('User not found for updating notification timestamp')
@@ -1931,10 +2092,27 @@ export async function updateLastNotificationReadTimestamp(userId: string, timest
 
 export async function loadServerSettings(): Promise<ServerSettings> {
   const [oidc, oidcDisplayName] = await Promise.all([getActiveOidcConfig(), getOidcDisplayName()])
+  const familiesEnabled = usesPostgres() && await getFamiliesEnabled()
+  let familyRole: ServerSettings['familyRole']
+  let familyMember: boolean | undefined
+  const actor = familiesEnabled ? await getCurrentUser() : undefined
+  if (actor) {
+    try {
+      const selected = await withFamilyScope(actor, async scope => ({ role: scope?.role, member: !!scope?.memberIds.includes(actor.id) }),
+        (await cookies()).get('habittrove-family')?.value, { readOnly: true })
+      familyRole = selected.role
+      familyMember = selected.member
+    } catch (error) {
+      if (!(error instanceof Error) || !['Family access denied', 'Invalid family'].includes(error.message)) throw error
+    }
+  }
   return {
     isDemo: process.env.DEMO === 'true',
     authentikEnabled: !!oidc,
     oidcDisplayName,
+    familiesEnabled,
+    familyRole,
+    familyMember,
   }
 }
 
@@ -1943,7 +2121,7 @@ export async function loadServerSettings(): Promise<ServerSettings> {
  * @param clientToken The freshness token calculated by the client.
  * @returns A promise that resolves to an object { isFresh: boolean }.
  */
-export async function checkDataFreshness(clientToken: string): Promise<{ isFresh: boolean }> {
+async function checkDataFreshnessImpl(clientToken: string): Promise<{ isFresh: boolean }> {
   await requireUser()
   if (typeof clientToken !== 'string' || clientToken.length > 128) {
     throw new Error('Invalid freshness token')
@@ -1958,4 +2136,125 @@ export async function checkDataFreshness(clientToken: string): Promise<{ isFresh
     // or handle error reporting differently.
     return { isFresh: false };
   }
+}
+
+
+export async function loadWishlistData(...args: Parameters<typeof loadWishlistDataImpl>): Promise<Awaited<ReturnType<typeof loadWishlistDataImpl>>> {
+  return withSelectedFamilyAction(() => loadWishlistDataImpl(...args), true, async actor => getDefaultWishlistData())
+}
+
+export async function loadFamilyOverview(...args: Parameters<typeof loadFamilyOverviewImpl>): Promise<Awaited<ReturnType<typeof loadFamilyOverviewImpl>>> {
+  return withSelectedFamilyAction(() => loadFamilyOverviewImpl(...args), true, async actor => ({timezone:getDefaultSettings().system.timezone,weekStartDay:getDefaultSettings().system.weekStartDay,members:[]}))
+}
+
+export async function redeemFamilyReward(...args: Parameters<typeof redeemFamilyRewardImpl>): Promise<Awaited<ReturnType<typeof redeemFamilyRewardImpl>>> {
+  return withSelectedFamilyAction(() => redeemFamilyRewardImpl(...args))
+}
+
+export async function saveWishlistItems(...args: Parameters<typeof saveWishlistItemsImpl>): Promise<Awaited<ReturnType<typeof saveWishlistItemsImpl>>> {
+  return withSelectedFamilyAction(() => saveWishlistItemsImpl(...args))
+}
+
+export async function loadHabitsData(...args: Parameters<typeof loadHabitsDataImpl>): Promise<Awaited<ReturnType<typeof loadHabitsDataImpl>>> {
+  return withSelectedFamilyAction(() => loadHabitsDataImpl(...args), true, async actor => getDefaultHabitsData())
+}
+
+export async function saveHabitsData(...args: Parameters<typeof saveHabitsDataImpl>): Promise<Awaited<ReturnType<typeof saveHabitsDataImpl>>> {
+  return withSelectedFamilyAction(() => saveHabitsDataImpl(...args))
+}
+
+export async function reorderHabitItems(...args: Parameters<typeof reorderHabitItemsImpl>): Promise<Awaited<ReturnType<typeof reorderHabitItemsImpl>>> {
+  return withSelectedFamilyAction(() => reorderHabitItemsImpl(...args))
+}
+
+export async function toggleTaskChecklistItem(...args: Parameters<typeof toggleTaskChecklistItemImpl>): Promise<Awaited<ReturnType<typeof toggleTaskChecklistItemImpl>>> {
+  return withSelectedFamilyAction(() => toggleTaskChecklistItemImpl(...args))
+}
+
+export async function recordHabitCompletion(...args: Parameters<typeof recordHabitCompletionImpl>): Promise<Awaited<ReturnType<typeof recordHabitCompletionImpl>>> {
+  return withSelectedFamilyAction(() => recordHabitCompletionImpl(...args))
+}
+
+export async function recordHabitSlip(...args: Parameters<typeof recordHabitSlipImpl>): Promise<Awaited<ReturnType<typeof recordHabitSlipImpl>>> {
+  return withSelectedFamilyAction(() => recordHabitSlipImpl(...args))
+}
+
+export async function undoHabitSlip(...args: Parameters<typeof undoHabitSlipImpl>): Promise<Awaited<ReturnType<typeof undoHabitSlipImpl>>> {
+  return withSelectedFamilyAction(() => undoHabitSlipImpl(...args))
+}
+
+export async function undoHabitCompletion(...args: Parameters<typeof undoHabitCompletionImpl>): Promise<Awaited<ReturnType<typeof undoHabitCompletionImpl>>> {
+  return withSelectedFamilyAction(() => undoHabitCompletionImpl(...args))
+}
+
+export async function loadPendingApprovals(...args: Parameters<typeof loadPendingApprovalsImpl>): Promise<Awaited<ReturnType<typeof loadPendingApprovalsImpl>>> {
+  return withSelectedFamilyAction(() => loadPendingApprovalsImpl(...args), true, async actor => [])
+}
+
+export async function reviewHabitCompletion(...args: Parameters<typeof reviewHabitCompletionImpl>): Promise<Awaited<ReturnType<typeof reviewHabitCompletionImpl>>> {
+  return withSelectedFamilyAction(() => reviewHabitCompletionImpl(...args))
+}
+
+export async function loadCoinsData(...args: Parameters<typeof loadCoinsDataImpl>): Promise<Awaited<ReturnType<typeof loadCoinsDataImpl>>> {
+  return withGlobalIdentityAction(() => loadCoinsDataImpl(...args), true)
+}
+
+export async function saveCoinsData(...args: Parameters<typeof saveCoinsDataImpl>): Promise<Awaited<ReturnType<typeof saveCoinsDataImpl>>> {
+  return withSelectedFamilyAction(() => saveCoinsDataImpl(...args))
+}
+
+export async function addCoins(...args: Parameters<typeof addCoinsImpl>): Promise<Awaited<ReturnType<typeof addCoinsImpl>>> {
+  return withSelectedFamilyAction(() => addCoinsImpl(...args))
+}
+
+export async function loadSettings(...args: Parameters<typeof loadSettingsImpl>): Promise<Awaited<ReturnType<typeof loadSettingsImpl>>> {
+  return withSelectedFamilyAction(() => loadSettingsImpl(...args), true, async actor => loadSettingsImpl())
+}
+
+export async function saveSettings(...args: Parameters<typeof saveSettingsImpl>): Promise<Awaited<ReturnType<typeof saveSettingsImpl>>> {
+  const saveWithoutFamily = () => withDataWriteLock(async () => {
+    const actor = await requireUser()
+    await savePersonalSettings(actor, args[0], await loadSettingsImpl())
+  })
+  try {
+    return await withSelectedFamilyAction(() => saveSettingsImpl(...args), false, saveWithoutFamily)
+  } catch (error) {
+    if (usesPostgres() && await getFamiliesEnabled() && error instanceof Error &&
+        ['Family access denied', 'Invalid family'].includes(error.message)) {
+      return withGlobalIdentityAction(saveWithoutFamily, false)
+    }
+    throw error
+  }
+}
+
+export async function removeCoins(...args: Parameters<typeof removeCoinsImpl>): Promise<Awaited<ReturnType<typeof removeCoinsImpl>>> {
+  return withSelectedFamilyAction(() => removeCoinsImpl(...args))
+}
+
+export async function loadUsersPublicData(...args: Parameters<typeof loadUsersPublicDataImpl>): Promise<Awaited<ReturnType<typeof loadUsersPublicDataImpl>>> {
+  return withSelectedFamilyAction(() => loadUsersPublicDataImpl(...args), true, async actor => sanitizeUserData({users:[{...actor,permissions:[],managedUserIds:[],personalFolders:[],statusDays:[]}]},actor.id,actor.isAdmin===true))
+}
+
+export async function savePersonalFolders(...args: Parameters<typeof savePersonalFoldersImpl>): Promise<Awaited<ReturnType<typeof savePersonalFoldersImpl>>> {
+  return withSelectedFamilyAction(() => savePersonalFoldersImpl(...args))
+}
+
+export async function saveStatusDays(...args: Parameters<typeof saveStatusDaysImpl>): Promise<Awaited<ReturnType<typeof saveStatusDaysImpl>>> {
+  return withSelectedFamilyAction(() => saveStatusDaysImpl(...args))
+}
+
+export async function updateLastNotificationReadTimestamp(...args: Parameters<typeof updateLastNotificationReadTimestampImpl>): Promise<Awaited<ReturnType<typeof updateLastNotificationReadTimestampImpl>>> {
+  return withSelectedFamilyAction(() => updateLastNotificationReadTimestampImpl(...args))
+}
+
+export async function checkDataFreshness(...args: Parameters<typeof checkDataFreshnessImpl>): Promise<Awaited<ReturnType<typeof checkDataFreshnessImpl>>> {
+  return withSelectedFamilyAction(() => checkDataFreshnessImpl(...args), true, async actor => ({isFresh:true}))
+}
+
+export async function uploadAvatar(...args: Parameters<typeof uploadAvatarImpl>): Promise<Awaited<ReturnType<typeof uploadAvatarImpl>>> {
+  return withGlobalIdentityAction(() => uploadAvatarImpl(...args), false)
+}
+
+export async function deleteUser(...args: Parameters<typeof deleteUserImpl>): Promise<Awaited<ReturnType<typeof deleteUserImpl>>> {
+  return withGlobalIdentityAction(() => deleteUserImpl(...args), false)
 }

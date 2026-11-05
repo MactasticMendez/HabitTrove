@@ -126,6 +126,8 @@ async function safeRead(root: string, relative: string) {
     const bytes = await handle.readFile()
     const after = await handle.stat()
     requireCondition(before.size === bytes.length && before.size === after.size && before.mtimeMs === after.mtimeMs && before.ctimeMs === after.ctimeMs, 'Source changed during capture')
+    const current = await fs.lstat(target)
+    requireCondition(!current.isSymbolicLink() && current.dev === after.dev && current.ino === after.ino && await fs.realpath(target) === target, 'Source path changed during capture')
     return bytes
   } finally { await handle.close() }
 }
@@ -173,6 +175,7 @@ function referencedAttachments(snapshot: DatabaseSnapshot, assets: Map<string, B
   return [...metadata.values()].sort((a, b) => a.id.localeCompare(b.id, 'en'))
 }
 function captured(snapshot: DatabaseSnapshot, files: MigrationManifest['files'], assets: Map<string, Buffer>): CapturedSource {
+  validateProtectedAssetMap(assets)
   const summary = validateSnapshot(snapshot); validateAssetReferences(snapshot, assets)
   const referenced = referencedAttachments(snapshot, assets)
   const attachments = snapshot.attachments?.length ? [...snapshot.attachments].sort((a, b) => a.id.localeCompare(b.id, 'en')) : referenced
@@ -215,27 +218,37 @@ export async function captureDatabaseSource(assetDirectory: string): Promise<Cap
   const { exportDatabaseSnapshot } = await import('./db/repository')
   const { withStorageTransaction } = await import('./db/client')
   return withStorageTransaction(async () => {
+    await requireLegacySnapshotMode()
     const snapshot = await exportDatabaseSnapshot()
     const files = Object.fromEntries(Object.entries(documents).filter(([key]) => key in snapshot).map(([key, filename]) => { const bytes = Buffer.from(JSON.stringify(snapshot[key as keyof DatabaseSnapshot], null, 2)); return [filename, { sha256: sha256(bytes), bytes: bytes.length }] }))
     return captured(snapshot, files, await captureAssets(await canonicalRoot(assetDirectory)))
   })
 }
 export async function importDatabaseSource(source: CapturedSource) {
-  requireCondition(snapshotFingerprint(source.snapshot) === source.manifest.snapshotDigest && sha256(stringify(source.manifest)!) === source.digest, 'Source capture changed after validation')
-  validateSnapshot(source.snapshot); validateAssetReferences(source.snapshot, source.assets)
-  for (const [name, bytes] of source.assets) requireCondition(sha256(bytes) === source.manifest.assets[name]?.sha256, 'Asset changed after validation')
-  const { importDatabaseSnapshot } = await import('./db/repository')
-  const outcome = await importDatabaseSnapshot(source.snapshot, source.digest)
-  await verifyDatabaseSource(source)
-  return outcome
+  const { withStorageTransaction } = await import('./db/client')
+  return withStorageTransaction(async () => {
+    await requireLegacySnapshotMode()
+    requireCondition(snapshotFingerprint(source.snapshot) === source.manifest.snapshotDigest && sha256(stringify(source.manifest)!) === source.digest, 'Source capture changed after validation')
+    validateSnapshot(source.snapshot); validateAssetReferences(source.snapshot, source.assets)
+    for (const [name, bytes] of source.assets) requireCondition(sha256(bytes) === source.manifest.assets[name]?.sha256, 'Asset changed after validation')
+    const { importDatabaseSnapshot } = await import('./db/repository')
+    const outcome = await importDatabaseSnapshot(source.snapshot, source.digest)
+    await verifyDatabaseSource(source)
+    return outcome
+  })
 }
 export async function verifyDatabaseSource(source: CapturedSource) {
   const { exportDatabaseSnapshot } = await import('./db/repository')
-  const actual = await exportDatabaseSnapshot()
-  requireCondition(snapshotFingerprint(actual) === source.manifest.snapshotDigest, 'Database snapshot does not match source')
-  requireCondition(stringify(validateSnapshot(actual)) === stringify(validateSnapshot(source.snapshot)), 'Database reconciliation failed')
+  const { withStorageTransaction } = await import('./db/client')
+  return withStorageTransaction(async () => {
+    await requireLegacySnapshotMode()
+    const actual = await exportDatabaseSnapshot()
+    requireCondition(snapshotFingerprint(actual) === source.manifest.snapshotDigest, 'Database snapshot does not match source')
+    requireCondition(stringify(validateSnapshot(actual)) === stringify(validateSnapshot(source.snapshot)), 'Database reconciliation failed')
+  }, { readOnly: true })
 }
 export async function writeSnapshotDirectory(destination: string, source: CapturedSource) {
+  validateProtectedAssetMap(source.assets)
   const target = path.resolve(destination)
   const parent = await canonicalRoot(path.dirname(target))
   requireCondition(target !== parent, 'Invalid export destination')
@@ -271,7 +284,32 @@ export async function withProtectedAssetCapture<T>(operation: () => Promise<T>):
 }
 export const withProtectedAssetCleanup = withProtectedAssetCapture
 
-export async function verifyProtectedAssets(directory: string, source: CapturedSource) {
+export async function verifyProtectedAssets(directory: string, source: Pick<CapturedSource, 'assets'>) {
   const root = await canonicalRoot(directory)
   for (const [name, bytes] of source.assets) requireCondition((await safeRead(root, name)).equals(bytes), 'Protected assets do not match snapshot')
+}
+
+export async function captureProtectedAssets(directory: string) { return captureAssets(await canonicalRoot(directory)) }
+export async function readSnapshotFile(directory: string, filename: string) { return safeRead(await canonicalRoot(directory), filename) }
+export { canonicalRoot as canonicalSourceDirectory }
+
+async function requireLegacySnapshotMode() {
+  const { currentDatabaseClient, withStorageTransaction } = await import('./db/client')
+  await withStorageTransaction(async () => {
+    const client = currentDatabaseClient()!
+    if ((await client.query("SELECT to_regclass('habittrove.family_configuration') AS name")).rows[0].name &&
+        (await client.query('SELECT enabled FROM habittrove.family_configuration WHERE singleton')).rows[0]?.enabled === true) {
+      throw new MigrationValidationError('Enabled families require the complete version 2 backup format')
+    }
+  }, { readOnly: true })
+}
+
+export function validateProtectedAssetMap(assets: Map<string, Buffer>) {
+  let size = 0
+  for (const [name, bytes] of assets) {
+    requireCondition(typeof name === 'string' && /^(avatars|evidence)\//.test(name) && !/[\\\x00-\x1f\x7f]/.test(name) && name.split('/').every(part => part && part !== '.' && part !== '..'), 'Unsafe protected asset path')
+    requireCondition(Buffer.isBuffer(bytes) && bytes.length <= 64 * 1024 * 1024, 'Invalid protected asset bytes')
+    size += bytes.length
+    requireCondition(size <= 512 * 1024 * 1024, 'Asset capture exceeds memory budget')
+  }
 }

@@ -76,7 +76,7 @@ jobs:
           done
           exit 1
 
-      - name: Test restricted-role persistence, initialization, recovery, auth, actions and media
+      - name: Test restricted-role persistence, families, global wallets and full recovery
         env:
           HABITTROVE_TEST_DATABASE: '1'
         run: node scripts/test-database.mjs

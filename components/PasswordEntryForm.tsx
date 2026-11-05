@@ -53,6 +53,7 @@ export default function PasswordEntryForm({
         <Avatar className="h-24 w-24">
           <AvatarImage 
             src={user.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}`} 
+            alt=""
           />
           <AvatarFallback>
             <UserIcon className="h-12 w-12" />
@@ -99,7 +100,7 @@ export default function PasswordEntryForm({
       </div>
     </form>
     {user.hasAuthentik && serverSettings.authentikEnabled && (
-      <form action={signInWithAuthentik}>
+      <form action={signInWithAuthentik.bind(null, '/')}>
         <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: serverSettings.oidcDisplayName })}</Button>
       </form>
     )}

@@ -10,7 +10,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import EmptyState from './EmptyState'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { settingsAtom, usersAtom, currentUserAtom } from '@/lib/atoms'
+import { settingsAtom, usersAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms'
 import Link from 'next/link'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
@@ -22,6 +22,7 @@ import { TransactionType } from '@/lib/types'
 export default function CoinsManager() {
   const t = useTranslations('CoinsManager')
   const [currentUser] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
   const [selectedUser, setSelectedUser] = useState<string>()
   const {
     add,
@@ -52,14 +53,16 @@ export default function CoinsManager() {
 
   // Effect to set selected user from query param if admin
   useEffect(() => {
-    if (currentUser?.isAdmin && userIdFromQuery && userIdFromQuery !== selectedUser) {
+    if (serverSettings.familiesEnabled) { setSelectedUser(undefined); return }
+    if (currentUser?.isAdmin && userIdFromQuery) {
       // Check if the user ID from query exists in usersData
-      if (usersData.users.some(u => u.id === userIdFromQuery)) {
+      if (userIdFromQuery === currentUser.id) setSelectedUser(undefined)
+      else if (usersData.users.some(u => u.id === userIdFromQuery)) {
         setSelectedUser(userIdFromQuery);
       }
     }
     // Only run when userIdFromQuery or currentUser changes, avoid re-running on selectedUser change within this effect
-  }, [userIdFromQuery, currentUser, usersData.users]);
+  }, [userIdFromQuery, currentUser, usersData.users, serverSettings.familiesEnabled]);
 
   // Effect to scroll to highlighted transaction
   useEffect(() => {
@@ -109,14 +112,15 @@ export default function CoinsManager() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl xs:text-3xl font-bold mr-6">{t('title')}</h1>
-        {currentUser?.isAdmin && (
+        {currentUser?.isAdmin && !serverSettings.familiesEnabled && (
           <select
             aria-label="Coin account"
             className="w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2"
-            value={selectedUser}
-            onChange={(e) => setSelectedUser(e.target.value)}
+            value={selectedUser ?? ''}
+            onChange={(e) => setSelectedUser(e.target.value || undefined)}
           >
-            {usersData.users.map(user => (
+            <option value="">{t('myWallet')}</option>
+            {usersData.users.filter(user => user.id !== currentUser?.id).map(user => (
               <option key={user.id} value={user.id}>
                 {user.username}
               </option>
@@ -124,6 +128,7 @@ export default function CoinsManager() {
           </select>
         )}
       </div>
+      {serverSettings.familiesEnabled && <Link href="/family" className="mb-6 inline-flex min-h-10 items-center text-sm underline underline-offset-4">{t('familyBalancesLink')}</Link>}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -316,6 +321,7 @@ export default function CoinsManager() {
                   {visibleTransactions
                     .slice((currentPage - 1) * pageSize, currentPage * pageSize)
                     .map((transaction) => {
+                      const transactionUser = transaction.userId === currentUser?.id ? currentUser : usersData.users.find(user => user.id === transaction.userId)
                       const getBadgeStyles = () => {
                         switch (transaction.type) {
                           case 'HABIT_COMPLETION':
@@ -364,12 +370,11 @@ export default function CoinsManager() {
                               {transaction.userId && currentUser?.isAdmin && (
                                 <Avatar className="h-6 w-6">
                                   <AvatarImage
-                                    src={usersData.users.find(u => u.id === transaction.userId)?.avatarPath ?
-                                      `/api/avatars/${usersData.users.find(u => u.id === transaction.userId)?.avatarPath?.split('/').pop()}` : undefined}
-                                    alt={usersData.users.find(u => u.id === transaction.userId)?.username}
+                                    src={transactionUser?.avatarPath ? `/api/avatars/${transactionUser.avatarPath.split('/').pop()}` : undefined}
+                                    alt={transactionUser?.username}
                                   />
                                   <AvatarFallback>
-                                    {usersData.users.find(u => u.id === transaction.userId)?.username?.[0] || '?'}
+                                    {transactionUser?.username?.[0] || '?'}
                                   </AvatarFallback>
                                 </Avatar>
                               )}

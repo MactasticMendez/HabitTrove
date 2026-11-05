@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Client } from 'pg'
-import { afterStorageCommit, closeDatabase, withStorageTransaction } from './db/client'
+import { afterStorageCommit, closeDatabase, currentDatabaseClient, withStorageTransaction } from './db/client'
 import { readAttachmentMetadata } from './db/repository'
 import type { User } from './types'
 
@@ -12,13 +12,15 @@ let actor: User | undefined
 let selectedFamily: string | undefined
 let registerAttachment: typeof import('./attachment-store')['registerAttachment']
 let scheduleAttachmentRemoval: typeof import('./attachment-store')['scheduleAttachmentRemoval']
+let scheduleHabitEvidenceRemoval: typeof import('./attachment-store')['scheduleHabitEvidenceRemoval']
 let evidence: typeof import('../app/api/evidence/[id]/route')
 let avatars: typeof import('../app/api/avatars/[...path]/route')
 const id = '11111111-1111-4111-8111-111111111111'
 const bytes = Buffer.from('protected image fixture')
 const digest = createHash('sha256').update(bytes).digest('hex')
 const user = (id: string): User => ({ id, username: id, email: `${id}@example.test`, authVersion: 0 })
-const enabled = process.env.HABITTROVE_TEST_DATABASE === '1' && !!process.env.DATABASE_URL && new URL(process.env.DATABASE_URL).pathname === '/habittrove_test_media'
+const targets = new Set(['/habittrove_test_media', '/habittrove_test_media_maintenance'])
+const enabled = process.env.HABITTROVE_TEST_DATABASE === '1' && !!process.env.DATABASE_URL && targets.has(new URL(process.env.DATABASE_URL).pathname)
 let admin: Client
 let directory: string
 let cwdSpy: ReturnType<typeof spyOn>
@@ -30,11 +32,11 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     mock.module('server-only', () => ({}))
     mock.module('@/lib/server-helpers', () => ({ getCurrentUser: async () => actor }))
     mock.module('next/headers', () => ({ cookies: async () => ({ get: () => selectedFamily ? { value: selectedFamily } : undefined }) }))
-    ;({ registerAttachment, scheduleAttachmentRemoval } = await import('./attachment-store'))
+    ;({ registerAttachment, scheduleAttachmentRemoval, scheduleHabitEvidenceRemoval } = await import('./attachment-store'))
     evidence = await import('../app/api/evidence/[id]/route')
     avatars = await import('../app/api/avatars/[...path]/route')
     const target = new URL(process.env.DATABASE_MIGRATION_URL!)
-    if (target.hostname !== '127.0.0.1' || target.port !== '15432' || target.pathname !== '/habittrove_test_media') throw new Error('Dedicated local media fixture required')
+    if (target.hostname !== '127.0.0.1' || target.port !== '15432' || !targets.has(target.pathname) || target.pathname !== new URL(process.env.DATABASE_URL!).pathname) throw new Error('Dedicated local media fixture required')
     admin = new Client({ connectionString: target.toString() })
     await admin.connect()
     if (!(await admin.query("SELECT to_regclass('habittrove.family_configuration') AS name")).rows[0].name) {
@@ -43,7 +45,8 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
       await admin.query('COMMIT')
     }
     await admin.query(`GRANT SELECT ON habittrove.family_configuration,habittrove.families,habittrove.family_memberships,habittrove.family_manager_assignments,habittrove.household_invitations TO "Mac89Habittrove"`)
-    for (const id of ['a', 'b', 'dual', 'member', 'solo']) await admin.query("INSERT INTO habittrove.users(id,ordinal,username,email,auth_version,attributes) VALUES($1,0,$1,$2,0,'{}') ON CONFLICT(id) DO NOTHING", [id, `${id}@example.test`])
+    for (const id of ['a', 'b', 'dual', 'member', 'solo', 'outsider']) await admin.query("INSERT INTO habittrove.users(id,ordinal,username,email,auth_version,attributes) VALUES($1,0,$1,$2,0,'{}') ON CONFLICT(id) DO NOTHING", [id, `${id}@example.test`])
+    await admin.query("UPDATE habittrove.users SET is_admin=true WHERE id='outsider'")
     await admin.query("INSERT INTO habittrove.families(id,name) VALUES('A','Family A'),('B','Family B') ON CONFLICT DO NOTHING")
     await admin.query("INSERT INTO habittrove.family_memberships(family_id,user_id,role) VALUES('A','a','owner'),('B','b','owner'),('A','dual','member'),('B','dual','member'),('A','member','member') ON CONFLICT DO NOTHING")
     await admin.query("INSERT INTO habittrove.habits(id,ordinal,name,created_by,coin_reward,attributes,family_id) VALUES('ha',0,'Habit A','a',1,'{}','A') ON CONFLICT DO NOTHING")
@@ -57,6 +60,9 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     await fs.writeFile(path.join(directory, 'data', 'evidence', `${id}.png`), bytes)
     await fs.writeFile(path.join(directory, 'data', 'habits.json'), JSON.stringify({ habits: [] }))
     await admin.query('UPDATE habittrove.family_configuration SET enabled=false')
+    await admin.query("DELETE FROM habittrove.habit_approvers WHERE user_id='outsider'")
+    await admin.query("DELETE FROM habittrove.family_memberships WHERE user_id='outsider'")
+    await admin.query("UPDATE habittrove.habits SET created_by='a' WHERE id='ha'")
     await admin.query("UPDATE habittrove.family_memberships SET active=true WHERE user_id='dual'")
     await admin.query('UPDATE habittrove.users SET auth_version=0,attributes=$1', [JSON.stringify({ fields: {} })])
     await admin.query('DELETE FROM habittrove.attachments')
@@ -117,12 +123,39 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
     expect((await getEvidence()).status).toBe(200)
     selectedFamily = 'B'; expect((await getEvidence()).status).toBe(404)
-    selectedFamily = undefined; expect((await getEvidence()).status).toBe(404)
+    selectedFamily = undefined; expect((await getEvidence()).status).toBe(200)
+    selectedFamily = 'stale-family'; expect((await getEvidence()).status).toBe(404)
     selectedFamily = 'A'
     await admin.query("UPDATE habittrove.family_memberships SET active=false WHERE user_id='dual' AND family_id='A'")
     expect((await getEvidence()).status).toBe(404)
     await admin.query("UPDATE habittrove.family_memberships SET active=true WHERE user_id='dual' AND family_id='A'")
     await admin.query('UPDATE habittrove.attachments SET inaccessible=true')
+    expect((await getEvidence()).status).toBe(404)
+  })
+  for (const authority of ['actor', 'creator', 'approver'] as const) test(`a site administrator authorized as foreign-family ${authority} cannot retrieve its evidence under another selected family`, async () => {
+    const foreignId = '33333333-3333-4333-8333-333333333333'
+    await fs.writeFile(path.join(directory, 'data', 'evidence', `${foreignId}.png`), bytes)
+    await admin.query("INSERT INTO habittrove.habits(id,ordinal,name,created_by,coin_reward,attributes,family_id) VALUES('hb-route',1,'Habit B',$1,1,'{}','B') ON CONFLICT(id) DO UPDATE SET created_by=EXCLUDED.created_by", [authority === 'creator' ? 'outsider' : 'b'])
+    await admin.query("INSERT INTO habittrove.completions(habit_id,ordinal,id,actor_id,record_kind,evidence_id,evidence_mime,approval,attributes,family_id) VALUES('hb-route',0,$1,$2,'record',$1,'image/png','pending','{}','B')", [foreignId, authority === 'actor' ? 'outsider' : 'b'])
+    await admin.query("INSERT INTO habittrove.attachments(id,habit_id,completion_id,owner_id,path,mime_type,sha256,family_id) VALUES($1,'hb-route',$1,'b',$2,'image/png',$3,'B')", [foreignId, `evidence/${foreignId}.png`, digest])
+    if (authority === 'approver') {
+      await admin.query("INSERT INTO habittrove.family_memberships(family_id,user_id,role) VALUES('B','outsider','member')")
+      await admin.query("INSERT INTO habittrove.habit_approvers(habit_id,ordinal,user_id,family_id) VALUES('hb-route',0,'outsider','B')")
+    }
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    actor = { ...user('outsider'), isAdmin: true }
+    selectedFamily = 'A'
+    expect((await getEvidence(foreignId)).status).toBe(404)
+    selectedFamily = 'B'
+    expect((await getEvidence(foreignId)).status).toBe(200)
+  })
+  test('absent evidence selector uses the same first-family default for an outsider administrator and rejects an explicit stale selector', async () => {
+    await admin.query("UPDATE habittrove.habits SET created_by='outsider' WHERE id='ha'")
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    actor = { ...user('outsider'), isAdmin: true }
+    selectedFamily = undefined
+    expect((await getEvidence()).status).toBe(200)
+    selectedFamily = 'stale-family'
     expect((await getEvidence()).status).toBe(404)
   })
   test('Stage B cleanup restores and freshly validates the original family scope', async () => {
@@ -131,6 +164,73 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     await withFamilyScope(user('dual'), async () => scheduleAttachmentRemoval(id, `evidence/${id}.png`), 'A')
     expect((await admin.query('SELECT 1 FROM habittrove.attachments WHERE id=$1', [id])).rowCount).toBe(0)
     await expect(fs.stat(path.join(directory, 'data', 'evidence', `${id}.png`))).rejects.toThrow()
+  })
+  test('selected-family maintenance removes inaccessible evidence after its completion changes, then resets the capability', async () => {
+    await admin.query('UPDATE habittrove.attachments SET inaccessible=true')
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    const { withFamilyScope } = await import('./family-scope')
+    await withFamilyScope(user('dual'), async () => {
+      const client = currentDatabaseClient()!
+      expect(await readAttachmentMetadata(id)).toBeUndefined()
+      await client.query("DELETE FROM completions WHERE family_id='A' AND habit_id='ha' AND id=$1", [id])
+      await scheduleHabitEvidenceRemoval('ha', id, id, `evidence/${id}.png`)
+      expect((await client.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value ?? '').toBe('')
+    }, 'A')
+    expect((await admin.query('SELECT 1 FROM habittrove.attachments WHERE id=$1', [id])).rowCount).toBe(0)
+    await expect(fs.stat(path.join(directory, 'data', 'evidence', `${id}.png`))).rejects.toThrow()
+    await withStorageTransaction(async () => {
+      expect((await currentDatabaseClient()!.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value ?? '').toBe('')
+    })
+  })
+  test('evidence maintenance matches full family, habit, completion, evidence and path identity', async () => {
+    await admin.query('UPDATE habittrove.attachments SET inaccessible=true')
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    const { withFamilyScope } = await import('./family-scope')
+    const otherEvidence = '22222222-2222-4222-8222-222222222222'
+    for (const [family, habit, evidence, completion, filename] of [
+      ['B', 'ha', id, id, `${id}.png`], ['A', 'other', id, id, `${id}.png`],
+      ['A', 'ha', id, 'other', `${id}.png`], ['A', 'ha', id, id, `${id}.jpg`],
+      ['A', 'ha', otherEvidence, id, `${otherEvidence}.png`],
+    ]) await withFamilyScope(user('dual'), async () => {
+      const client = currentDatabaseClient()!
+      await client.query("SELECT set_config('habittrove.evidence_maintenance','false',true)")
+      await scheduleHabitEvidenceRemoval(habit, evidence, completion, `evidence/${filename}`)
+      expect((await client.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value).toBe('false')
+      expect(await readAttachmentMetadata(id)).toBeUndefined()
+    }, family)
+    expect((await admin.query('SELECT 1 FROM habittrove.attachments WHERE id=$1', [id])).rowCount).toBe(1)
+    expect(await fs.readFile(path.join(directory, 'data', 'evidence', `${id}.png`))).toEqual(bytes)
+    await expect(scheduleHabitEvidenceRemoval('ha', id, id, `evidence/${id}.png`)).rejects.toThrow('Validated family context')
+  })
+  test('inaccessible evidence maintenance rolls back metadata and parent changes without deleting the file', async () => {
+    await admin.query('UPDATE habittrove.attachments SET inaccessible=true')
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    const { withFamilyScope } = await import('./family-scope')
+    await expect(withFamilyScope(user('dual'), async () => {
+      await currentDatabaseClient()!.query("DELETE FROM completions WHERE family_id='A' AND habit_id='ha' AND id=$1", [id])
+      await scheduleHabitEvidenceRemoval('ha', id, id, `evidence/${id}.png`)
+      throw new Error('abort maintenance')
+    }, 'A')).rejects.toThrow('abort maintenance')
+    expect((await admin.query('SELECT 1 FROM habittrove.attachments WHERE id=$1', [id])).rowCount).toBe(1)
+    expect((await admin.query('SELECT 1 FROM habittrove.completions WHERE id=$1', [id])).rowCount).toBe(1)
+    expect(await fs.readFile(path.join(directory, 'data', 'evidence', `${id}.png`))).toEqual(bytes)
+    await withFamilyScope(user('dual'), async () => {
+      expect((await currentDatabaseClient()!.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value ?? '').toBe('')
+      expect(await readAttachmentMetadata(id)).toBeUndefined()
+    }, 'A', { readOnly: true })
+  })
+  test('postcommit cleanup retains files still referenced by inaccessible selected-family metadata', async () => {
+    await admin.query('UPDATE habittrove.attachments SET inaccessible=true')
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    const { withFamilyScope } = await import('./family-scope')
+    await withFamilyScope(user('dual'), async () => {
+      expect(await readAttachmentMetadata(id)).toBeUndefined()
+      await scheduleAttachmentRemoval(id, `evidence/${id}.png`)
+      expect((await currentDatabaseClient()!.query("SELECT current_setting('habittrove.evidence_maintenance',true) AS value")).rows[0].value ?? '').toBe('')
+    }, 'A')
+    expect((await admin.query('SELECT 1 FROM habittrove.attachments WHERE id=$1', [id])).rowCount).toBe(1)
+    expect(await fs.readFile(path.join(directory, 'data', 'evidence', `${id}.png`))).toEqual(bytes)
+    expect((await getEvidence()).status).toBe(404)
   })
   test('revocation after commit leaves an inaccessible orphan without failing the committed write', async () => {
     await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
@@ -156,7 +256,10 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     actor = user('solo'); selectedFamily = undefined
     expect((await getAvatar(['solo.png'])).status).toBe(200)
     expect((await getAvatar(['a.png'])).status).toBe(404)
-    actor = user('dual'); expect((await getAvatar(['a.png'])).status).toBe(404)
+    actor = user('dual'); expect((await getAvatar(['a.png'])).status).toBe(200)
+    expect((await getAvatar(['b.png'])).status).toBe(404)
+    actor = user('a'); expect((await getAvatar(['a.png'])).status).toBe(200)
+    selectedFamily = 'stale-family'; expect((await getAvatar(['a.png'])).status).toBe(404)
   })
   test('Stage B legacy nested avatars require an exact active directory reference', async () => {
     await fs.mkdir(path.join(directory, 'data', 'avatars', 'legacy'))
@@ -168,5 +271,18 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
     selectedFamily = 'A'
     await admin.query("UPDATE habittrove.users SET auth_version=1 WHERE id='dual'")
     expect((await getAvatar(['legacy', 'old.png'])).status).toBe(404)
+  })
+  test('a selected-family site administrator without membership can view their own global avatar', async () => {
+    for (const owner of ['outsider', 'a', 'b']) {
+      await fs.writeFile(path.join(directory, 'data', 'avatars', `${owner}.png`), bytes)
+      await admin.query("INSERT INTO habittrove.attachments(id,owner_id,path,mime_type,sha256) VALUES($1,$2,$3,'image/png',$4)", [`avatar:${owner}.png`, owner, `avatars/${owner}.png`, digest])
+    }
+    await admin.query('UPDATE habittrove.family_configuration SET enabled=true')
+    actor = { ...user('outsider'), isAdmin: true }
+    selectedFamily = 'A'
+    expect((await getAvatar(['outsider.png'])).status).toBe(200)
+    expect((await getAvatar(['a.png'])).status).toBe(200)
+    expect((await getAvatar(['b.png'])).status).toBe(404)
+    expect((await admin.query("SELECT 1 FROM habittrove.family_memberships WHERE user_id='outsider'")).rowCount).toBe(0)
   })
 })

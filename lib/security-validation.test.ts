@@ -37,3 +37,54 @@ describe('shared data validation', () => {
     expect(() => validateSettings({ ...settings, system: { ...settings.system, timezone: 'invalid' } })).toThrow()
   })
 })
+
+describe('single-member habit ownership and retained archived history', () => {
+  const item = (kind: 'anytime' | 'negative', archived: boolean, userIds: string[]): Habit => ({
+    id: `${kind}-habit`, name: 'Retained habit', description: '', frequency: 'FREQ=DAILY',
+    coinReward: 1, completions: [], archived, userIds,
+    ...(kind === 'anytime' ? { schedule: { type: 'anytime', recordingPolicy: 'both' } } : { isNegative: true, coinPenalty: 1 }),
+  })
+
+  for (const kind of ['anytime', 'negative'] as const) for (const archived of [false, true]) {
+    for (const count of [0, 1, 2]) test(`${archived ? 'archived' : 'active'} ${kind} habit with ${count} assignees`, () => {
+      const habit = item(kind, archived, ['member', 'other'].slice(0, count))
+      if (count === 1 || archived && count === 0) expect(validateHabit(habit)).toEqual(habit)
+      else expect(() => validateHabit(habit)).toThrow()
+    })
+  }
+
+  test('archived orphan allowance requires an explicit array and boolean archived state', () => {
+    for (const kind of ['anytime', 'negative'] as const) {
+      expect(() => validateHabit({ ...item(kind, true, []), userIds: undefined })).toThrow()
+      expect(() => validateHabit({ ...item(kind, true, []), userIds: '' as unknown as string[] })).toThrow()
+      expect(() => validateHabit({ ...item(kind, true, []), archived: 'true' as unknown as boolean })).toThrow()
+    }
+  })
+
+  test('archived orphan any-time completions and negative slips retain historical actors and rewards unchanged', () => {
+    const anytime: Habit = { ...item('anytime', true, []), completions: ['2026-01-01T12:00:00Z'],
+      completionRecords: [{ id: 'original-completion', actorId: 'removed-member', beneficiaryId: 'removed-member',
+        rewardAmount: 1, rewardedUserIds: ['removed-member'], approval: 'approved' }] }
+    const negative: Habit = { ...item('negative', true, []), slips: [{
+      id: '11111111-1111-4111-8111-111111111111', actorId: 'removed-member', timestamp: '2026-01-01T12:00:00Z', penaltyAmount: 1,
+    }] }
+    for (const habit of [anytime, negative]) {
+      const original = structuredClone(habit)
+      expect(validateHabit(habit)).toEqual(original)
+      expect(habit).toEqual(original)
+    }
+  })
+
+  test('archived orphan items still reject incompatible schedules, limits and malformed history', () => {
+    const anytime = item('anytime', true, [])
+    for (const patch of [{ isTask: true }, { isNegative: true }, { targetCompletions: 2 }, { reminderTime: '09:00' },
+      { completionRecords: [{ id: 'unaligned-record', actorId: 'former-member' }] }]) {
+      expect(() => validateHabit({ ...anytime, ...patch })).toThrow()
+    }
+    const negative = item('negative', true, [])
+    for (const patch of [{ isTask: true }, { requiresApproval: true }, { targetCompletions: 2 }, { coinPenalty: -1 },
+      { slips: [{ id: 'invalid', actorId: 'former-member', timestamp: 'invalid', penaltyAmount: 1 }] }]) {
+      expect(() => validateHabit({ ...negative, ...patch })).toThrow()
+    }
+  })
+})

@@ -104,6 +104,7 @@ export const currentUserIdAtom = atom<UserId | undefined>(undefined);
 export const currentUserAtom = atom((get) => {
   const currentUserId = get(currentUserIdAtom);
   const users = get(usersAtom);
+  if (users.currentUser?.id === currentUserId) return users.currentUser;
   return users.users.find(user => user.id === currentUserId);
 })
 

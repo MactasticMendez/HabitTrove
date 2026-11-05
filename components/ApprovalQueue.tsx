@@ -48,7 +48,7 @@ export default function ApprovalQueue() {
     {loading ? <p role="status">{t('loading')}</p> : pending.length === 0 ?
       <p>{t('empty')}</p> : <ul className="space-y-4">
         {pending.map(item => {
-          const actor = users.users.find(user => user.id === item.actorId)
+          const actor = users.currentUser?.id === item.actorId ? users.currentUser : users.users.find(user => user.id === item.actorId)
           const beneficiary = users.users.find(user => user.id === item.beneficiaryId)
           return <li key={item.completionId}>
             <Card>

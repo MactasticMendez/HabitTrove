@@ -227,7 +227,7 @@ export function useHabits() {
       ? habitsData.habits.map(h => h.id === habit.id ? newHabit : h)
       : [...habitsData.habits, newHabit]
 
-    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision, familyId: habitsData.familyId })
     setHabitsData(saved)
     return updatedHabits
   }
@@ -251,7 +251,7 @@ export function useHabits() {
   const deleteHabit = async (id: string) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
     const updatedHabits = habitsData.habits.filter(h => h.id !== id)
-    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision, familyId: habitsData.familyId })
     setHabitsData(saved)
     return updatedHabits
   }
@@ -310,7 +310,7 @@ export function useHabits() {
     const updatedHabits = habitsData.habits.map(h =>
       h.id === id ? { ...h, archived: true } : h
     )
-    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision, familyId: habitsData.familyId })
     setHabitsData(saved)
   }
 
@@ -319,7 +319,7 @@ export function useHabits() {
     const updatedHabits = habitsData.habits.map(h =>
       h.id === id ? { ...h, archived: false } : h
     )
-    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision, familyId: habitsData.familyId })
     setHabitsData(saved)
   }
 

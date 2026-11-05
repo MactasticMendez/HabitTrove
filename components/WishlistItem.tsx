@@ -39,7 +39,7 @@ const renderUserAvatars = (item: WishlistItemType, currentUser: User | null, use
         if (!user) return null
         return (
           <Avatar key={user.id} className="h-6 w-6">
-            <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
+            <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} alt={user.username} />
             <AvatarFallback>{user.username[0]}</AvatarFallback>
           </Avatar>
         )

@@ -21,6 +21,7 @@ import { useState, type KeyboardEvent } from 'react'
 import AdminConfiguration from '@/components/AdminConfiguration'
 import StatusDaysSettings from '@/components/StatusDaysSettings'
 import FamilyInvites from '@/components/FamilyInvites'
+import Link from 'next/link'
 
 export default function SettingsPage() {
   const t = useTranslations('SettingsPage');
@@ -28,11 +29,22 @@ export default function SettingsPage() {
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom);
   const [serverSettings] = useAtom(serverSettingsAtom);
   const [currentUser] = useAtom(currentUserAtom);
+  const canManageSchedule = serverSettings.familiesEnabled
+    ? serverSettings.familyRole === 'owner' || serverSettings.familyRole === 'site-admin'
+    : !!currentUser?.isAdmin
   const [activeTab, setActiveTab] = useState<'preferences' | 'admin'>('preferences');
+  const [saveError, setSaveError] = useState(false)
 
   const updateSettings = async (newSettings: Settings) => {
-    await saveSettings(newSettings)
-    setSettings(newSettings)
+    setSaveError(false)
+    try {
+      await saveSettings(newSettings)
+      setSettings(newSettings)
+      return true
+    } catch {
+      setSaveError(true)
+      return false
+    }
   }
 
   const changeTabWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -50,6 +62,7 @@ export default function SettingsPage() {
     <>
       <div>
         <h1 className="text-3xl font-bold mb-6">{t('title')}</h1>
+        {saveError && <p role="alert" className="mb-4 text-red-700 dark:text-red-400">{t('saveError')}</p>}
         <div role="tablist" aria-label={t('sectionsLabel')} className="mb-6 flex gap-2 border-b border-border">
           <button
             id="settings-tab-preferences"
@@ -136,15 +149,60 @@ export default function SettingsPage() {
                 }
               />
             </div>
+            {(serverSettings.familiesEnabled || currentUser?.isAdmin) && <>
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="language-select">{t('languageLabel')}</Label>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {t('languageDescription')}
+                  </div>
+                  {serverSettings.isDemo && (
+                    <div className="text-sm text-red-500">
+                      {t('languageDisabledInDemoTooltip')}
+                    </div>
+                  )}
+                </div>
+                <select
+                  id="language-select"
+                  value={settings.system.language}
+                  disabled={serverSettings.isDemo}
+                  onChange={async (e) => {
+                    const saved = await updateSettings({
+                      ...settings,
+                      system: { ...settings.system, language: e.target.value }
+                    });
+                    if (!saved) return
+                    toast({
+                      title: t('languageChangedTitle'),
+                      description: t('languageChangedDescription'),
+                      variant: 'default',
+                    });
+                  }}
+                  className={`w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2 ${serverSettings.isDemo ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="ca">Català</option>
+                  <option value="de">Deutsch</option>
+                  <option value="fr">Français</option>
+                  <option value="ru">Русский</option>
+                  <option value="zh">简体中文</option>
+                  <option value="ko">한국어</option>
+                  <option value="ja">日本語</option>
+                </select>
+              </div>
+            </>}
           </CardContent>
         </Card>
-        <StatusDaysSettings />
-        </div>
-
-        {currentUser?.isAdmin && <div id="settings-panel-admin" role="tabpanel" aria-labelledby="settings-tab-admin" tabIndex={0} hidden={activeTab !== 'admin'}>
-        <Card className="mb-6">
+        {serverSettings.familiesEnabled && <Card className="mb-6"><CardHeader><CardTitle role="heading" aria-level={2}>{t('familyMembershipTitle')}</CardTitle></CardHeader>
+          <CardContent className="space-y-3"><p>{t('familyMembershipDescription')}</p>
+            <Link href="/family" className="inline-flex min-h-10 items-center rounded-md border px-3 py-2 text-sm underline underline-offset-4">{t('openFamily')}</Link>
+          </CardContent></Card>}
+        {canManageSchedule && <Card className="mb-6">
           <CardHeader>
-            <CardTitle role="heading" aria-level={2}>{t('systemSettingsTitle')}</CardTitle>
+            <CardTitle role="heading" aria-level={2}>{serverSettings.familiesEnabled ? t('familySettingsTitle') : t('systemSettingsTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
@@ -166,7 +224,7 @@ export default function SettingsPage() {
                   }
                   className="w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2 mb-4"
                 >
-                  {Intl.supportedValuesOf('timeZone').map((tz) => (
+                  {[...new Set([settings.system.timezone, ...Intl.supportedValuesOf('timeZone')])].map((tz) => (
                     <option key={tz} value={tz}>
                       {tz}
                     </option>
@@ -211,6 +269,14 @@ export default function SettingsPage() {
               </div>
             </div>
 
+          </CardContent>
+        </Card>}
+        {(!serverSettings.familiesEnabled || serverSettings.familyMember === true) && <StatusDaysSettings />}
+        </div>
+
+        {currentUser?.isAdmin && <div id="settings-panel-admin" role="tabpanel" aria-labelledby="settings-tab-admin" tabIndex={0} hidden={activeTab !== 'admin'}>
+        <Card className="mb-6"><CardHeader><CardTitle role="heading" aria-level={2}>{t('systemSettingsTitle')}</CardTitle></CardHeader>
+          <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
@@ -246,53 +312,12 @@ export default function SettingsPage() {
                 }
               />
             </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="language-select">{t('languageLabel')}</Label>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {t('languageDescription')}
-                </div>
-                {serverSettings.isDemo && (
-                  <div className="text-sm text-red-500">
-                    {t('languageDisabledInDemoTooltip')}
-                  </div>
-                )}
-              </div>
-              <select
-                id="language-select"
-                value={settings.system.language}
-                disabled={serverSettings.isDemo}
-                onChange={(e) => {
-                  updateSettings({
-                    ...settings,
-                    system: { ...settings.system, language: e.target.value }
-                  });
-                  toast({
-                    title: t('languageChangedTitle'),
-                    description: t('languageChangedDescription'),
-                    variant: 'default',
-                  });
-                }}
-                className={`w-[110px] xs:w-[200px] rounded-md border border-input bg-background px-3 py-2 ${serverSettings.isDemo ? 'cursor-not-allowed opacity-50' : ''}`}
-              >
-                <option value="en">English</option>
-                <option value="es">Español</option>
-                <option value="ca">Català</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Français</option>
-                <option value="ru">Русский</option>
-                <option value="zh">简体中文</option>
-                <option value="ko">한국어</option>
-                <option value="ja">日本語</option>
-              </select>
-            </div>
+
 
           </CardContent>
         </Card>
         <AdminConfiguration />
-        <FamilyInvites />
+        {!serverSettings.familiesEnabled && <FamilyInvites />}
         </div>}
 
       </div >

@@ -2,22 +2,26 @@
 
 import Link from 'next/link'
 import { useAtom } from 'jotai'
-import { settingsAtom } from '@/lib/atoms'
+import { settingsAtom, serverSettingsAtom } from '@/lib/atoms'
 import { useCoins } from '@/hooks/useCoins'
 import { FormattedNumber } from '@/components/FormattedNumber'
 import { Coins } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 import dynamic from 'next/dynamic'
 import { Profile } from './Profile'
+import FamilySelector from './FamilySelector'
 
 const TodayEarnedCoins = dynamic(() => import('./TodayEarnedCoins'), { ssr: false })
 
 export default function HeaderActions() {
   const [settings] = useAtom(settingsAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
   const { balance } = useCoins()
 
   return (
-    <div className="flex items-center gap-1 sm:gap-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+      {serverSettings.familiesEnabled && <FamilySelector />}
+      <div className="flex items-center gap-1 sm:gap-2">
       <Link href="/coins" className="flex items-center gap-1 sm:gap-2 px-3 py-1.5 bg-white hover:bg-gray-50 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-full transition-colors border border-gray-200 dark:border-gray-600">
         <Coins className="h-5 w-5 text-yellow-500 dark:text-yellow-400" />
         <div className="flex items-baseline gap-1 sm:gap-2">
@@ -33,6 +37,7 @@ export default function HeaderActions() {
       </Link>
       <NotificationBell />
       <Profile />
+      </div>
     </div>
   )
 }

@@ -31,12 +31,15 @@ export async function signOut() {
   }
 }
 
-export async function signInWithAuthentik() {
+export async function signInWithAuthentik(redirectTo: string = '/') {
+  if (typeof redirectTo !== 'string' || redirectTo !== '/' && !/^\/invite\/[A-Za-z0-9_-]{32,128}$/.test(redirectTo)) {
+    throw new Error('Invalid sign-in return path')
+  }
   const oidc = await getActiveOidcConfig()
   if (!oidc) {
     throw new Error('OIDC sign-in is not configured')
   }
-  await signInNextAuth(oidc.providerId, { redirectTo: '/' })
+  await signInNextAuth(oidc.providerId, { redirectTo })
 }
 
 export async function startAuthentikLink(_previous: { error: string }, formData: FormData): Promise<{ error: string }> {

@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { Plus, ArrowUpNarrowWide, ArrowDownWideNarrow, Search, GripVertical, ArrowUp, ArrowDown, Rows3 } from 'lucide-react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
-import { habitsAtom, browserSettingsAtom, settingsAtom, currentUserAtom, usersAtom } from '@/lib/atoms'
+import { habitsAtom, browserSettingsAtom, settingsAtom, currentUserAtom, usersAtom, serverSettingsAtom } from '@/lib/atoms'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import EmptyState from './EmptyState'
 import { Button } from '@/components/ui/button'
@@ -30,12 +30,14 @@ export default function HabitList() {
   const [habitsData] = useAtom(habitsAtom) // setHabitsData removed as it's not used
   const [browserSettings, setBrowserSettings] = useAtom(browserSettingsAtom)
   const [currentUser] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
+  const canUsePersonalFolders = !serverSettings.familiesEnabled || serverSettings.familyMember === true
   const [, setUsersData] = useAtom(usersAtom)
   const [folderName, setFolderName] = useState('')
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<string[]>([])
   const [folderError, setFolderError] = useState('')
-  const folders = currentUser?.personalFolders ?? []
+  const folders = canUsePersonalFolders ? currentUser?.personalFolders ?? [] : []
   const showFolders = browserSettings.showFolders !== false && folders.length > 0
   const [settings] = useAtom(settingsAtom)
   useTodayInTimezone(settings.system.timezone)
@@ -141,7 +143,7 @@ export default function HabitList() {
   })
 
   const persistFolders = async (next: PersonalFolder[]) => {
-    if (!currentUser) return
+    if (!currentUser || !canUsePersonalFolders) return
     setFolderError('')
     try {
       const saved = await savePersonalFolders(next)
@@ -249,7 +251,7 @@ export default function HabitList() {
           </Button>
         </div>
       </div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      {canUsePersonalFolders && <div className="mb-4 flex flex-wrap items-center gap-3">
         {folders.length > 0 && <Button type="button" variant="outline" aria-pressed={showFolders}
           onClick={() => setBrowserSettings(previous => ({ ...previous, showFolders: !showFolders }))}>
           {showFolders ? t('showFlatList') : t('showFolders')}
@@ -269,7 +271,7 @@ export default function HabitList() {
             {editingFolderId && <Button type="button" variant="outline" onClick={() => { setEditingFolderId(null); setFolderName('') }}>{t('cancelFolder')}</Button>}
           </form>
         </details>
-      </div>
+      </div>}
       {folderError && <p role="alert" className="mb-3 text-sm text-destructive">{folderError}</p>}
       {sortBy === 'custom' && <p className="mb-3 text-sm text-gray-700 dark:text-gray-300">{t('manualOrderHelp')}</p>}
       {orderError && <p role="alert" className="text-sm text-destructive mb-3">{orderError}</p>}
@@ -396,7 +398,7 @@ export default function HabitList() {
           }}
           habit={editingHabit}
           isTask={modalConfig.isTask}
-          folders={folders}
+          folders={canUsePersonalFolders ? folders : undefined}
           folderId={folders.find(folder => folder.itemIds.includes(editingHabit?.id ?? ''))?.id}
         />
       }
