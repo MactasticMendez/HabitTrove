@@ -59,6 +59,8 @@ The production image also includes `scripts/database.mjs`, the built database/re
 
 `SOURCE` contains `auth.json`, `habits.json`, `wishlist.json`, `coins.json`, `settings.json`, optional `admin-config.json`, and the protected asset directories. Dry-run rejects identity collisions, malformed history, unsafe numbers, missing/tampered assets, symlinks and unsafe paths. Its console report contains aggregate counts/digest; the private manifest contains account IDs, ledger totals and hashes. Export destinations must not exist; commands never overwrite rollback evidence.
 
+Older settings can omit properties introduced by newer versions. Loading fills those omissions from the existing defaults without rewriting stored preferences; supplied values remain authoritative. PostgreSQL reads reject malformed settings sections. This also applies after family activation.
+
 ## New installation
 
 Provision and migrate the database first. With the restricted runtime `DATABASE_URL` available only in the offline shell, choose the initial local administrator email and a 12–128-character password:
