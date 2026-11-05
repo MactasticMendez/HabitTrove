@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## Version 1.0.1
+
+### Fixed
+
+* Include offline database and recovery CLI dependencies in production images, and check both entry points during the final image build.
+
 ## Version 1.0.0
 
 ### Added

@@ -45,7 +45,7 @@ npm ci --ignore-scripts --force --no-audit --no-fund
 npm run build:database
 ```
 
-The production image also includes `scripts/database.mjs`, the built database/recovery bundles and SQL. Bun is needed for tests, not production recovery. Run commands from a working directory whose `data` subdirectory is the final protected asset directory. Supply environment variables privately; never paste connection URLs into tickets or logs.
+The production image also includes `scripts/database.mjs`, the built database/recovery bundles and SQL. CLI dependencies are bundled; PostgreSQL's `pg` driver uses the existing server runtime dependency. The final image build imports both CLI bundles without network, data or credentials so missing runtime dependencies stop the build. Bun is needed for tests, not production recovery. Run commands from a working directory whose `data` subdirectory is the final protected asset directory. Supply environment variables privately; never paste connection URLs into tickets or logs.
 
 | Command | Effect |
 | --- | --- |
