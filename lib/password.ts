@@ -5,6 +5,14 @@ export function saltAndHashPassword(password: string, salt = randomBytes(16).toS
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`
 }
 
+export async function saltAndHashPasswordAsync(password: string, salt = randomBytes(16).toString('hex')): Promise<string> {
+  if (!password) throw new Error('Password must not be empty')
+  const derived = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(password, salt, 64, (error, result) => error ? reject(error) : resolve(result))
+  })
+  return `${salt}:${derived.toString('hex')}`
+}
+
 export function verifyPassword(password?: string, storedHash?: string): boolean {
   if (!password || !storedHash) return false
 

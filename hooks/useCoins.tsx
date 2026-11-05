@@ -13,6 +13,7 @@ import {
   settingsAtom,
   usersAtom,
   currentUserAtom,
+  serverSettingsAtom,
 } from '@/lib/atoms'
 import { addCoins, removeCoins, saveCoinsData } from '@/app/actions/data'
 import { CoinsData, User } from '@/lib/types'
@@ -23,7 +24,7 @@ function handlePermissionCheck(
   user: User | undefined,
   resource: 'habit' | 'wishlist' | 'coins',
   action: 'write' | 'interact',
-  tCommon: (key: string, values?: Record<string, any>) => string
+  tCommon: (key: string, values?: Record<string, string | number | Date>) => string
 ): boolean {
   if (!user) {
     toast({
@@ -53,6 +54,7 @@ export function useCoins(options?: { selectedUser?: string }) {
   const [settings] = useAtom(settingsAtom)
   const [users] = useAtom(usersAtom)
   const [currentUser] = useAtom(currentUserAtom)
+  const [serverSettings] = useAtom(serverSettingsAtom)
   const [allCoinsData] = useAtom(coinsAtom) // All coin transactions
   const [loggedInUserBalance] = useAtom(coinsBalanceAtom) // Balance of the *currently logged-in* user
   const [atomCoinsEarnedToday] = useAtom(coinsEarnedTodayAtom);
@@ -60,7 +62,8 @@ export function useCoins(options?: { selectedUser?: string }) {
   const [atomTotalSpent] = useAtom(totalSpentAtom)
   const [atomCoinsSpentToday] = useAtom(coinsSpentTodayAtom);
   const [atomTransactionsToday] = useAtom(transactionsTodayAtom);
-  const targetUser = options?.selectedUser ? users.users.find(u => u.id === options.selectedUser) : currentUser
+  const targetUser = !serverSettings.familiesEnabled && options?.selectedUser && options.selectedUser !== currentUser?.id
+    ? users.users.find(u => u.id === options.selectedUser) : currentUser
   
   const transactions = useMemo(() => {
     return allCoinsData.transactions.filter(t => t.userId === targetUser?.id);

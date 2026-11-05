@@ -30,7 +30,8 @@ export function Profile() {
   const [open, setOpen] = useState(false)
   const [isLinking, setIsLinking] = useState(false)
   const statusText = useTranslations('StatusDays')
-  const todayStatus = user?.statusDays?.find(day => day.date === DateTime.now().setZone(settings.system.timezone).toISODate())?.status
+  const todayStatus = (!serverSettings.familiesEnabled || serverSettings.familyMember === true)
+    ? user?.statusDays?.find(day => day.date === DateTime.now().setZone(settings.system.timezone).toISODate())?.status : undefined
   const statusEmoji = todayStatus ? { sick: '🤒', travel: '✈️', rest: '😌', other: '💛' }[todayStatus] : undefined
 
   const handleSignOut = async () => {
@@ -56,7 +57,7 @@ export function Profile() {
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="flex items-center gap-2" aria-label={accountText('profileMenu')}>
             <Avatar className="h-8 w-8">
-              <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
+              <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} alt="" />
               <AvatarFallback>
                 <User className="h-4 w-4" />
               </AvatarFallback>
@@ -68,7 +69,7 @@ export function Profile() {
           <div className="px-2 py-1.5 mb-2 border-b">
             <div className="flex items-center gap-2">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} />
+                <AvatarImage src={user?.avatarPath && `/api/avatars/${user.avatarPath.split('/').pop()}` || ""} alt="" />
                 <AvatarFallback>
                   <User className="h-4 w-4" />
                 </AvatarFallback>
@@ -191,7 +192,7 @@ export function Profile() {
       {/* Add the UserForm dialog */}
       {isEditing && user && (
         <Dialog open={isEditing} onOpenChange={() => setIsEditing(false)}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="max-h-[90dvh] w-[calc(100vw_-_2rem)] overflow-y-auto sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t('editProfileModalTitle')}</DialogTitle>
             </DialogHeader>

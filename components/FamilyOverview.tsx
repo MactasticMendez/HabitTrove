@@ -10,6 +10,9 @@ import { loadFamilyOverview, loadHabitsData, loadWishlistData, loadCoinsData, re
 import { useHabits } from '@/hooks/useHabits'
 import { useWishlist } from '@/hooks/useWishlist'
 import { checkPermission, convertMachineReadableFrequencyToHumanReadable, d2t, uuid } from '@/lib/utils'
+import { loadFamilyState } from '@/app/actions/family'
+import type { FamilyState } from '@/lib/family-types'
+import FamilyMembershipSettings from './FamilyMembershipSettings'
 import { isApprovedCompletion } from '@/lib/task-schedule'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +28,7 @@ type Attempt = { requestId: string; timestamp: string }
 
 export default function FamilyOverview() {
   const t = useTranslations('FamilyOverview')
+  const tf = useTranslations('FamilyMembership')
   const [currentUser] = useAtom(currentUserAtom)
   const actorId = useRef(currentUser?.id)
   actorId.current = currentUser?.id
@@ -33,6 +37,7 @@ export default function FamilyOverview() {
   const [, setWishlist] = useAtom(wishlistAtom)
   const { saveHabit } = useHabits()
   const { addWishlistItem, editWishlistItem } = useWishlist()
+  const [familyState, setFamilyState] = useState<FamilyState | null>(null)
   const [overview, setOverview] = useState<FamilyOverviewData | null>(null)
   const [selectedId, setSelectedId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -48,9 +53,12 @@ export default function FamilyOverview() {
   const completionAttempts = useRef<Record<string, Attempt>>({})
   const redemptionAttempts = useRef<Record<string, string>>({})
   const canManage = !!(currentUser?.isAdmin || currentUser?.managedUserIds?.length)
+  const managedUserIds = familyState?.familiesEnabled
+    ? familyState.members.find(candidate => candidate.id === currentUser?.id)?.managedUserIds ?? []
+    : currentUser?.managedUserIds ?? []
   const member = overview?.members.find(candidate => candidate.id === selectedId)
   const managesSelectedMember = !!(currentUser?.isAdmin || member && member.id !== currentUser?.id &&
-    currentUser?.managedUserIds?.includes(member.id))
+    managedUserIds.includes(member.id))
   const canEditHabits = managesSelectedMember || checkPermission(currentUser?.permissions, 'habit', 'write')
   const canEditRewards = managesSelectedMember || checkPermission(currentUser?.permissions, 'wishlist', 'write')
   const canRedeemRewards = managesSelectedMember || checkPermission(currentUser?.permissions, 'coins', 'interact') &&
@@ -60,10 +68,11 @@ export default function FamilyOverview() {
 
   const refresh = useCallback(async () => {
     const requestingActor = actorId.current
-    const [next, habits, wishlist, coins] = await Promise.all([
-      loadFamilyOverview(), loadHabitsData(), loadWishlistData(), loadCoinsData(),
+    const [next, habits, wishlist, coins, families] = await Promise.all([
+      loadFamilyOverview(), loadHabitsData(), loadWishlistData(), loadCoinsData(), loadFamilyState(),
     ])
     if (actorId.current !== requestingActor) return
+    setFamilyState(families)
     setHabits(habits)
     setWishlist(wishlist)
     setCoins(coins)
@@ -74,6 +83,7 @@ export default function FamilyOverview() {
   useEffect(() => {
     let active = true
     setOverview(null)
+    setFamilyState(null)
     setSelectedId('')
     setError('')
     setNotice('')
@@ -83,10 +93,14 @@ export default function FamilyOverview() {
     setPhotos({})
     completionAttempts.current = {}
     redemptionAttempts.current = {}
-    setLoading(canManage)
-    if (!canManage) return
-    loadFamilyOverview().then(next => {
-      if (!active) return
+    setLoading(true)
+    loadFamilyState().then(async state => {
+      if (!active) return null
+      setFamilyState(state)
+      if ((state.familiesEnabled && !state.selectedFamilyId) || (!state.familiesEnabled && !canManage)) return null
+      return loadFamilyOverview()
+    }).then(next => {
+      if (!active || !next) return
       setOverview(next)
       setSelectedId(next.members[0]?.id ?? '')
     }).catch(() => {
@@ -162,7 +176,7 @@ export default function FamilyOverview() {
       unit: t(`taskUnits.${habit.taskRepeat}`) }) : initial
   }
 
-  if (!canManage) return <section className="space-y-3">
+  if (!loading && familyState && !familyState.familiesEnabled && !canManage) return <section className="space-y-3">
     <h1 className="text-2xl font-bold">{t('title')}</h1>
     <p>{t('noAccess')}</p>
   </section>
@@ -171,12 +185,14 @@ export default function FamilyOverview() {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="space-y-2">
         <h1 id="family-title" className="text-2xl font-bold">{t('title')}</h1>
-        <p className="max-w-3xl text-sm">{t('description')}</p>
+        <p className="max-w-3xl text-sm">{familyState?.familiesEnabled ? tf('overviewDescription') : t('description')}</p>
       </div>
       <Button type="button" variant="outline" disabled={busy || loading} onClick={() => void run(refresh)}>{t('refresh')}</Button>
     </div>
-    {error && <p role="alert" className="text-destructive">{error}</p>}
+    {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    {familyState?.familiesEnabled && <FamilyMembershipSettings key={familyState.selectedFamilyId ?? 'none'} state={familyState} isSiteAdmin={!!currentUser?.isAdmin}
+      onChanged={async () => { window.location.reload() }} />}
     {loading ? <p role="status">{t('loading')}</p> : !overview?.members.length ? <p>{t('empty')}</p> : <>
       <ul aria-label={t('memberSummaries')} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {overview.members.map(summary => <li key={summary.id} className="min-w-0">
@@ -184,7 +200,7 @@ export default function FamilyOverview() {
             <CardHeader><CardTitle className="break-words text-lg">{summary.username}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <dl className="space-y-2 text-sm">
-                <div className="flex flex-wrap justify-between gap-2"><dt>{t('balance')}</dt><dd>{t('coins', { count: summary.balance })}</dd></div>
+                <div className="flex flex-wrap justify-between gap-2"><dt>{familyState?.familiesEnabled ? tf('combinedBalance') : t('balance')}</dt><dd>{t('coins', { count: summary.balance })}</dd></div>
                 <div className="flex flex-wrap justify-between gap-2"><dt>{t('today')}</dt><dd>{t('todayCount', { done: summary.completedToday, due: summary.dueToday })}</dd></div>
                 <div className="flex flex-wrap justify-between gap-2"><dt>{t('pendingApprovals')}</dt><dd>{summary.pendingApprovals}</dd></div>
                 {summary.status && <div className="flex flex-wrap justify-between gap-2"><dt>{t('status')}</dt><dd>{t(`statuses.${summary.status}`)}</dd></div>}
@@ -220,7 +236,7 @@ export default function FamilyOverview() {
             {member.habits.map(habit => {
               const key = `${member.id}:${habit.id}`
               const managerMayRecord = habit.schedule?.type === 'anytime' && habit.schedule.recordingPolicy !== 'member' &&
-                (currentUser?.isAdmin || currentUser?.managedUserIds?.includes(member.id))
+                (currentUser?.isAdmin || managedUserIds.includes(member.id))
               const today = DateTime.now().setZone(overview.timezone).toISODate()
               const recordedToday = habit.completions.filter((timestamp, index) =>
                 isApprovedCompletion(habit, index) && DateTime.fromISO(timestamp).setZone(overview.timezone).toISODate() === today).length
@@ -305,7 +321,7 @@ export default function FamilyOverview() {
         <p id="family-redeem-description">{redemption && t('redemptionMessage', {
           reward: redemption.item.name, name: redemption.username, count: redemption.item.coinCost,
         })}</p>
-        {error && <p role="alert" className="text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-red-700 dark:text-red-400">{error}</p>}
         <DialogFooter className="gap-2">
           <Button type="button" variant="outline" disabled={busy} onClick={() => setRedemption(null)}>{t('cancel')}</Button>
           <Button type="button" disabled={busy || !canRedeemRewards} onClick={redeem}>{t('confirm')}</Button>

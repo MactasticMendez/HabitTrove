@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## Version 1.0.0
+
+### Added
+
+* Add named families, an explicit family selector, owner/manager/member roles, directed manager assignments and confirmed membership changes/removal previews.
+* Add family-bound invitations for new and existing accounts, with email-matched explicit acceptance and no credential replacement.
+* Add offline family schema preparation, reviewed legacy mapping and hash-bound activation, plus complete version 2 backup/export/verification and empty-target restore.
+* Extend isolated restricted-role PostgreSQL CI coverage to family repositories, actions, startup, media maintenance, activation and full backup/recovery.
+
+### Changed
+
+* Scope items, approvals, member searches, evidence and calendar settings to the selected family; preserve personal display/language preferences and clear prior-family client data on switching.
+* Preserve the signed-in account and personal settings independently of family member lists; keep global administrator account management available to administrators without family membership.
+* Keep one global wallet per account across families. Leaving retains coins/history/debt; authorized redemption uses the combined balance, and undo can restore a negative balance without permitting further spending.
+* Use complete raw family snapshots for scheduled backups after schema preparation, preserving pending mappings, inaccessible evidence metadata and retained protected assets.
+
+### Fixed
+
+* Keep personal settings/language and the signed-in wallet consistent without a selected family, including site-administrator loads, coin changes and notes.
+* Resolve protected media through the same authorized family selection while preserving access to the account's own global avatar.
+* Require an explicit recipient for member-specific administrator forms when the administrator is not a family member; use Family management for another member's wallet.
+* Give loaded avatar images appropriate alternative text while avoiding duplicate names in account and selection controls.
+* Retain archived any-time and negative-habit history after removing its sole assignee without blocking unrelated habit edits.
+* Allow site administrators outside a family's membership to record and undo authorized manager-policy actions while preserving member-only policies and legacy permission checks.
+
+### Security
+
+* Recheck actor, membership and directed oversight inside each transaction, with forced row-level security, scoped revisions and no permissive fallback for missing/revoked family context.
+* Require explicit reviewed mapping and activation hashes; keep configuration/wallet summaries read-only for runtime and restore privileges isolated to the offline operator identity.
+* Reject unsafe runtime privileges reachable through role memberships, including NOINHERIT custom roles.
+* Preflight invitations before bounded asynchronous password derivation, share credential-work/attempt limits across workers and recheck acceptance before committing a new account.
+* Carry the verified session version through identity lookup and fence all PostgreSQL identity writes against it, including before family activation; recheck credential state before committing password changes.
+
+
 ## Version 0.9.0
 
 ### Added

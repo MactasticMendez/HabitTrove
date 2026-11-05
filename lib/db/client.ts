@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient } from 'pg';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSIONS = [1, 2];
 const WRITE_LOCK = 724617631;
 const context = new AsyncLocalStorage<{
   client: PoolClient;
@@ -85,9 +85,16 @@ export async function withStorageTransaction<T>(operation: () => Promise<T>, opt
     await client.query(options.readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     if (!options.readOnly)
       await client.query('SELECT pg_advisory_xact_lock($1)', [WRITE_LOCK]);
-    const version = await client.query('SELECT version FROM habittrove.schema_version WHERE singleton = true');
-    if (version.rows[0]?.version !== SCHEMA_VERSION)
-      throw new Error('HabitTrove database schema migration required');
+    const version = (await client.query('SELECT version FROM habittrove.schema_version WHERE singleton = true')).rows[0]?.version;
+    if (!SCHEMA_VERSIONS.includes(version)) throw new Error('HabitTrove database schema migration required');
+    const familyTable = (await client.query("SELECT to_regclass('habittrove.family_configuration') AS name")).rows[0].name;
+    if (version === 2 || familyTable) {
+      if (!familyTable) throw new Error('HabitTrove family schema preparation required');
+      const familyState = (await client.query('SELECT enabled FROM habittrove.family_configuration WHERE singleton=true')).rows[0];
+      if (!familyState || typeof familyState.enabled !== 'boolean' || (familyState.enabled && version !== 2)) {
+        throw new Error('HabitTrove family schema preparation required');
+      }
+    }
     result = await context.run(state, operation);
     if (state.failed) throw new Error('Nested database operation failed; transaction rolled back');
     const committed = await client.query('COMMIT');
@@ -114,7 +121,7 @@ export async function migrateDatabase(): Promise<void> {
     const existing = await client.query("SELECT to_regclass('habittrove.schema_version') AS table_name");
     if (existing.rows[0].table_name) {
       const version = await client.query('SELECT version FROM habittrove.schema_version WHERE singleton = true');
-      if (version.rows[0]?.version !== SCHEMA_VERSION)
+      if (!SCHEMA_VERSIONS.includes(version.rows[0]?.version))
         throw new Error('Unsupported HabitTrove schema version');
     }
     else {

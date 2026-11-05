@@ -144,3 +144,15 @@ test('reverse export preserves private metadata for retained unreferenced assets
     expect(output.snapshot.attachments).toEqual([attachment])
   } finally { await fs.rm(directory, { recursive: true, force: true }); await fs.rm(destination, { recursive: true, force: true }) }
 })
+
+
+test('legacy snapshot writer rejects forged orphan asset traversal before creating the destination', async () => {
+  const { directory } = await fixtureDirectory()
+  const destination = `${directory}-unsafe-output`
+  try {
+    const source = await captureLegacySource(directory)
+    source.assets.set('avatars/../../outside', Buffer.from('must remain private'))
+    await expect(writeSnapshotDirectory(destination, source)).rejects.toThrow('Unsafe protected asset path')
+    await expect(fs.access(destination)).rejects.toThrow()
+  } finally { await fs.rm(directory, { recursive: true, force: true }) }
+})

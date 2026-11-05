@@ -36,10 +36,12 @@ async function resolveCurrentContext(actor: User, isSiteAdmin: boolean, requeste
   const client = currentDatabaseClient()!
   if (!await getFamiliesEnabled()) return undefined
   let familyId = requestedFamilyId
-  if (!familyId) {
-    const first = await client.query('SELECT family_id FROM habittrove.family_memberships WHERE user_id=$1 AND active ORDER BY family_id LIMIT 1', [actor.id])
-    familyId = first.rows[0]?.family_id
-    if (!familyId) return undefined
+  if (familyId === undefined) {
+    const first = await client.query(`SELECT f.id FROM habittrove.families f
+      LEFT JOIN habittrove.family_memberships m ON m.family_id=f.id AND m.user_id=$1 AND m.active
+      WHERE $2::boolean OR m.user_id IS NOT NULL ORDER BY f.name,f.id LIMIT 1`, [actor.id, isSiteAdmin])
+    familyId = first.rows[0]?.id
+    if (familyId === undefined) return undefined
   }
   if (typeof familyId !== 'string' || familyId.length > 128) throw new Error('Invalid family')
   const membership = (await client.query('SELECT role FROM habittrove.family_memberships WHERE family_id=$1 AND user_id=$2 AND active', [familyId, actor.id])).rows[0]

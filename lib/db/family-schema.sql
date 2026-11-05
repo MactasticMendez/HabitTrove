@@ -3,6 +3,10 @@ SET LOCAL search_path = habittrove, pg_catalog;
 CREATE TABLE family_configuration (singleton boolean PRIMARY KEY CHECK(singleton), enabled boolean NOT NULL DEFAULT false);
 INSERT INTO family_configuration VALUES(true,false);
 CREATE TABLE families (id text PRIMARY KEY, name text NOT NULL CHECK(length(name) BETWEEN 1 AND 100), revision bigint NOT NULL DEFAULT 1, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE family_document_revisions (
+ family_id text REFERENCES families, kind text CHECK(kind IN ('habits','wishlist')), revision bigint NOT NULL DEFAULT 1,
+ metadata jsonb NOT NULL DEFAULT '{"fields":{},"present":[]}', PRIMARY KEY(family_id,kind)
+);
 CREATE TABLE family_memberships (
   family_id text REFERENCES families, user_id text REFERENCES users, role text NOT NULL CHECK(role IN ('owner','manager','member')),
   active boolean NOT NULL DEFAULT true, joined_at timestamptz NOT NULL DEFAULT now(), removed_at timestamptz,
@@ -69,6 +73,9 @@ ALTER TABLE habits ADD UNIQUE(family_id,id);
 ALTER TABLE wishlist_items ADD COLUMN family_id text REFERENCES families;
 ALTER TABLE wishlist_items ADD UNIQUE(family_id,id);
 ALTER TABLE coin_ledger ADD COLUMN family_id text REFERENCES families;
+ALTER TABLE coin_ledger ALTER COLUMN ordinal TYPE bigint;
+CREATE SEQUENCE coin_ledger_family_order AS bigint INCREMENT BY -1 MINVALUE -9223372036854775808 MAXVALUE -1 START WITH -1;
+SELECT setval('coin_ledger_family_order',LEAST(-1,COALESCE((SELECT min(ordinal)-1 FROM coin_ledger),-1)),false);
 ALTER TABLE attachments ADD COLUMN family_id text REFERENCES families;
 ALTER TABLE attachments ADD COLUMN inaccessible boolean NOT NULL DEFAULT false;
 ALTER TABLE attachments ADD FOREIGN KEY(family_id,habit_id) REFERENCES habits(family_id,id) DEFERRABLE INITIALLY DEFERRED;
@@ -76,13 +83,13 @@ ALTER TABLE completions ADD COLUMN needs_review boolean NOT NULL DEFAULT false;
 DO $$ DECLARE t text; BEGIN
  FOREACH t IN ARRAY ARRAY['habit_assignees','habit_approvers','checklist_entries','completions','completion_recipients','slips'] LOOP
   EXECUTE format('ALTER TABLE %I ADD COLUMN family_id text REFERENCES families',t);
-  EXECUTE format('ALTER TABLE %I ADD FOREIGN KEY(family_id,habit_id) REFERENCES habits(family_id,id)',t);
+  EXECUTE format('ALTER TABLE %I ADD FOREIGN KEY(family_id,habit_id) REFERENCES habits(family_id,id) DEFERRABLE INITIALLY DEFERRED',t);
  END LOOP;
 END $$;
 ALTER TABLE completions ADD UNIQUE(family_id,habit_id,ordinal);
-ALTER TABLE completion_recipients ADD FOREIGN KEY(family_id,habit_id,completion_ordinal) REFERENCES completions(family_id,habit_id,ordinal);
+ALTER TABLE completion_recipients ADD FOREIGN KEY(family_id,habit_id,completion_ordinal) REFERENCES completions(family_id,habit_id,ordinal) DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE wishlist_assignees ADD COLUMN family_id text REFERENCES families;
-ALTER TABLE wishlist_assignees ADD FOREIGN KEY(family_id,item_id) REFERENCES wishlist_items(family_id,id);
+ALTER TABLE wishlist_assignees ADD FOREIGN KEY(family_id,item_id) REFERENCES wishlist_items(family_id,id) DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE habit_assignees ADD FOREIGN KEY(family_id,user_id) REFERENCES family_memberships;
 ALTER TABLE habit_approvers ADD FOREIGN KEY(family_id,user_id) REFERENCES family_memberships;
 ALTER TABLE wishlist_assignees ADD FOREIGN KEY(family_id,user_id) REFERENCES family_memberships;
@@ -134,7 +141,7 @@ CREATE POLICY family_membership_insert ON family_memberships FOR INSERT WITH CHE
 CREATE POLICY family_membership_update ON family_memberships FOR UPDATE USING(family_scope_matches(family_id) AND current_setting('habittrove.family_role',true) IN ('owner','site-admin')) WITH CHECK(family_scope_matches(family_id));
 CREATE POLICY family_membership_delete ON family_memberships FOR DELETE USING(false);
 DO $$ DECLARE t text; BEGIN
- FOREACH t IN ARRAY ARRAY['family_manager_assignments','family_permissions','family_preferences','family_settings','household_invitations','family_audit','family_legacy_adoptions'] LOOP
+ FOREACH t IN ARRAY ARRAY['family_document_revisions','family_manager_assignments','family_permissions','family_preferences','family_settings','household_invitations','family_audit','family_legacy_adoptions'] LOOP
   EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',t);
   EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',t);
   EXECUTE format('CREATE POLICY family_boundary ON %I USING(family_scope_matches(family_id)) WITH CHECK(family_scope_matches(family_id))',t);
@@ -154,6 +161,17 @@ CREATE POLICY global_ledger_read ON coin_ledger FOR SELECT USING (
 CREATE POLICY family_ledger_insert ON coin_ledger FOR INSERT WITH CHECK(family_legacy_mode() OR (family_id IS NOT NULL AND family_scope_matches(family_id)));
 CREATE POLICY family_ledger_update ON coin_ledger FOR UPDATE USING(family_legacy_mode() OR family_scope_matches(family_id)) WITH CHECK(family_legacy_mode() OR (family_id IS NOT NULL AND family_scope_matches(family_id)));
 CREATE POLICY family_ledger_delete ON coin_ledger FOR DELETE USING(family_legacy_mode() OR family_scope_matches(family_id));
+CREATE POLICY own_global_ledger_note ON coin_ledger FOR UPDATE
+ USING(user_id=current_setting('habittrove.actor_id',true)) WITH CHECK(user_id=current_setting('habittrove.actor_id',true));
+-- Set only around the repository's authorized event reader, never around a wallet query.
+CREATE POLICY completion_ledger_read ON coin_ledger FOR SELECT USING (
+ current_setting('habittrove.scope_validated',true)='true' AND family_id=current_setting('habittrove.family_id',true)
+ AND related_item_id=current_setting('habittrove.ledger_habit',true)
+ AND type IN ('HABIT_COMPLETION','TASK_COMPLETION','HABIT_UNDO','TASK_UNDO')
+ AND (completion_id=NULLIF(current_setting('habittrove.ledger_completion',true),'') OR
+   (NULLIF(current_setting('habittrove.ledger_completion',true),'') IS NULL AND completion_id IS NULL
+    AND user_id=NULLIF(current_setting('habittrove.ledger_beneficiary',true),'')))
+);
 -- Grant only SELECT on global_wallet_totals to the runtime role after the migration; do not grant blanket table write privileges.
 
 -- A token capability is used only inside the reviewed invite resolver/acceptance transaction.
@@ -244,3 +262,5 @@ CREATE POLICY attachment_delete ON attachments FOR DELETE USING (
  (path LIKE 'avatars/%' AND owner_id=current_setting('habittrove.actor_id',true)) OR
  (path NOT LIKE 'avatars/%' AND family_scope_matches(family_id))
 );
+
+UPDATE schema_version SET version=2 WHERE singleton;

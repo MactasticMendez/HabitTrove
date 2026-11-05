@@ -12,7 +12,7 @@ export default function Header({ className }: HeaderProps) {
     <>
       <header className={`border-b bg-white dark:bg-gray-800 shadow-sm ${className || ''}`}>
         <div className="mx-auto py-4 px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <Link href="/" className="mr-3 sm:mr-4">
               <Logo />
             </Link>

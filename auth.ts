@@ -75,6 +75,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth(async () => ({
     session: async ({ session, token }) => {
       if (session.user && typeof token.id === 'string') {
         session.user.id = token.id
+        session.user.authVersion = typeof token.authVersion === 'number' ? token.authVersion : undefined
         session.user.email = ''
         session.user.name = null
         session.user.image = null
