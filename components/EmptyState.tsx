@@ -11,7 +11,7 @@ export default function EmptyState({ icon: Icon, title, description }: EmptyStat
     <div className="flex flex-col items-center justify-center p-8 text-center">
       <Icon className="h-12 w-12 text-muted-foreground mb-4" />
       <h3 className="text-lg font-semibold">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <p className="text-sm text-gray-600 dark:text-gray-300">{description}</p>
     </div>
   )
 }

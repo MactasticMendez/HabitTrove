@@ -24,6 +24,8 @@
 * Resolve protected media through the same authorized family selection while preserving access to the account's own global avatar.
 * Require an explicit recipient for member-specific administrator forms when the administrator is not a family member; use Family management for another member's wallet.
 * Give loaded avatar images appropriate alternative text while avoiding duplicate names in account and selection controls.
+* Keep habit schedule captions, archived items and empty-state descriptions readable in light and dark themes while retaining a visible archive cue.
+* Keep empty and archived lists within their mobile grid and wrap habit actions and filters on narrow screens.
 * Retain archived any-time and negative-habit history after removing its sole assignee without blocking unrelated habit edits.
 * Allow site administrators outside a family's membership to record and undo authorized manager-policy actions while preserving member-only policies and legacy permission checks.
 

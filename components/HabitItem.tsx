@@ -125,11 +125,11 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
   return (
     <Card
       id={`habit-${habit.id}`}
-      className={`transition-all duration-500 ${compact ? 'grid grid-cols-1 items-center gap-x-4 text-sm md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32rem]' : 'h-full flex flex-col'} ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''} ${habit.archived ? 'opacity-75' : ''}`}
+      className={`transition-all duration-500 ${compact ? 'grid grid-cols-1 items-center gap-x-4 text-sm md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32rem]' : 'h-full flex flex-col'} ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''}`}
     >
       <CardHeader className={compact ? 'min-w-0 p-2' : 'flex-shrink-0'}>
         <div className="flex justify-between items-start">
-          <CardTitle className={`line-clamp-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''} flex items-center ${isTasksView ? 'w-full' : ''} justify-between`}>
+          <CardTitle className={`line-clamp-1 ${habit.archived ? 'text-gray-600 dark:text-gray-300 line-through' : ''} flex items-center ${isTasksView ? 'w-full' : ''} justify-between`}>
             <div className="flex items-center gap-1">
               {habit.pinned && (
                 <Pin className="h-4 w-4 text-yellow-500" />
@@ -147,7 +147,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
         {!compact && (habit.description || habit.drawing) && (
           <div className={`flex gap-4 mt-2 ${!habit.description ? 'justify-end' : ''}`}>
             {habit.description && (
-              <CardDescription className={`whitespace-pre-line flex-1 min-w-0 break-words ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>
+              <CardDescription className={`whitespace-pre-line flex-1 min-w-0 break-words ${habit.archived ? 'text-gray-600 dark:text-gray-300' : ''}`}>
                 {habit.description}
               </CardDescription>
             )}
@@ -166,28 +166,28 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
       </CardHeader>
       <CardContent className={compact ? 'min-w-0 p-2' : 'flex-grow flex flex-col justify-end'}>
         <div className={compact ? '' : 'mt-auto'}>
-          <p className={`text-sm ${compact ? 'line-clamp-1' : ''} ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500'}`}>
+          <p className={`text-sm ${compact ? 'line-clamp-1' : ''} ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'}`}>
             {t('whenLabel', {
               frequency: frequencyLabel
             })}
           </p>
           <div className={`flex items-center ${compact ? 'mt-0.5' : 'mt-2'}`}>
-            <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
-            <span className={`text-sm font-medium ${habit.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>{t(habit.isNegative ? 'coinsPerAvoidance' : 'coinsPerCompletion', { count: habit.coinReward })}</span>
+            <Coins className={`h-4 w-4 mr-1 ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-yellow-400'}`} />
+            <span className={`text-sm font-medium ${habit.archived ? 'text-gray-600 dark:text-gray-300' : ''}`}>{t(habit.isNegative ? 'coinsPerAvoidance' : 'coinsPerCompletion', { count: habit.coinReward })}</span>
           </div>
-          {habit.isNegative && <p className="text-xs text-muted-foreground">{t('coinsPerSlip', { count: habit.coinPenalty ?? 0 })}</p>}
-          {habit.taskRepeat && <p className="text-xs text-muted-foreground">{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
-          {anytime && <p className="text-xs text-muted-foreground">{t('actionsToday', { count: completionsToday })}</p>}
-          {anytime && !canRecord && <p className="text-xs text-muted-foreground">{t(habit.schedule?.type === 'anytime' && habit.schedule.recordingPolicy === 'manager' ? 'managerRecords' : 'memberRecords')}</p>}
-          {!habit.isTask && !anytime && <p className="text-xs text-muted-foreground">{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
+          {habit.isNegative && <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t('coinsPerSlip', { count: habit.coinPenalty ?? 0 })}</p>}
+          {habit.taskRepeat && <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t('taskProgress', { count: getTaskProgress(habit, settings.system.timezone), goal: habit.taskGoalOccurrences ?? '∞' })}</p>}
+          {anytime && <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t('actionsToday', { count: completionsToday })}</p>}
+          {anytime && !canRecord && <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t(habit.schedule?.type === 'anytime' && habit.schedule.recordingPolicy === 'manager' ? 'managerRecords' : 'memberRecords')}</p>}
+          {!habit.isTask && !anytime && <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t('streakAndWeek', { streak: progress.streak, done: progress.weeklyDone, due: progress.weeklyDue })}</p>}
           {!habit.isTask && !anytime && progress.graceUsed && <p className="text-xs text-amber-700 dark:text-amber-300">{t('graceUsed')}</p>}
           {pendingToday && <p className="text-xs text-amber-700 dark:text-amber-300">{t('pendingApproval')}</p>}
           {habit.checklist && habit.checklist.length > 0 && <div className="mt-2 space-y-1">
-            <p className="text-xs text-muted-foreground">{t('checklistProgress', { done: habit.checklist.filter(item => item.completed).length, total: habit.checklist.length })}</p>
+            <p className={`text-xs ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}`}>{t('checklistProgress', { done: habit.checklist.filter(item => item.completed).length, total: habit.checklist.length })}</p>
             {habit.checklist.map(item => <label key={item.id} className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={item.completed} disabled={!canInteract || habit.archived || busy}
                 onChange={event => toggleChecklistItem(habit.id, item.id, event.target.checked)} />
-              <span className={item.completed ? 'line-through text-muted-foreground' : ''}>{item.text}</span>
+              <span className={item.completed ? `line-through ${habit.archived ? 'text-gray-600 dark:text-gray-300' : 'text-muted-foreground'}` : ''}>{item.text}</span>
             </label>)}
           </div>}
           {habit.requiresApproval && !habit.archived && <label className="mt-2 block text-xs">
@@ -205,7 +205,7 @@ export default function HabitItem({ habit, compact = false, onEdit, onDelete }: 
         </div>
       </CardContent>
       <CardFooter className={compact ? 'min-w-0 flex-wrap justify-between gap-2 p-2 md:col-span-2 2xl:col-span-1' : 'flex-shrink-0 flex flex-wrap justify-between gap-2'}>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <div className="relative">
             <Button
               variant={isCompletedToday ? "secondary" : "default"}

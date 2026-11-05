@@ -220,7 +220,7 @@ export default function HabitList() {
             className="pl-10 w-full"
           />
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-center w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center w-full sm:w-auto">
           <Label htmlFor="sort-by" className="text-sm font-medium whitespace-nowrap sr-only sm:not-sr-only">{t('sortByLabel')}</Label>
           <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortableField)}>
             <SelectTrigger id="sort-by" className="w-full sm:w-[180px]">
@@ -302,11 +302,11 @@ export default function HabitList() {
       </div>}
       <div className={`grid grid-cols-1 gap-4 items-stretch ${browserSettings.compactItems ? '' : 'md:grid-cols-2'}`}>
         {activeHabits.length === 0 && searchTerm.trim() ? (
-          <div className="col-span-2 text-center text-muted-foreground py-8">
+          <div className="col-span-full text-center text-muted-foreground py-8">
             {t(isTasksView ? 'noTasksFoundMessage' : 'noHabitsFoundMessage')}
           </div>
         ) : activeHabits.length === 0 ? (
-          <div className="col-span-2">
+          <div className="col-span-full">
             <EmptyState
               icon={isTasksView ? TaskIcon : HabitIcon}
               title={t(isTasksView ? 'emptyStateTasksTitle' : 'emptyStateHabitsTitle')}
@@ -362,9 +362,9 @@ export default function HabitList() {
 
         {archivedHabits.length > 0 && (
           <>
-            <div className="col-span-1 sm:col-span-2 relative flex items-center my-6">
+            <div className="col-span-full relative flex items-center my-6">
               <div className="flex-grow border-t border-gray-300 dark:border-gray-600" />
-              <span className="mx-4 text-sm text-gray-500 dark:text-gray-400">{t('archivedSectionTitle')}</span>
+              <span className="mx-4 text-sm text-gray-600 dark:text-gray-300">{t('archivedSectionTitle')}</span>
               <div className="flex-grow border-t border-gray-300 dark:border-gray-600" />
             </div>
             {archivedHabits.map((habit: Habit) => (
