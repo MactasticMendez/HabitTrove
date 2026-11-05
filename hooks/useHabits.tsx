@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { habitsAtom, coinsAtom, settingsAtom, usersAtom, habitFreqMapAtom, currentUserAtom } from '@/lib/atoms'
-import { recordHabitCompletion, undoHabitCompletion, recordHabitSlip, undoHabitSlip, saveHabitsData, reorderHabitItems, toggleTaskChecklistItem } from '@/app/actions/data'
+import { recordHabitCompletion, undoHabitCompletion, recordHabitSlip, undoHabitSlip, saveHabitsData, loadHabitsData, reorderHabitItems, toggleTaskChecklistItem } from '@/app/actions/data'
 import { Habit, SafeUser, User } from '@/lib/types'
 import { toast } from '@/hooks/use-toast'
 import { DateTime } from 'luxon'
@@ -97,7 +97,7 @@ export function useHabits() {
       const result = await recordHabitCompletion(habit.id, request?.timestamp ?? timestamp, evidence,
         request ? { beneficiaryId: habit.userIds?.[0], requestId: request.requestId } : undefined)
       retryRequests.current.delete(requestKey)
-      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setHabitsData(await loadHabitsData())
       setCoins(result.coins)
       return result
     } finally {
@@ -150,7 +150,7 @@ export function useHabits() {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     try {
       const result = await recordHabitSlip(habit.id, d2t({ dateTime: getNow({ timezone: settings.system.timezone }) }))
-      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setHabitsData(await loadHabitsData())
       setCoins(result.coins)
       toast({ title: t('slipRecorded'), description: t('slipPenalty', { count: result.penalty }) })
     } catch {
@@ -162,7 +162,7 @@ export function useHabits() {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     try {
       const result = await undoHabitSlip(habit.id, slipId)
-      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setHabitsData(await loadHabitsData())
       setCoins(result.coins)
       toast({ title: t('slipUndone') })
     } catch {
@@ -189,7 +189,7 @@ export function useHabits() {
     try {
       const result = await undoHabitCompletion(habit.id, index, timestamp)
       const updatedHabits = habitsData.habits.map(item => item.id === habit.id ? result.habit : item)
-      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habit.id ? result.habit : item) }))
+      setHabitsData(await loadHabitsData())
       setCoins(result.coins)
       const undoneDate = t2d({ timestamp, timezone })
       toast({
@@ -227,8 +227,8 @@ export function useHabits() {
       ? habitsData.habits.map(h => h.id === habit.id ? newHabit : h)
       : [...habitsData.habits, newHabit]
 
-    await saveHabitsData({ habits: updatedHabits })
-    setHabitsData({ habits: updatedHabits })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    setHabitsData(saved)
     return updatedHabits
   }
 
@@ -242,7 +242,7 @@ export function useHabits() {
     if (!handlePermissionCheck(currentUser, 'habit', 'interact', tCommon)) return
     try {
       const updated = await toggleTaskChecklistItem(habitId, itemId, completed)
-      setHabitsData(previous => ({ habits: previous.habits.map(item => item.id === habitId ? updated : item) }))
+      setHabitsData(await loadHabitsData())
     } catch {
       toast({ title: tCommon('errorTitle'), description: t('checklistUpdateFailed'), variant: 'destructive' })
     }
@@ -251,8 +251,8 @@ export function useHabits() {
   const deleteHabit = async (id: string) => {
     if (!handlePermissionCheck(currentUser, 'habit', 'write', tCommon)) return
     const updatedHabits = habitsData.habits.filter(h => h.id !== id)
-    await saveHabitsData({ habits: updatedHabits })
-    setHabitsData({ habits: updatedHabits })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    setHabitsData(saved)
     return updatedHabits
   }
 
@@ -310,8 +310,8 @@ export function useHabits() {
     const updatedHabits = habitsData.habits.map(h =>
       h.id === id ? { ...h, archived: true } : h
     )
-    await saveHabitsData({ habits: updatedHabits })
-    setHabitsData({ habits: updatedHabits })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    setHabitsData(saved)
   }
 
   const unarchiveHabit = async (id: string) => {
@@ -319,8 +319,8 @@ export function useHabits() {
     const updatedHabits = habitsData.habits.map(h =>
       h.id === id ? { ...h, archived: false } : h
     )
-    await saveHabitsData({ habits: updatedHabits })
-    setHabitsData({ habits: updatedHabits })
+    const saved = await saveHabitsData({ habits: updatedHabits, revision: habitsData.revision })
+    setHabitsData(saved)
   }
 
   return {

@@ -217,8 +217,8 @@
     "todaySuffix": "오늘"
   },
   "WishlistItem": {
-    "usesLeftSingular": "사용 횟수 남음",
-    "usesLeftPlural": "사용 횟수 남음",
+    "usesLeftSingular": "{count} 사용 횟수 남음",
+    "usesLeftPlural": "{count} 사용 횟수 남음",
     "coinsSuffix": "코인",
     "redeem": "교환",
     "redeemedDone": "완료",

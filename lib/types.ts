@@ -1,6 +1,6 @@
-import { RRule } from "rrule"
-import { uuid } from "./utils"
-import { DateTime } from "luxon"
+import type { RRule } from "rrule"
+import { v4 as uuid } from "uuid"
+import type { DateTime } from "luxon"
 
 export type UserId = string
 
@@ -171,18 +171,21 @@ export interface PublicUserData {
 
 export interface HabitsData {
   habits: Habit[];
+  revision?: number;
 }
 
 
 export interface CoinsData {
   balance: number;
   transactions: CoinTransaction[];
+  revision?: number;
 }
 
 // Default value functions
 // Data container types
 export interface WishlistData {
   items: WishlistItemType[];
+  revision?: number;
 }
 
 export type FamilyMemberOverview = {

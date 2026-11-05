@@ -217,8 +217,8 @@
     "todaySuffix": "сегодня"
   },
   "WishlistItem": {
-    "usesLeftSingular": "использование",
-    "usesLeftPlural": "использований",
+    "usesLeftSingular": "{count} использование",
+    "usesLeftPlural": "{count} использований",
     "coinsSuffix": "монет",
     "redeem": "Использовать",
     "redeemedDone": "Готово",

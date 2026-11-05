@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## Version 0.9.0
+
+### Added
+
+* Add offline PostgreSQL schema, fresh-install initialization, legacy import/verification, checksum manifests, reverse export and empty-target restore commands.
+* Add isolated PostgreSQL 17.11 CI coverage using a restricted runtime role and separate migration credentials, plus an optional disposable local test profile.
+
+### Changed
+
+* Make PostgreSQL authoritative for production accounts, settings, habits, approvals, rewards, coin history and protected-asset metadata while keeping binary assets in the existing volume.
+* Preserve legacy IDs, password hashes, identity links, event ordering, fractional coins and encrypted administrator settings through normalized tables with JSONB for flexible fields.
+* Capture database snapshots, protected assets and manifests in backups; document the separate recovery key, restore drills and verified reverse-export rollback after new writes.
+
+### Fixed
+
+* Refresh reward revisions after redemption so the next edit can be saved without reloading the page.
+* Keep wallet notes and their edit revision in the same database snapshot so concurrent edits cannot overwrite newer notes.
+* Preserve backup/export consistency for evidence recorded on another member's behalf and administrator-assigned avatars; retain transferred avatars when their original uploader is deleted.
+* Name notification, mobile view, reward-menu and coin controls, correct notification semantics and improve dashboard contrast for screen reader and low-vision access.
+* Restore the numeric remaining-use count on limited rewards.
+
+### Security
+
+* Move related authorization/business writes, authentication throttles and scheduled-backup ownership into shared database transactions/leases; fail closed when storage is unavailable.
+* Validate the actual restricted non-owner runtime identity, bound database pools/timeouts, isolate offline DDL credentials and verify protected asset hashes/paths. Production never falls back to writable JSON.
+* Recheck administrator authority, credentials and provider-account constraints inside the same transaction as administrator settings changes.
+
+Stage A retains existing access/delegation behavior. Explicit family membership and activation remain a separate release; dormant family helpers are not enabled by this migration.
+
 ## Version 0.8.0
 
 ### Added

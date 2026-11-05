@@ -49,3 +49,6 @@ certificates
 CLAUDE.md
 
 CHANGELOG.md.tmp
+
+# Generated offline database tools
+/dist/

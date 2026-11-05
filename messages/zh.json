@@ -217,7 +217,7 @@
     "todaySuffix": "今天"
   },
   "WishlistItem": {
-    "usesLeftSingular": "剩余 1 次",
+    "usesLeftSingular": "剩余 {count} 次",
     "usesLeftPlural": "剩余 {count} 次",
     "coinsSuffix": "金币",
     "redeem": "兑换",

@@ -217,8 +217,8 @@
     "todaySuffix": "hoy"
   },
   "WishlistItem": {
-    "usesLeftSingular": "uso restante",
-    "usesLeftPlural": "usos restantes",
+    "usesLeftSingular": "{count} uso restante",
+    "usesLeftPlural": "{count} usos restantes",
     "coinsSuffix": "monedas",
     "redeem": "Canjear",
     "redeemedDone": "Hecho",

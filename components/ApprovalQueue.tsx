@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAtom } from 'jotai'
 import { habitsAtom, coinsAtom, usersAtom } from '@/lib/atoms'
 import type { PendingApproval } from '@/lib/types'
-import { loadPendingApprovals, reviewHabitCompletion } from '@/app/actions/data'
+import { loadPendingApprovals, reviewHabitCompletion, loadHabitsData } from '@/app/actions/data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useTranslations } from 'next-intl'
@@ -31,7 +31,7 @@ export default function ApprovalQueue() {
       setPending(previous => previous.filter(entry => entry.completionId !== item.completionId))
       const updatedHabit = result.habit
       if (updatedHabit) {
-        setHabits(previous => ({ habits: previous.habits.map(habit => habit.id === item.habitId ? updatedHabit : habit) }))
+        setHabits(await loadHabitsData())
       }
       setCoins(result.coins)
     } catch {

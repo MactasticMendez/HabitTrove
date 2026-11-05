@@ -61,61 +61,33 @@ Schedule modes are fixed once an item has completion or slip history; create a n
 
 ## Docker Deployment
 
-HabitTrove can be run using Docker in several ways, depending on your needs:
+Build this checkout; the upstream image does not contain this fork's changes. Version 0.9.0 requires PostgreSQL for production. PostgreSQL is authoritative for accounts, settings, habits, rewards, coins and attachment metadata; `/app/data` retains protected avatar/evidence files. Existing JSON is migration evidence, not a writable fallback.
 
-### Build this fork
-
-The upstream `dohsimpson/habittrove` image does not contain this fork's security changes. Build this checkout before deployment. Back up the `data` and `backups` directories before upgrading an existing installation.
-
-1. Prepare the data directory:
+1. Follow [database setup and migration](docs/database.md) to provision a dedicated database and restricted runtime login, then initialize a new installation or import and verify an existing one while the app is stopped.
+2. Keep `AUTH_SECRET` stable and separately backed up. Configure the runtime `DATABASE_URL` and `AUTH_SECRET` through a private environment file or secret manager. Never put the migration/owner connection in the ordinary application container.
+3. Prepare owner-only `data` and `backups` mounts, writable by container UID/GID `1001:1001`, then build and start:
 
 ```bash
 mkdir -p data backups
-chown -R 1001:1001 data backups # Required for the nextjs user in container
+chmod 700 data backups
+# On the deployment host, assign these mounts to UID/GID 1001:1001.
+docker compose build habittrove
+docker compose up -d habittrove
 ```
 
-2. Set the startup credentials and build:
+Compose connects to the external database from `DATABASE_URL`; normal startup does not create or upgrade a PostgreSQL container, apply schema migrations, import JSON or create a default administrator. Missing/uninitialized storage fails startup. Preserve existing data, environment, container settings and the prior image before upgrading. After database writes begin, rollback requires a verified current reverse export; old JSON alone is stale.
 
-```bash
-# Generate a secure authentication secret
-export AUTH_SECRET=$(openssl rand -base64 32)
-# Required when the data directory has no auth.json yet
-printf 'Initial admin password (12-128 characters): '
-read -rs INITIAL_ADMIN_PASSWORD
-printf '\n'
-export INITIAL_ADMIN_PASSWORD
-printf 'Initial admin email: '
-read -r INITIAL_ADMIN_EMAIL
-export INITIAL_ADMIN_EMAIL
-
-docker compose up -d --build
-```
-
-The app stores data in `/app/data` and backups in `/app/backups`. The Compose file mounts both directories and builds a local image. Keep `AUTH_SECRET` stable across restarts so existing sessions remain valid.
-
-### Building Locally
-
-If you want to build the image locally (useful for development):
-
-```bash
-# Build the Docker image
-npm run docker-build
-
-# Run the Compose service with the configured credentials and volumes
-npm run docker-run
-```
-
-The application data will be persisted in the `data` directory in both cases.
+The optional `database-test` Compose profile starts an isolated PostgreSQL 17.11 service on loopback port 15432, with temporary storage. It is for development/tests only and requires an ephemeral `POSTGRES_TEST_PASSWORD`. See [isolated database tests](docs/database.md#isolated-database-tests).
 
 ## Security
 
-For a new installation, set `INITIAL_ADMIN_PASSWORD` (12–128 characters) and `INITIAL_ADMIN_EMAIL` before first start. The app stores the password hash and email in `data/auth.json`. These variables do not overwrite existing accounts. Set `AUTH_SECRET` to a random value of at least 32 characters and protect it as a credential.
+Initialize a new production database explicitly with the offline CLI described in [database setup](docs/database.md). Startup never creates or replaces accounts. Set `AUTH_SECRET` to a random value of at least 32 characters and protect it as a credential.
 
 Every new account needs an email and either a local password or an OIDC subject. Administrator accounts always need a local password for recovery. Existing accounts without email can sign in, but must add an email before using the app; this retains their account IDs and data and requires signing in again. Local email entry is not email verification. New and changed local passwords must be 12–128 characters. Existing shorter passwords still work until changed. Passwordless accounts cannot use local sign-in; assign a password or link an OIDC subject.
 
 For an OIDC-only account, an administrator must set its first local password. Existing users can change their own local password after confirming the current one. Password, role, email, and identity-link changes invalidate existing sessions.
 
-For a legacy passwordless administrator, stop the app and use the included recovery script. It makes a restricted backup of `auth.json` before changing a password:
+For a legacy passwordless administrator, stop the app and use the included recovery script. It saves a restricted snapshot of the prior database credential document in `backups` before changing the password and invalidating existing sessions:
 
 ```bash
 docker compose stop habittrove
@@ -127,7 +99,7 @@ unset RECOVERY_PASSWORD
 docker compose up -d
 ```
 
-Repeat for other passwordless accounts if needed. The script must run while the app is stopped to avoid concurrent writes. Back up the full data directory separately before a deployment or migration.
+Repeat for other passwordless accounts if needed. The script must run while the app is stopped to avoid concurrent writes. Back up a consistent database snapshot and the protected assets before a deployment or migration; see [recovery](docs/database.md#backup-restore-and-rollback).
 
 ### OIDC sign-in
 
@@ -148,25 +120,25 @@ The current local password is required to save OIDC changes. The page shows the 
 
 The **Sign-in button name** field in OIDC setup changes the text on OIDC login buttons, such as “Continue with Robin’s Auth.” It applies immediately in the current session; other open sign-in pages pick it up when reloaded. It does not change the provider, client credentials, callback URL, or account links. Leave it blank to restore “OIDC.”
 
-The first in-app OIDC save creates an override in `data/admin-config.json`; an explicit in-app disable also overrides the environment values. Until then, the complete `OIDC_*` set or legacy `AUTHENTIK_*` set remains active. The client secret is encrypted in that owner-only file using a key derived from `AUTH_SECRET`, so preserve `AUTH_SECRET` along with backups. If this file is damaged, OIDC sign-in stays disabled until it is repaired; local sign-in remains available. To discard the in-app override and return to the environment configuration, stop the app, back up and remove `data/admin-config.json`, then restart. This also resets the app log level to Info and the button name to OIDC.
+The first in-app OIDC save creates a database override; an explicit in-app disable also overrides the environment values. Until then, the complete `OIDC_*` set or legacy `AUTHENTIK_*` set remains active. The client secret is encrypted using a key derived from the external `AUTH_SECRET`. Preserve that key separately from downloadable backups. A damaged provider configuration disables OIDC while retaining local administrator recovery; database outages fail startup. Restore a known-good database/configuration with the original key or repair it through the reviewed recovery procedure. Editing or removing the old `data/admin-config.json` no longer changes production settings.
 
 The same Admin panel contains the existing system settings (timezone, week start, backups, and language) and an application log level (Debug, Info, Warn, or Error). Log level changes apply immediately to HabitTrove's server backup, scheduler, and data-action logs; framework and browser logs have their own settings. This setting does not change `NODE_ENV` or container logging controls.
 
 ### SMTP family invitations
 
-In **Settings → Admin panel → SMTP email**, enable SMTP and enter your mail server host, port, sender address, and optional username and password. Port 587 with **Implicit TLS** off requires STARTTLS; enable **Implicit TLS** for servers that expect TLS on connection, typically port 465. Saving requires the administrator's current local password. The SMTP password is encrypted in `data/admin-config.json` using `AUTH_SECRET`, is never returned to the browser, and is retained when its field is left blank and the username stays the same. Preserve `AUTH_SECRET` with your backups.
+In **Settings → Admin panel → SMTP email**, enable SMTP and enter your mail server host, port, sender address, and optional username and password. Port 587 with **Implicit TLS** off requires STARTTLS; enable **Implicit TLS** for servers that expect TLS on connection, typically port 465. Saving requires the administrator's current local password. The SMTP password is encrypted in the database using `AUTH_SECRET`, is never returned to the browser, and is retained when its field is left blank and the username stays the same. Preserve `AUTH_SECRET` with your backups.
 
 Set `AUTH_URL` to your public HabitTrove HTTPS origin so emailed invitation links use the correct hostname. Administrators can create invitations in the same Admin panel. When SMTP is unavailable or delivery fails, the panel displays the one-use link for manual sharing and reports that email was not sent. Creating an invitation does not verify delivery. Keep manual links private; anyone with a valid link can create the invited account until it expires or is revoked.
 
 To link an existing local account, sign in locally, add its email if needed, sign in again, then choose **Link OIDC account** from the profile menu. Confirm the local password and sign in to the OIDC account with the same verified email. The link is saved against the provider's stable subject and issuer; later OIDC sign-ins must match both. Email alone never signs into or links an account. Administrators may also pre-link an OIDC subject in the user editor after the provider is active, while keeping a local password on administrator accounts. The stored `authentikSubject` key is retained for compatibility with existing account data.
 
-Local sign-in throttling is process-local. Password checks run asynchronously with a shared four-verification process limit; ten failures lock a known account's public sign-in for 15 minutes. Password-confirmed account actions have a separate 10-failure lockout. Run one app instance against a data directory; the JSON store and throttle are not designed for multiple replicas. Retain a private backup and a local administrator recovery password.
+PostgreSQL shares failed-login attempts, password-confirmation lockouts and password-verification leases between workers. Ten failures lock a known account's public sign-in for 15 minutes; password-confirmed account actions use a separate lockout. An attacker can still target an account for temporary lockout. Retain a private backup and local administrator recovery password. Database transactions serialize related completion, approval, undo and wallet writes across workers. Multiple-worker infrastructure still needs the same protected asset mount, stable secret and deployment validation; the database change alone does not establish end-to-end scaling support.
 
 The server accepts only HTTP(S) reward links, validates shared drawings and habit schedules, and checks reward limits and resource permissions during redemption. Assigned members may add one completion at a time, dated within the past year. New completions record who added them and reward only the member who records the target-reaching completion. Only that member may undo the latest completion for its day. Undo reverses the original recipients, including any older completion that rewarded every assigned member. An administrator can recover a completion if its recorder is no longer assigned. Older shared completions without a recorded actor cannot be undone by members; an administrator can correct their history and reconcile any legacy coin entries. A day that began with legacy completions receives no automatic new award during migration, preventing duplicate credits. Habit completion remains self-reported; this app cannot independently prove that a real-world habit was performed.
 
 New data files, avatar uploads, and backup archives use owner-only permissions. Check and restrict permissions on files created by older versions before exposing a shared host volume. Demo mode is enabled only with `DEMO=true`; account and password mutations and system-setting changes are blocked in that mode.
 
-Backups are published only after archiving completes without warnings; failed attempts leave older archives in place. Generated avatar files are removed when their account is deleted. New habit recurrence rules may specify at most 256 times per day; older rules above that limit remain saved but are treated as not due until their schedule is updated.
+Backups capture a consistent database snapshot, protected assets and checksum manifest, with a 512 MiB asset-capture limit and shared scheduled-backup ownership. Backups are published only after archiving completes without warnings; failed attempts leave older archives in place. Generated avatar files are removed when their account is deleted. New habit recurrence rules may specify at most 256 times per day; older rules above that limit remain saved but are treated as not due until their schedule is updated.
 
 See [Security review](docs/security-review.md) for scan scope, validation, and remaining operational risks.
 
@@ -178,7 +150,7 @@ To contribute to HabitTrove, you'll need to set up a development environment. He
 
 ### Prerequisites
 
-- Node.js 20 or later
+- Node.js 22 (the Docker/CI version is 22.23.4)
 - npm package manager
 - Git (for version control)
 - bun (for running tests)
@@ -204,7 +176,7 @@ npm install --force
 npm run setup:dev
 ```
 
-4. Start the development server:
+4. Configure an initialized disposable PostgreSQL database as described in [database setup](docs/database.md), then start the development server. Legacy JSON remains available only for development/tests/demo with explicit `HABITTROVE_STORAGE=legacy-json`; it is not a production fallback:
 
 ```bash
 npm run dev
@@ -219,6 +191,8 @@ Before contributing, make sure to run the test suite:
 ```bash
 npm test
 ```
+
+The default suite skips database integration without an explicit isolated fixture. Run [the real PostgreSQL suite](docs/database.md#isolated-database-tests) before changing storage, authentication, backups or asset authorization.
 
 ### Building for Production
 
