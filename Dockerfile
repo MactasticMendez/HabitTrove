@@ -54,6 +54,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
+RUN --network=none node --input-type=module -e "await import('./dist/database.mjs'); await import('./dist/database-recovery.mjs')"
+
 EXPOSE 3000
 
 ENV PORT=3000

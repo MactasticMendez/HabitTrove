@@ -10,7 +10,8 @@ await build({
   platform: 'node',
   target: 'node22',
   format: 'esm',
-  packages: 'external',
+  // Next traces pg for the server; CLI-only dependencies must travel inside these bundles.
+  external: ['pg'],
   logLevel: 'warning',
   // These entry points execute only in Node; Next's compile-time server marker has no runtime package.
   plugins: [{
