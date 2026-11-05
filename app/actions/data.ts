@@ -1395,7 +1395,18 @@ async function loadSettingsImpl(): Promise<Settings> {
     const user = await getCurrentDataUser()
     if (!user || (!user.email && process.env.DEMO !== 'true')) return defaultSettings
     const data = await loadData<Settings>('settings')
-    const base = { ...defaultSettings, ...data }
+    for (const section of ['ui', 'system', 'profile'] as const) {
+      const value = data[section]
+      if (value !== undefined && (!value || typeof value !== 'object' || Array.isArray(value))) {
+        throw new Error('Invalid settings')
+      }
+    }
+    const base = {
+      ...defaultSettings, ...data,
+      ui: { ...defaultSettings.ui, ...data.ui },
+      system: { ...defaultSettings.system, ...data.system },
+      profile: { ...defaultSettings.profile, ...data.profile },
+    }
     if (usesPostgres() && await getFamiliesEnabled()) {
       const state = (await currentDatabaseClient()!.query("SELECT current_setting('habittrove.scope_validated',true) AS valid")).rows[0]
       if (state.valid === 'true') return readFamilySettings(user, base)

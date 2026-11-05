@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## Version 1.0.2
+
+### Fixed
+
+* Fill missing legacy settings properties from the existing defaults before loading family settings, preserving saved values and rejecting malformed sections without rewriting stored preferences.
+
 ## Version 1.0.1
 
 ### Fixed
