@@ -240,6 +240,55 @@ else {
       expect((await actions.loadSettings()).ui.useGrouping).toBe(getDefaultSettings().ui.useGrouping)
     })
 
+    test('authenticated family settings fill missing legacy defaults without changing stored data', async () => {
+      await owner.query("UPDATE habittrove.setting_sections SET value=value-'autoBackupEnabled'-'language' WHERE name='system'")
+      await owner.query("UPDATE habittrove.setting_sections SET value=$1 WHERE name='ui'", [{ useNumberFormatting: false, useGrouping: false }])
+      const stored = (await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows
+      const revision = (await owner.query("SELECT metadata,revision FROM habittrove.documents WHERE kind='settings'")).rows
+      const families = (await owner.query('SELECT family_id,settings FROM habittrove.family_settings ORDER BY family_id')).rows
+      const defaults = getDefaultSettings()
+
+      const settingsA = await actions.loadSettings()
+      expect(settingsA.system.autoBackupEnabled).toBe(defaults.system.autoBackupEnabled)
+      expect(settingsA.system.language).toBe(defaults.system.language)
+      expect(settingsA.ui).toEqual({ useNumberFormatting: false, useGrouping: false })
+      expect(settingsA.profile).toEqual({})
+      expect(settingsA.system.timezone).toBe('UTC')
+      expect(settingsA.system.weekStartDay).toBe(0)
+      as('dual', 'B')
+      const settingsB = await actions.loadSettings()
+      expect(settingsB.system.timezone).toBe('Asia/Tokyo')
+      expect(settingsB.system.weekStartDay).toBe(1)
+      expect(settingsB.system.language).toBe(defaults.system.language)
+      expect(settingsB.ui).toEqual(settingsA.ui)
+
+      expect((await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows).toEqual(stored)
+      expect((await owner.query("SELECT metadata,revision FROM habittrove.documents WHERE kind='settings'")).rows).toEqual(revision)
+      expect((await owner.query('SELECT family_id,settings FROM habittrove.family_settings ORDER BY family_id')).rows).toEqual(families)
+    })
+
+    test.each([
+      ['system', 'autoBackupEnabled', 'false'],
+      ['system', 'language', 'unsupported'],
+      ['ui', 'useGrouping', null],
+    ])('family settings reject an explicitly invalid stored %s.%s', async (section, field, value) => {
+      await owner.query('UPDATE habittrove.setting_sections SET value=jsonb_set(value,ARRAY[$2::text],$3::jsonb) WHERE name=$1', [section, field, JSON.stringify(value)])
+      const stored = (await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows
+      const revision = (await owner.query("SELECT metadata,revision FROM habittrove.documents WHERE kind='settings'")).rows
+      await expect(actions.loadSettings()).rejects.toThrow('Invalid settings')
+      expect((await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows).toEqual(stored)
+      expect((await owner.query("SELECT metadata,revision FROM habittrove.documents WHERE kind='settings'")).rows).toEqual(revision)
+    })
+
+    test.each([
+      ['ui', null], ['system', null], ['profile', null], ['ui', 'invalid'], ['system', []],
+    ])('family settings reject a nonobject stored %s section (%j)', async (section, value) => {
+      await owner.query('UPDATE habittrove.setting_sections SET value=$2::jsonb WHERE name=$1', [section, JSON.stringify(value)])
+      const stored = (await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows
+      await expect(actions.loadSettings()).rejects.toThrow('Invalid settings')
+      expect((await owner.query('SELECT name,value FROM habittrove.setting_sections ORDER BY name')).rows).toEqual(stored)
+    })
+
     test('shared calendar changes require an owner and cannot cross the selected family', async () => {
       as('ownerA')
       const current = await actions.loadSettings()
