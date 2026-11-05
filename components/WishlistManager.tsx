@@ -92,7 +92,7 @@ export default function WishlistManager() {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         {activeItems.length === 0 ? (
-          <div className="col-span-1 lg:col-span-2">
+          <div className="col-span-full">
             <EmptyState
               icon={Gift}
               title={t('emptyStateTitle')}
@@ -129,9 +129,9 @@ export default function WishlistManager() {
 
         {archivedItems.length > 0 && (
           <>
-            <div className="col-span-1 lg:col-span-2 relative flex items-center my-6">
+            <div className="col-span-full relative flex items-center my-6">
               <div className="flex-grow border-t border-gray-300 dark:border-gray-600" />
-              <span className="mx-4 text-sm text-gray-500 dark:text-gray-400">{t('archivedSectionTitle')}</span>
+              <span className="mx-4 text-sm text-gray-600 dark:text-gray-300">{t('archivedSectionTitle')}</span>
               <div className="flex-grow border-t border-gray-300 dark:border-gray-600" />
             </div>
             {archivedItems.map((item) => (
