@@ -12,7 +12,7 @@ export default function TodayEarnedCoins({ longFormat }: { longFormat?: boolean 
   if (coinsEarnedToday <= 0) return null
 
   return (
-    <span className="text-md text-green-600 dark:text-green-400 font-medium mt-1">
+    <span className="text-md text-green-700 dark:text-green-400 font-medium mt-1">
       {"+"}
       <FormattedNumber amount={coinsEarnedToday} settings={settings} />
       {longFormat ?

@@ -6,14 +6,12 @@ import { getDefaultUsersData, type User, type UserData } from './types'
 import { saltAndHashPassword, verifyPasswordAsync } from './password'
 import { emailSchema, newPasswordSchema } from './zod'
 import { getLegacyOidcIssuer } from './admin-config'
+import { usesPostgres } from './storage-mode'
+import { withStorageTransaction, currentDatabaseClient } from './db/client'
+import { readAuthDocument, writeAuthDocument } from './db/repository'
+import { acquirePasswordVerification, reserveAuthenticationAttempt, clearAuthenticationAttempts } from './auth-throttle'
 
-const failedLogins = new Map<string, { count: number; until: number }>()
-const failedStepUps = new Map<string, { count: number; until: number }>()
-const loginWindowMs = 15 * 60 * 1000
-const maxFailedLogins = 10
-const maxConcurrentLoginVerifications = 4
 const dummyHash = saltAndHashPassword('invalid-user-placeholder')
-let activePasswordVerifications = 0
 let writeQueue: Promise<void> = Promise.resolve()
 
 function authPath(): string {
@@ -34,6 +32,13 @@ function parseAuthData(raw: string): UserData {
 }
 
 export async function readAuthData(): Promise<UserData> {
+  if (usesPostgres()) {
+    const data = await readAuthDocument()
+    if (!data?.users.length || !data.users.some(user => user.isAdmin)) {
+      throw new Error('HabitTrove accounts are not initialized; run the offline database import')
+    }
+    return parseAuthData(JSON.stringify(data))
+  }
   const file = authPath()
   try {
     return parseAuthData(await fs.readFile(file, 'utf8'))
@@ -66,6 +71,12 @@ export async function readAuthData(): Promise<UserData> {
 }
 
 export async function updateAuthData<T>(update: (data: UserData) => T | Promise<T>): Promise<T> {
+  if (usesPostgres()) return withStorageTransaction(async () => {
+    const data = await readAuthData()
+    const result = await update(data)
+    await writeAuthDocument(data)
+    return result
+  })
   const prior = writeQueue
   let release: () => void = () => {}
   writeQueue = new Promise<void>(resolve => { release = resolve })
@@ -129,49 +140,45 @@ export async function linkUserToAuthentikSubject(
 }
 
 export async function authenticateLocalUser(username: string, password: string): Promise<User | null> {
-  if (activePasswordVerifications >= maxConcurrentLoginVerifications) return null
-  activePasswordVerifications++
+  if (password.length > 128 || username.length > 255) return null
+  if (usesPostgres() && currentDatabaseClient()) throw new Error('Password verification must run outside storage transactions')
+  const release = await acquirePasswordVerification()
+  if (!release) return null
   try {
     const user = (await readAuthData()).users.find(candidate => candidate.username === username)
     if (!user) {
       await verifyPasswordAsync(password, dummyHash)
       return null
     }
-    const now = Date.now()
-    const attempts = failedLogins.get(user.id)
-    if (attempts && attempts.until > now && attempts.count >= maxFailedLogins) return null
-    if (attempts && attempts.until <= now) failedLogins.delete(user.id)
-
+    if (!await reserveAuthenticationAttempt('login', user.id)) return null
     const valid = await verifyPasswordAsync(password, user.password || dummyHash)
     if (valid || process.env.DEMO === 'true' && !user.password && password === '') {
-      failedLogins.delete(user.id)
-      return user
+      const current = await findUserById(user.id)
+      if (!current || current.password !== user.password || (current.authVersion ?? 0) !== (user.authVersion ?? 0)) return null
+      await clearAuthenticationAttempts('login', user.id)
+      return current
     }
-    const current = failedLogins.get(user.id)
-    failedLogins.set(user.id, { count: (current?.count ?? 0) + 1, until: now + loginWindowMs })
     return null
   } finally {
-    activePasswordVerifications--
+    await release()
   }
 }
 
 export async function verifyStepUpPassword(user: User, password: string): Promise<boolean> {
-  if (activePasswordVerifications >= maxConcurrentLoginVerifications) return false
-  activePasswordVerifications++
+  if (password.length > 128) return false
+  if (usesPostgres() && currentDatabaseClient()) throw new Error('Password verification must run outside storage transactions')
+  const release = await acquirePasswordVerification()
+  if (!release) return false
   try {
-    const now = Date.now()
-    const attempts = failedStepUps.get(user.id)
-    if (attempts && attempts.until > now && attempts.count >= maxFailedLogins) return false
-    if (attempts && attempts.until <= now) failedStepUps.delete(user.id)
-    const valid = await verifyPasswordAsync(password, user.password)
-    if (valid) {
-      failedStepUps.delete(user.id)
-      return true
-    }
-    const current = failedStepUps.get(user.id)
-    failedStepUps.set(user.id, { count: (current?.count ?? 0) + 1, until: now + loginWindowMs })
-    return false
+    const current = await findUserById(user.id)
+    if (!current || current.password !== user.password || (current.authVersion ?? 0) !== (user.authVersion ?? 0)) return false
+    if (!await reserveAuthenticationAttempt('step-up', user.id)) return false
+    if (!await verifyPasswordAsync(password, current.password)) return false
+    const fresh = await findUserById(user.id)
+    if (!fresh || fresh.password !== current.password || (fresh.authVersion ?? 0) !== (current.authVersion ?? 0)) return false
+    await clearAuthenticationAttempts('step-up', user.id)
+    return true
   } finally {
-    activePasswordVerifications--
+    await release()
   }
 }

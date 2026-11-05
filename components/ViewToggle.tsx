@@ -40,6 +40,8 @@ export function ViewToggle({
     <div className={cn('inline-flex rounded-full bg-muted/50 h-8', className)}>
       <div className="relative flex gap-0.5 rounded-full bg-background p-0.5 h-full">
         <button
+          aria-label={t('habitsLabel')}
+          aria-pressed={browserSettings.viewType === 'habits'}
           onClick={() => handleViewChange(false)}
           className={cn(
             'relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2',
@@ -56,6 +58,8 @@ export function ViewToggle({
           className="shadow-md"
         >
           <button
+            aria-label={t('tasksLabel')}
+            aria-pressed={browserSettings.viewType === 'tasks'}
             onClick={() => handleViewChange(true)}
             className={cn(
               'relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2',

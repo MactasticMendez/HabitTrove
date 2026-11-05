@@ -295,8 +295,8 @@
     "todaySuffix": "today"
   },
   "WishlistItem": {
-    "usesLeftSingular": "use left",
-    "usesLeftPlural": "uses left",
+    "usesLeftSingular": "{count} use left",
+    "usesLeftPlural": "{count} uses left",
     "coinsSuffix": "coins",
     "redeem": "Redeem",
     "redeemedDone": "Done",

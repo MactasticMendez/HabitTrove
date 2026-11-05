@@ -1,10 +1,10 @@
 {
   "name": "habittrove",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "node scripts/build-database.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "bun test",
@@ -12,7 +12,14 @@
     "docker-build": "docker build -t habittrove .",
     "docker-run": "docker compose up -d --build",
     "prepare": "husky",
-    "setup:dev": "if ! command -v bun > /dev/null; then echo 'Installing bun...'; curl -fsSL https://bun.sh/install | bash; fi && npm install --force && npm run typecheck && npm run lint"
+    "setup:dev": "if ! command -v bun > /dev/null; then echo 'Installing bun...'; curl -fsSL https://bun.sh/install | bash; fi && npm install --force && npm run typecheck && npm run lint",
+    "build:database": "node scripts/build-database.mjs",
+    "db:migrate": "node scripts/database.mjs migrate",
+    "db:init": "node scripts/database.mjs init",
+    "test:database": "node scripts/test-database.mjs",
+    "db:import": "node scripts/database.mjs import",
+    "db:verify": "node scripts/database.mjs verify",
+    "db:export": "node scripts/database.mjs export"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -56,6 +63,7 @@
     "next-themes": "^0.4.4",
     "node-cron": "^4.6.0",
     "nodemailer": "10.3.1",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-confetti": "^6.2.2",
     "react-day-picker": "^8.10.1",
@@ -80,8 +88,10 @@
     "@types/node": "^20.17.10",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "8.0.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
     "eslint-plugin-unused-imports": "^4.1.4",

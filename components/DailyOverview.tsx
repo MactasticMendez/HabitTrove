@@ -335,8 +335,8 @@ const ItemSection = ({
                     <span className={cn(
                       "transition-all",
                       isCompleted
-                        ? "text-yellow-500 font-medium"
-                        : "text-gray-400"
+                        ? "text-amber-700 dark:text-amber-300 font-medium"
+                        : "text-gray-600 dark:text-gray-400"
                     )}>
                       {habit.coinReward}
                     </span>
@@ -570,21 +570,22 @@ export default function DailyOverview({
                                   <span className={cn(
                                     "transition-all",
                                     isRedeemable
-                                      ? "text-yellow-500 font-medium"
-                                      : "text-gray-400"
+                                      ? "text-amber-700 dark:text-amber-300 font-medium"
+                                      : "text-gray-600 dark:text-gray-400"
                                   )}>
                                     {item.coinCost}
                                   </span>
                                 </span>
                               </div>
                               <Progress
-                                value={(coinBalance / item.coinCost) * 100}
+                                aria-label={item.name}
+                                value={item.coinCost > 0 ? Math.min(100, Math.max(0, (coinBalance / item.coinCost) * 100)) : 100}
                                 className={cn(
                                   "h-2",
                                   isRedeemable ? "bg-green-500/20" : ""
                                 )}
                               />
-                              <p className="text-xs text-muted-foreground mt-2">
+                              <p className="text-xs text-gray-600 dark:text-gray-300 mt-2">
                                 {isRedeemable
                                   ? t('readyToRedeemMessage')
                                   : t('coinsToGoMessage', { amount: item.coinCost - coinBalance })

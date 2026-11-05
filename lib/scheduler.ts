@@ -18,7 +18,7 @@ export function initializeScheduler() {
   const backupJob = cron.schedule('0 2 * * *', async () => {
     log('info', 'Running scheduled daily backup task');
     try {
-      await runBackup();
+      await runBackup({ scheduled: true });
       log('info', 'Scheduled backup task completed');
     } catch (err) {
       log('error', 'Scheduled backup task failed', err);

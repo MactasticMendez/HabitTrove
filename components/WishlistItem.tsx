@@ -60,6 +60,7 @@ export default function WishlistItem({
   isRecentlyRedeemed
 }: WishlistItemProps) {
   const t = useTranslations('WishlistItem')
+  const itemText = useTranslations('HabitItem')
   const [currentUser] = useAtom(currentUserAtom)
   const canWrite = hasPermission(currentUser, 'wishlist', 'write')
   const canInteract = hasPermission(currentUser, 'wishlist', 'interact')
@@ -81,7 +82,7 @@ export default function WishlistItem({
             </CardTitle>
             {item.targetCompletions && (
               <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
-                ({item.targetCompletions === 1 ? t('usesLeftSingular') : t('usesLeftPlural', { count: item.targetCompletions })})
+                ({t(item.targetCompletions === 1 ? 'usesLeftSingular' : 'usesLeftPlural', { count: item.targetCompletions })})
               </span>
             )}
           </div>
@@ -157,7 +158,7 @@ export default function WishlistItem({
           )}
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label={itemText('moreActions', { name: item.name })}>
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>

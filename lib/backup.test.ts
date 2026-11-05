@@ -66,3 +66,21 @@ test('discards an archive with a warning without rotating older backups', async 
     await fs.rm(directory, { recursive: true, force: true })
   }
 })
+
+test('rejects a symlinked backup directory instead of writing account data through it', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-backup-symlink-'))
+  const other = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-backup-outside-'))
+  const cwdSpy = spyOn(process, 'cwd').mockImplementation(() => directory)
+  try {
+    await fs.mkdir(path.join(directory, 'data'))
+    await fs.writeFile(path.join(directory, 'data', 'auth.json'), '{"users":[]}')
+    await fs.symlink(other, path.join(directory, 'backups'))
+    const { runBackup } = await import('./backup')
+    await expect(runBackup()).rejects.toThrow('Unsafe backup directory')
+    expect(await fs.readdir(other)).toHaveLength(0)
+  } finally {
+    cwdSpy.mockRestore()
+    await fs.rm(directory, { recursive: true, force: true })
+    await fs.rm(other, { recursive: true, force: true })
+  }
+})

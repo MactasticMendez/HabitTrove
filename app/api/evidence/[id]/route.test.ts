@@ -60,6 +60,14 @@ describe('completion evidence access', () => {
     await fs.symlink(path.join(directory, 'data', 'habits.json'), filename)
     expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(404)
   })
+
+  test('rejects a symlinked evidence directory', async () => {
+    const original = path.join(directory, 'data', 'evidence')
+    const moved = path.join(directory, 'data', 'moved-evidence')
+    await fs.rename(original, moved)
+    await fs.symlink(moved, original)
+    expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(404)
+  })
 })
 
 test('hides retained evidence for a voided completion even when the image file remains', async () => {

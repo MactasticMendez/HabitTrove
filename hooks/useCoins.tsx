@@ -200,9 +200,9 @@ export function useCoins(options?: { selectedUser?: string }) {
       transactions: updatedTransactions
     }
 
-    await saveCoinsData(newData)
-    setCoins(newData)
-    return newData
+    const saved = await saveCoinsData(newData)
+    setCoins(saved)
+    return saved
   }
 
   return {

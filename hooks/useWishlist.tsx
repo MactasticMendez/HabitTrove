@@ -1,7 +1,7 @@
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { wishlistAtom, coinsAtom, currentUserAtom } from '@/lib/atoms'
-import { saveWishlistItems, removeCoins } from '@/app/actions/data'
+import { saveWishlistItems, removeCoins, loadWishlistData } from '@/app/actions/data'
 import { toast } from '@/hooks/use-toast'
 import { WishlistItemType, User, SafeUser } from '@/lib/types'
 import { celebrations } from '@/utils/celebrations'
@@ -47,9 +47,9 @@ export function useWishlist() {
     if (!handlePermissionCheck(user, 'wishlist', 'write', tCommon)) return
     const newItem = { ...item, id: Date.now().toString() }
     const newItems = [...wishlist.items, newItem]
-    const newWishListData = { items: newItems }
-    await saveWishlistItems(newWishListData)
-    setWishlist(newWishListData)
+    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const saved = await saveWishlistItems(newWishListData)
+    setWishlist(saved)
   }
 
   const editWishlistItem = async (updatedItem: WishlistItemType) => {
@@ -57,17 +57,17 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === updatedItem.id ? updatedItem : item
     )
-    const newWishListData = { items: newItems }
-    await saveWishlistItems(newWishListData)
-    setWishlist(newWishListData)
+    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const saved = await saveWishlistItems(newWishListData)
+    setWishlist(saved)
   }
 
   const deleteWishlistItem = async (id: string) => {
     if (!handlePermissionCheck(user, 'wishlist', 'write', tCommon)) return
     const newItems = wishlist.items.filter(item => item.id !== id)
-    const newWishListData = { items: newItems }
-    setWishlist(newWishListData)
-    await saveWishlistItems(newWishListData)
+    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const saved = await saveWishlistItems(newWishListData)
+    setWishlist(saved)
   }
 
   const redeemWishlistItem = async (item: WishlistItemType) => {
@@ -91,29 +91,7 @@ export function useWishlist() {
       })
       setCoins(data)
 
-      // Update target completions if set
-      if (item.targetCompletions !== undefined) {
-        const newItems = wishlist.items.map(wishlistItem => {
-          if (wishlistItem.id === item.id) {
-            const newTarget = wishlistItem.targetCompletions! - 1
-            // If target reaches 0, archive the item
-            if (newTarget <= 0) {
-              return { 
-                ...wishlistItem, 
-                targetCompletions: undefined,
-                archived: true
-              }
-            }
-            return { 
-              ...wishlistItem, 
-              targetCompletions: newTarget 
-            }
-          }
-          return wishlistItem
-        })
-        const newWishListData = { items: newItems }
-        setWishlist(newWishListData)
-      }
+      setWishlist(await loadWishlistData())
 
       // Randomly choose a celebration effect
       const celebrationEffects = [
@@ -145,9 +123,9 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === id ? { ...item, archived: true } : item
     )
-    const newWishListData = { items: newItems }
-    setWishlist(newWishListData)
-    await saveWishlistItems(newWishListData)
+    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const saved = await saveWishlistItems(newWishListData)
+    setWishlist(saved)
   }
 
   const unarchiveWishlistItem = async (id: string) => {
@@ -155,9 +133,9 @@ export function useWishlist() {
     const newItems = wishlist.items.map(item =>
       item.id === id ? { ...item, archived: false } : item
     )
-    const newWishListData = { items: newItems }
-    setWishlist(newWishListData)
-    await saveWishlistItems(newWishListData)
+    const newWishListData = { items: newItems, revision: wishlist.revision }
+    const saved = await saveWishlistItems(newWishListData)
+    setWishlist(saved)
   }
 
   return {

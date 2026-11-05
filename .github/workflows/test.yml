@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,3 +38,49 @@ jobs:
 
       - name: Run unit tests
         run: bun test
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --force --no-audit --no-fund
+
+      - name: Start disposable PostgreSQL 17.11
+        shell: bash
+        run: |
+          TEST_PASSWORD=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")
+          echo "::add-mask::$TEST_PASSWORD"
+          echo "HABITTROVE_TEST_ADMIN_URL=postgresql://habittrove_test_owner:$TEST_PASSWORD@127.0.0.1:15432/postgres" >> "$GITHUB_ENV"
+          docker run --detach --rm --name habittrove-ci-postgres \
+            --publish 127.0.0.1:15432:5432 --tmpfs /var/lib/postgresql/data \
+            --env POSTGRES_USER=habittrove_test_owner --env POSTGRES_PASSWORD="$TEST_PASSWORD" \
+            --env POSTGRES_DB=postgres --health-cmd='pg_isready -U habittrove_test_owner -d postgres' \
+            --health-interval=2s --health-timeout=5s --health-retries=30 postgres:17.11
+          for attempt in $(seq 1 40); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' habittrove-ci-postgres)" = healthy ]; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Test restricted-role persistence, initialization, recovery, auth, actions and media
+        env:
+          HABITTROVE_TEST_DATABASE: '1'
+        run: node scripts/test-database.mjs
+
+      - name: Remove disposable PostgreSQL
+        if: always()
+        run: docker stop habittrove-ci-postgres || true

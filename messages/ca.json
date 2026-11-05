@@ -217,8 +217,8 @@
     "todaySuffix": "avui"
   },
   "WishlistItem": {
-    "usesLeftSingular": "ús restant",
-    "usesLeftPlural": "usos restants",
+    "usesLeftSingular": "{count} ús restant",
+    "usesLeftPlural": "{count} usos restants",
     "coinsSuffix": "monedes",
     "redeem": "Bescanvia",
     "redeemedDone": "Fet",

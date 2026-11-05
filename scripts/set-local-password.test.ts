@@ -13,7 +13,7 @@ test('sets a local password while preserving account data and a private backup',
     const original = { users: [{ id: 'admin-id', username: 'admin', isAdmin: true, email: 'admin@example.com' }] }
     await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify(original))
     const script = fileURLToPath(new URL('./set-local-password.mjs', import.meta.url))
-    const result = spawnSync('node', [script, 'admin'], { cwd: directory, input: 'new-recovery-password\n', encoding: 'utf8' })
+    const result = spawnSync('node', [script, 'admin'], { cwd: directory, input: 'new-recovery-password\n', encoding: 'utf8', env: { ...process.env, NODE_ENV: 'test', HABITTROVE_STORAGE: 'legacy-json' } })
     expect(result.status).toBe(0)
     const updated = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
     expect(updated.users[0].id).toBe('admin-id')
@@ -25,4 +25,36 @@ test('sets a local password while preserving account data and a private backup',
   } finally {
     await fs.rm(directory, { recursive: true, force: true })
   }
+})
+
+test('database mode fails closed without editing stale JSON or revealing its connection secret', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-recovery-db-failure-'))
+  try {
+    await fs.mkdir(path.join(directory, 'data'))
+    const original = JSON.stringify({ users: [{ id: 'admin-id', username: 'admin', password: 'original-hash' }] })
+    await fs.writeFile(path.join(directory, 'data', 'auth.json'), original)
+    const script = fileURLToPath(new URL('./set-local-password.mjs', import.meta.url))
+    const result = spawnSync('node', [script, 'admin'], { cwd: directory, input: 'new-recovery-password\n', encoding: 'utf8', env: { ...process.env, DATABASE_URL: 'postgresql://someone:private-sentinel-password@127.0.0.1:1/postgres' } })
+    expect(result.status).not.toBe(0)
+    expect(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8')).toBe(original)
+    expect((await fs.readdir(path.join(directory, 'data')))).toEqual(['auth.json'])
+    expect(result.stdout + result.stderr).not.toContain('private-sentinel-password')
+    expect(result.stdout + result.stderr).not.toContain('original-hash')
+  } finally { await fs.rm(directory, { recursive: true, force: true }) }
+})
+
+test('production recovery refuses missing database configuration instead of recovering stale JSON', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-recovery-production-'))
+  try {
+    await fs.mkdir(path.join(directory, 'data'))
+    const original = JSON.stringify({ users: [{ id: 'admin-id', username: 'admin', password: 'original-hash' }] })
+    await fs.writeFile(path.join(directory, 'data', 'auth.json'), original)
+    const script = fileURLToPath(new URL('./set-local-password.mjs', import.meta.url))
+    const environment: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production' }
+    delete environment.DATABASE_URL; delete environment.HABITTROVE_STORAGE; delete environment.DEMO
+    const result = spawnSync('node', [script, 'admin'], { cwd: directory, input: 'new-recovery-password\n', encoding: 'utf8', env: environment })
+    expect(result.status).not.toBe(0)
+    expect(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8')).toBe(original)
+    expect(await fs.readdir(path.join(directory, 'data'))).toEqual(['auth.json'])
+  } finally { await fs.rm(directory, { recursive: true, force: true }) }
 })
