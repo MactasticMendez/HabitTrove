@@ -35,13 +35,13 @@ export type SafeUser = SessionUser & {
   permissions?: Permission[]
   isAdmin?: boolean
   hasPassword?: boolean
-  hasAuthentik?: boolean
+  hasOidc?: boolean
 }
 
 export type User = SafeUser & {
   password?: string
   email?: string
-  authentikSubject?: string
+  oidcSubject?: string
   oidcIssuer?: string
   authVersion?: number
   lastNotificationReadTimestamp?: string // UTC ISO date string
@@ -51,9 +51,9 @@ export type User = SafeUser & {
   personalSettings?: { ui?: UISettings; language?: string }
 }
 
-export type PublicUser = Omit<User, 'password' | 'authentikSubject' | 'oidcIssuer' | 'authVersion'> & {
+export type PublicUser = Omit<User, 'password' | 'oidcSubject' | 'oidcIssuer' | 'authVersion'> & {
   hasPassword: boolean
-  hasAuthentik: boolean
+  hasOidc: boolean
 }
 
 export type HabitCompletionRecord = {
@@ -229,7 +229,7 @@ export const getDefaultPublicUsersData = (): PublicUserData => ({
   users: getDefaultUsersData().users.map(({ password, ...user }) => ({
     ...user,
     hasPassword: !!password,
-    hasAuthentik: false,
+    hasOidc: false,
   })),
 });
 
@@ -263,7 +263,7 @@ export const getDefaultSettings = (): Settings => ({
 
 export const getDefaultServerSettings = (): ServerSettings => ({
   isDemo: false,
-  authentikEnabled: false,
+  oidcEnabled: false,
   oidcDisplayName: 'OIDC',
 })
 
@@ -322,7 +322,7 @@ export interface JotaiHydrateInitialValues {
 
 export interface ServerSettings {
   isDemo: boolean
-  authentikEnabled: boolean
+  oidcEnabled: boolean
   oidcDisplayName: string
   familiesEnabled?: boolean
   familyRole?: FamilyRole | 'site-admin'

@@ -19,11 +19,11 @@ describe.skipIf(!enabled)('family repositories (fresh local restricted-role fixt
   beforeAll(async()=>{
     const target=new URL(process.env.DATABASE_MIGRATION_URL!);
     const runtime=new URL(process.env.DATABASE_URL!);
-    if(target.hostname!=='127.0.0.1'||target.port!=='15432'||target.pathname!==runtime.pathname||runtime.username!=='Mac89Habittrove')throw new Error('Unsafe family repository fixture');
+    if(target.hostname!=='127.0.0.1'||target.port!=='15432'||target.pathname!==runtime.pathname||runtime.username!=='habittrove_test_runtime')throw new Error('Unsafe family repository fixture');
     migration=new Client({connectionString:target.href});await migration.connect();
     await withStorageTransaction(async()=>{
       const role=(await q('SELECT current_user AS name,rolsuper,rolbypassrls,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname=current_user')).rows[0];
-      expect(role).toEqual({name:'Mac89Habittrove',rolsuper:false,rolbypassrls:false,rolcreatedb:false,rolcreaterole:false});
+      expect(role).toEqual({name:'habittrove_test_runtime',rolsuper:false,rolbypassrls:false,rolcreatedb:false,rolcreaterole:false});
       expect((await q("SELECT has_table_privilege(current_user,'habittrove.global_wallet_totals','UPDATE') AS allowed")).rows[0].allowed).toBe(false);
       expect((await q("SELECT has_sequence_privilege(current_user,'habittrove.coin_ledger_family_order','USAGE') AS usage,has_sequence_privilege(current_user,'habittrove.coin_ledger_family_order','UPDATE') AS update")).rows[0]).toEqual({usage:true,update:false});
     });

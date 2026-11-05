@@ -33,8 +33,8 @@ async function adminSummary() {
   const [settings, authData] = await Promise.all([getAdminConfigSummary(), readAuthData()])
   return {
     ...settings,
-    linkedAccountCount: authData.users.filter(account => account.authentikSubject).length,
-    oidcOnlyAccountCount: authData.users.filter(account => account.authentikSubject && !account.password).length,
+    linkedAccountCount: authData.users.filter(account => account.oidcSubject).length,
+    oidcOnlyAccountCount: authData.users.filter(account => account.oidcSubject && !account.password).length,
   }
 }
 
@@ -72,11 +72,11 @@ export async function updateOidcProvider(input: {
   }
   if (!(await verifyStepUpPassword(user, input.currentPassword))) throw new PermissionError('Current local password is incorrect')
   return withFreshAdministrator(user, async () => {
-    if (!input.enabled && (await readAuthData()).users.some(account => account.authentikSubject && !account.password)) {
+    if (!input.enabled && (await readAuthData()).users.some(account => account.oidcSubject && !account.password)) {
       throw new PermissionError('Set local passwords for OIDC-only accounts before disabling OIDC sign-in')
     }
     if (input.enabled) {
-      const linkedAccounts = (await readAuthData()).users.filter(account => account.authentikSubject)
+      const linkedAccounts = (await readAuthData()).users.filter(account => account.oidcSubject)
       const legacyIssuer = linkedAccounts.some(account => !account.oidcIssuer) ? await getLegacyOidcIssuer() : undefined
       if (linkedAccounts.some(account => (account.oidcIssuer ?? legacyIssuer) !== input.issuer?.trim())) {
         throw new PermissionError('Unlink existing OIDC accounts before changing the issuer')

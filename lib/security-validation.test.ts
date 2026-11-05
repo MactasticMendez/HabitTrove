@@ -4,9 +4,9 @@ import { getDefaultSettings, type Habit } from './types'
 
 describe('shared data validation', () => {
   test('allows only ordinary external web links', () => {
-    expect(safeExternalUrl('https://example.com/reward')).toBe('https://example.com/reward')
+    expect(safeExternalUrl('https://example.test/reward')).toBe('https://example.test/reward')
     expect(() => safeExternalUrl('javascript:alert(1)')).toThrow()
-    expect(() => safeExternalUrl('https://user:pass@example.com')).toThrow()
+    expect(() => safeExternalUrl('https://user:pass@example.test')).toThrow()
   })
 
   test('rejects malformed drawings and habit schedules before sharing', () => {

@@ -13,7 +13,7 @@ import { Crown, Plus, User as UserIcon, UserRoundPen } from 'lucide-react';
 
 import { useAtom } from 'jotai';
 import { usersAtom, currentUserAtom, serverSettingsAtom } from '@/lib/atoms';
-import { signIn, signInWithAuthentik } from '@/app/actions/user';
+import { signIn, signInWithOidc } from '@/app/actions/user';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/hooks/use-toast';
 import { Description } from '@radix-ui/react-dialog';
@@ -21,9 +21,9 @@ import { SafeUser, PublicUserData } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { loadAdministrationUsers } from '@/app/actions/data';
 
-export function AnonymousSignIn({ onSuccess, authentikEnabled, oidcDisplayName, isDemo }: {
+export function AnonymousSignIn({ onSuccess, oidcEnabled, oidcDisplayName, isDemo }: {
   onSuccess: () => void;
-  authentikEnabled: boolean;
+  oidcEnabled: boolean;
   oidcDisplayName: string;
   isDemo: boolean;
 }) {
@@ -65,9 +65,9 @@ export function AnonymousSignIn({ onSuccess, authentikEnabled, oidcDisplayName, 
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <Button type="submit" disabled={busy}>{passwordForm('loginButton')}</Button>
       </form>
-      {authentikEnabled && (
-        <form action={signInWithAuthentik.bind(null, '/')}>
-          <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: oidcDisplayName })}</Button>
+      {oidcEnabled && (
+        <form action={signInWithOidc.bind(null, '/')}>
+          <Button type="submit" variant="outline" className="w-full">{accountText('continueOidc', { name: oidcDisplayName })}</Button>
         </form>
       )}
     </div>
@@ -251,7 +251,7 @@ export default function UserSelectModal({ onClose }: { onClose: () => void }) {
         <div className="flex flex-col gap-4">
           {administrationError && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{accountText('administrationUsersError')}</p>}
           {!currentUser ? (
-            <AnonymousSignIn onSuccess={onClose} authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
+            <AnonymousSignIn onSuccess={onClose} oidcEnabled={serverSettings.oidcEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
           ) : useAdministrationDirectory && !administrationUsers && !administrationError ? <p role="status">{accountText('loadingAccounts')}</p>
           : !selectedUser && !isCreating && !isEditing ? (
             <UserSelectionView

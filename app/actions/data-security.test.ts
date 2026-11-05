@@ -17,18 +17,18 @@ mock.module('@/lib/server-helpers', () => ({
 mock.module('server-only', () => ({}))
 
 const actions = await import('./data')
-const { authenticateLocalUser, linkUserToAuthentikSubject } = await import('@/lib/auth-store')
+const { authenticateLocalUser, linkUserToOidcSubject } = await import('@/lib/auth-store')
 
-const admin: User = { id: 'admin', username: 'admin', email: 'admin@example.com', isAdmin: true, password: saltAndHashPassword('secret') }
+const admin: User = { id: 'admin', username: 'admin', email: 'admin@example.test', isAdmin: true, password: saltAndHashPassword('secret') }
 const member: User = {
-  id: 'member', username: 'member', email: 'member@example.com', isAdmin: false, password: saltAndHashPassword('secret'),
+  id: 'member', username: 'member', email: 'member@example.test', isAdmin: false, password: saltAndHashPassword('secret'),
   permissions: [{
     habit: { write: false, interact: true },
     wishlist: { write: false, interact: true },
     coins: { write: true, interact: true },
   }],
 }
-const other: User = { id: 'other', username: 'other', email: 'other@example.com', isAdmin: false, password: saltAndHashPassword('secret') }
+const other: User = { id: 'other', username: 'other', email: 'other@example.test', isAdmin: false, password: saltAndHashPassword('secret') }
 
 let directory: string
 let cwdSpy: ReturnType<typeof spyOn>
@@ -114,7 +114,7 @@ describe('family and negative-habit security', () => {
     currentUser = { ...member, managedUserIds: ['other'] }
     const authFile = path.join(directory, 'data', 'auth.json')
     const auth = JSON.parse(await fs.readFile(authFile, 'utf8'))
-    auth.users.push({ id: 'stranger', username: 'stranger', email: 'stranger@example.com' })
+    auth.users.push({ id: 'stranger', username: 'stranger', email: 'stranger@example.test' })
     await fs.writeFile(authFile, JSON.stringify(auth))
     const habitFile = path.join(directory, 'data', 'habits.json')
     const habits = JSON.parse(await fs.readFile(habitFile, 'utf8'))
@@ -226,9 +226,9 @@ describe('server action authorization', () => {
     expect((await actions.loadUsersPublicData()).users).toHaveLength(1)
     await expect(actions.saveHabitsData({ habits: [] })).rejects.toThrow('Email is required')
     await expect(actions.updateUser('member', { username: 'renamed' })).rejects.toThrow('Email is required')
-    await actions.updateUser('member', { email: 'member@example.com' })
+    await actions.updateUser('member', { email: 'member@example.test' })
     const updated = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
-    expect(updated.users[1].email).toBe('member@example.com')
+    expect(updated.users[1].email).toBe('member@example.test')
   })
 
   test('requires the current password and invalidates sessions when changing it', async () => {
@@ -249,9 +249,9 @@ describe('server action authorization', () => {
     expect(verifyPassword('replacement-password-123', saved.users.find((user: User) => user.id === member.id).password)).toBe(true)
   })
 
-  test('requires an administrator to add the first local password to an Authentik-only account', async () => {
-    await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({ users: [admin, { ...member, password: undefined, authentikSubject: 'subject-1' }] }))
-    currentUser = { ...member, password: undefined, authentikSubject: 'subject-1' }
+  test('requires an administrator to add the first local password to an OIDC-only account', async () => {
+    await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({ users: [admin, { ...member, password: undefined, oidcSubject: 'subject-1' }] }))
+    currentUser = { ...member, password: undefined, oidcSubject: 'subject-1' }
     await expect(actions.updateUserPassword('member', 'strong-password-123')).rejects.toThrow('administrator must set')
     currentUser = admin
     await actions.updateUserPassword('member', 'strong-password-123')
@@ -259,18 +259,18 @@ describe('server action authorization', () => {
     expect(updated.password).toBeDefined()
   })
 
-  test('links only a confirmed email to an unused Authentik subject', async () => {
+  test('links only a confirmed email to an unused OIDC subject', async () => {
     currentUser = admin
-    await actions.updateUser('member', { email: 'MEMBER@example.com' })
-    const linked = await linkUserToAuthentikSubject('member', 1, 'member@example.com', 'opaque-subject', 'https://auth.example.test/issuer')
-    expect(linked.authentikSubject).toBe('opaque-subject')
+    await actions.updateUser('member', { email: 'MEMBER@example.test' })
+    const linked = await linkUserToOidcSubject('member', 1, 'member@example.test', 'opaque-subject', 'https://auth.example.test/issuer')
+    expect(linked.oidcSubject).toBe('opaque-subject')
     expect(linked.oidcIssuer).toBe('https://auth.example.test/issuer')
     expect(linked.authVersion).toBe(2)
     const publicUsers = await actions.loadUsersPublicData()
     expect(publicUsers.users.find(user => user.id === 'member')).not.toHaveProperty('oidcIssuer')
-    await expect(linkUserToAuthentikSubject('member', 1, 'member@example.com', 'other-subject', 'https://auth.example.test/issuer')).rejects.toThrow('no longer valid')
-    await actions.updateUser('admin', { email: 'admin@example.com' })
-    await expect(linkUserToAuthentikSubject('admin', 1, 'admin@example.com', 'opaque-subject', 'https://auth.example.test/issuer')).rejects.toThrow('already linked')
+    await expect(linkUserToOidcSubject('member', 1, 'member@example.test', 'other-subject', 'https://auth.example.test/issuer')).rejects.toThrow('no longer valid')
+    await actions.updateUser('admin', { email: 'admin@example.test' })
+    await expect(linkUserToOidcSubject('admin', 1, 'admin@example.test', 'opaque-subject', 'https://auth.example.test/issuer')).rejects.toThrow('already linked')
   })
 
   test('binds administrator pre-links to the active OIDC issuer', async () => {
@@ -278,10 +278,10 @@ describe('server action authorization', () => {
     const { getActiveOidcConfig } = await import('@/lib/admin-config')
     const active = await getActiveOidcConfig()
     if (!active) {
-      await expect(actions.updateUser('member', { authentikSubject: 'new-subject' }))
+      await expect(actions.updateUser('member', { oidcSubject: 'new-subject' }))
         .rejects.toThrow('Configure OIDC before linking an account')
     } else {
-      await actions.updateUser('member', { authentikSubject: 'new-subject' })
+      await actions.updateUser('member', { oidcSubject: 'new-subject' })
       const stored = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
       expect(stored.users[1].oidcIssuer).toBe(active.issuer)
     }
@@ -291,13 +291,13 @@ describe('server action authorization', () => {
     const form = new FormData()
     form.set('username', 'newuser')
     form.set('password', 'valid-password-123')
-    form.set('email', 'newuser@example.com')
+    form.set('email', 'newuser@example.test')
     form.set('isAdmin', 'true')
     await expect(actions.createUser(form)).rejects.toThrow('Administrator access required')
     currentUser = admin
     form.delete('email')
     await expect(actions.createUser(form)).rejects.toThrow()
-    form.set('email', 'newuser@example.com')
+    form.set('email', 'newuser@example.test')
     const created = await actions.createUser(form)
     expect(created.isAdmin).toBe(true)
     expect(created).not.toHaveProperty('password')
@@ -308,7 +308,7 @@ describe('server action authorization', () => {
     currentUser = admin
     const form = new FormData()
     form.set('username', 'newuser')
-    form.set('email', 'newuser@example.com')
+    form.set('email', 'newuser@example.test')
     form.set('password', 'short')
     await expect(actions.createUser(form)).rejects.toThrow('at least 12')
     await expect(actions.updateUserPassword('member', 'short')).rejects.toThrow('at least 12')
@@ -318,7 +318,7 @@ describe('server action authorization', () => {
     currentUser = admin
     const form = new FormData()
     form.set('username', 'newadmin')
-    form.set('email', 'newadmin@example.com')
+    form.set('email', 'newadmin@example.test')
     form.set('isAdmin', 'true')
     await expect(actions.createUser(form)).rejects.toThrow('Administrator accounts require a password')
     await expect(actions.updateUser('admin', { isAdmin: false })).rejects.toThrow('last administrator')
@@ -1012,11 +1012,11 @@ describe('server action authorization', () => {
       await expect(actions.loadUsersPublicData()).rejects.toThrow('INITIAL_ADMIN_PASSWORD')
       process.env.INITIAL_ADMIN_PASSWORD = 'a-strong-password'
       await expect(actions.loadUsersPublicData()).rejects.toThrow('INITIAL_ADMIN_EMAIL')
-      process.env.INITIAL_ADMIN_EMAIL = 'admin@example.com'
+      process.env.INITIAL_ADMIN_EMAIL = 'admin@example.test'
       const users = await actions.loadUsersPublicData()
       expect(users.users[0].isAdmin).toBe(true)
       expect(users.users[0].hasPassword).toBe(true)
-      expect(users.users[0].email).toBe('admin@example.com')
+      expect(users.users[0].email).toBe('admin@example.test')
       const stored = JSON.parse(await fs.readFile(path.join(directory, 'data', 'auth.json'), 'utf8'))
       expect(stored.users[0].password).not.toBe('a-strong-password')
       expect(stored.users[0].password).toContain(':')

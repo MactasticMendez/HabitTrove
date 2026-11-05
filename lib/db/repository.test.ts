@@ -9,9 +9,9 @@ test('database target guard excludes unrelated databases and requires explicit t
 test('database URL options cannot override role, target, transport verification or resource limits', () => {
   for(const option of ['user=postgres','host=other','port=9999','options=-c%20search_path=public','database=postgres','dbname=postgres',
     'sslmode=no-verify','sslmode=require','sslmode=verify-full&uselibpqcompat=true','statement_timeout=0','lock_timeout=0','sslmode=verify-full&sslmode=no-verify']) {
-    expect(()=>assertDatabaseTarget(`postgresql://Mac89Habittrove@localhost/habittrove?${option}`,false)).toThrow();
+    expect(()=>assertDatabaseTarget(`postgresql://habittrove_test_runtime@localhost/habittrove?${option}`,false)).toThrow();
   }
-  expect(()=>assertDatabaseTarget('postgresql://Mac89Habittrove@localhost/habittrove?sslmode=verify-full',false)).not.toThrow();
+  expect(()=>assertDatabaseTarget('postgresql://habittrove_test_runtime@localhost/habittrove?sslmode=verify-full',false)).not.toThrow();
 });
 
 test('cleanup outside a storage transaction executes immediately with errors isolated', async()=>{
@@ -26,7 +26,7 @@ const fixture: DatabaseSnapshot = {
   auth: {
     users: [
       { id: 'u', username: 'Member', password: 'unchanged', email: 'member@example.test', isAdmin: true, authVersion: 3,
-        authentikSubject: 'subject', oidcIssuer: 'https://identity.example.test/',
+        oidcSubject: 'subject', oidcIssuer: 'https://identity.example.test/',
         permissions: [{habit:{write:true,interact:false},wishlist:{write:false,interact:true},coins:{write:false,interact:false}}],
         managedUserIds: ['u2'], personalFolders: [{id:'folder',name:'Personal',itemIds:['old-123','deleted-item']}],
         statusDays: [{date:'2024-02-29',status:'rest'}] },
@@ -70,6 +70,18 @@ describe.skipIf(!enabled)('real PostgreSQL relational adapter (dedicated empty t
     await expect(importDatabaseSnapshot({ ...fixture, coins: { balance: 5, transactions: [] } }, 'other')).rejects.toThrow();
     expect(await exportDatabaseSnapshot()).toEqual(fixture);
   });
+  test('reads normalized OIDC bindings without a subject presence marker', async () => {
+    await withStorageTransaction(async () => {
+      await currentDatabaseClient()!.query(`UPDATE users SET attributes=jsonb_set(attributes,'{present}',
+        (SELECT jsonb_agg(field) FROM jsonb_array_elements_text(attributes->'present') AS field
+          WHERE field NOT IN ('oidcSubject','oidcIssuer'))) WHERE id=$1`, ['u']);
+      const account = (await readAuthDocument())!.users.find(user => user.id === 'u')!;
+      expect(account.oidcSubject).toBe('subject');
+      expect(account.oidcIssuer).toBe('https://identity.example.test/');
+      await writeAuthDocument(fixture.auth);
+    });
+    expect(await readAuthDocument()).toEqual(fixture.auth);
+  });
   test('attachment metadata round-trips and rejects paths escaping protected directories', async () => {
     expect(await readAttachmentMetadata('evidence')).toEqual(fixture.attachments![1]);
     await expect(upsertAttachmentMetadata({...fixture.attachments![1],path:'evidence/../auth.json'})).rejects.toThrow('Invalid protected attachment');
@@ -94,7 +106,7 @@ describe.skipIf(!enabled)('real PostgreSQL relational adapter (dedicated empty t
     const invalid={habits:[{...fixture.habits.habits[0],coinReward:Number.NaN}]};
     await expect(writeDocument('habits',invalid)).rejects.toThrow('finite');
     expect(await readDocument<DatabaseSnapshot['habits']>('habits')).toEqual(fixture.habits);
-    await expect(writeAuthDocument({users:[...fixture.auth.users,{id:'collision',username:'Other',authentikSubject:'subject',oidcIssuer:'https://identity.example.test/'}]})).rejects.toThrow();
+    await expect(writeAuthDocument({users:[...fixture.auth.users,{id:'collision',username:'Other',oidcSubject:'subject',oidcIssuer:'https://identity.example.test/'}]})).rejects.toThrow();
     expect(await readAuthDocument()).toEqual(fixture.auth);
   });
   test('stale document revisions cannot overwrite newer ledger state', async () => {

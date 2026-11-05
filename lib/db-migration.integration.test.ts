@@ -37,7 +37,7 @@ describe.skipIf(!enabled)('isolated PostgreSQL migration, snapshot, backup and r
     const ciphertext = Buffer.concat([cipher.update('isolated-provider-secret', 'utf8'), cipher.final()])
     const encryptedClientSecret = [iv, cipher.getAuthTag(), ciphertext].map(value => value.toString('base64url')).join('.')
     const fixture: DatabaseSnapshot = {
-      auth: { users: [{ id: 'old-id', username: 'Recovery', password: 'hash-to-preserve', isAdmin: true, avatarPath: '/data/avatars/old-id.png', authentikSubject: 'preserved-subject', oidcIssuer: 'https://issuer.invalid', managedUserIds: [] }] },
+      auth: { users: [{ id: 'old-id', username: 'Recovery', password: 'hash-to-preserve', isAdmin: true, avatarPath: '/data/avatars/old-id.png', oidcSubject: 'preserved-subject', oidcIssuer: 'https://issuer.invalid', managedUserIds: [] }] },
       habits: { habits: [{ id: 'timestamp-1234', name: 'Legacy', description: '', frequency: 'daily', coinReward: 0.25, userIds: ['old-id'], completions: ['2024-01-01T00:00:00Z', '2024-01-02T00:00:00Z', '2024-01-03T00:00:00Z'], completionRecords: [null, { id: 'voided', actorId: 'deleted-actor', voided: true, rewardAmount: 0.25 }, { id: 'pending', actorId: 'old-id', approval: 'pending', evidenceId, evidenceMime: 'image/png' }] }] },
       wishlist: { items: [] }, coins: { balance: 0.75, transactions: [{ id: 'ledger-old', userId: 'deleted-user', actorId: 'deleted-actor', amount: 0.75, type: 'MANUAL_ADJUSTMENT', description: 'legacy', timestamp: '2024-01-01T00:00:00Z', relatedItemId: 'deleted-item' }] },
       settings: { ui: { useNumberFormatting: true, useGrouping: true }, system: { timezone: 'UTC', weekStartDay: 1, language: 'en', autoBackupEnabled: true }, profile: {} }, adminConfig: { version: 1, logLevel: 'info', oidcOverride: { issuer: 'https://issuer.invalid', clientId: 'isolated-client', encryptedClientSecret } },
@@ -53,7 +53,7 @@ describe.skipIf(!enabled)('isolated PostgreSQL migration, snapshot, backup and r
         has_schema_privilege(current_user, 'habittrove', 'CREATE') AS schema_create,
         has_table_privilege(current_user, 'habittrove.schema_version', 'UPDATE') AS schema_update
         FROM pg_roles WHERE rolname=current_user`)).rows[0], { readOnly: true })
-      expect(privileges).toEqual({ role: 'Mac89Habittrove', rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false, rolreplication: false, rolbypassrls: false, schema_create: false, schema_update: false })
+      expect(privileges).toEqual({ role: 'habittrove_test_runtime', rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolinherit: false, rolreplication: false, rolbypassrls: false, schema_create: false, schema_update: false })
       const source = await captureLegacySource(dataDirectory)
       fixture.attachments = source.snapshot.attachments
       expect(await importDatabaseSource(source)).toBe('imported')
@@ -115,7 +115,7 @@ describe.skipIf(!enabled)('isolated PostgreSQL migration, snapshot, backup and r
       expect(updated.auth.users[0].id).toBe('old-id')
       expect(updated.auth.users[0].authVersion).toBe(1)
       expect(verifyPassword('new-recovery-password', updated.auth.users[0].password!)).toBe(true)
-      expect(updated.auth.users[0].authentikSubject).toBe('preserved-subject')
+      expect(updated.auth.users[0].oidcSubject).toBe('preserved-subject')
       expect(updated.coins).toEqual(fixture.coins)
       expect(await fs.readFile(path.join(dataDirectory, 'auth.json'), 'utf8')).toBe(stale)
       const recoveryFile = (await fs.readdir(path.join(directory, 'backups'))).find(name => name.startsWith('auth-before-password-'))!

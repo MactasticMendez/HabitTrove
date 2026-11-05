@@ -6,7 +6,7 @@ import path from 'path'
 mock.module('server-only', () => ({}))
 const config = await import('./admin-config')
 
-const envNames = ['AUTH_SECRET', 'AUTH_URL', 'AUTHENTIK_ISSUER', 'AUTHENTIK_CLIENT_ID', 'AUTHENTIK_CLIENT_SECRET', 'OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const
+const envNames = ['AUTH_SECRET', 'AUTH_URL', 'OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const
 const originalEnv = Object.fromEntries(envNames.map(name => [name, process.env[name]]))
 let directory: string
 let cwdSpy: ReturnType<typeof spyOn>
@@ -16,12 +16,9 @@ beforeEach(async () => {
   cwdSpy = spyOn(process, 'cwd').mockReturnValue(directory)
   process.env.AUTH_SECRET = 'a'.repeat(40)
   process.env.AUTH_URL = 'https://habit.example.test'
-  process.env.AUTHENTIK_ISSUER = 'https://auth.example.test/application/o/habittrove/'
-  process.env.AUTHENTIK_CLIENT_ID = 'environment-client'
-  process.env.AUTHENTIK_CLIENT_SECRET = 'environment-secret'
-  delete process.env.OIDC_ISSUER
-  delete process.env.OIDC_CLIENT_ID
-  delete process.env.OIDC_CLIENT_SECRET
+  process.env.OIDC_ISSUER = 'https://auth.example.test/application/o/habittrove/'
+  process.env.OIDC_CLIENT_ID = 'environment-client'
+  process.env.OIDC_CLIENT_SECRET = 'environment-secret'
 })
 
 afterEach(async () => {
@@ -36,7 +33,7 @@ afterEach(async () => {
 
 test('uses the existing environment provider until an admin override is saved', async () => {
   expect(await config.readEffectiveOidcConfig()).toEqual({
-    providerId: 'authentik',
+    providerId: 'oidc',
     issuer: 'https://auth.example.test/application/o/habittrove/',
     clientId: 'environment-client',
     clientSecret: 'environment-secret',
@@ -46,16 +43,16 @@ test('uses the existing environment provider until an admin override is saved', 
 
 test('changes the sign-in button name without changing the OIDC provider', async () => {
   const original = (await config.readEffectiveOidcConfig())!
-  await config.saveOidcDisplayName('  Robin’s Auth  ')
-  expect(await config.getOidcDisplayName()).toBe('Robin’s Auth')
-  expect((await config.getAdminConfigSummary()).oidc.displayName).toBe('Robin’s Auth')
+  await config.saveOidcDisplayName('  Meadow’s Auth  ')
+  expect(await config.getOidcDisplayName()).toBe('Meadow’s Auth')
+  expect((await config.getAdminConfigSummary()).oidc.displayName).toBe('Meadow’s Auth')
   expect(await config.readEffectiveOidcConfig()).toEqual(original)
   expect(JSON.parse(await fs.readFile(path.join(directory, 'data', 'admin-config.json'), 'utf8')).oidcOverride).toBeUndefined()
 
   await expect(config.saveOidcDisplayName('unsafe\nname')).rejects.toThrow()
   await expect(config.saveOidcDisplayName('unsafe\u202ename')).rejects.toThrow()
   await expect(config.saveOidcDisplayName('x'.repeat(65))).rejects.toThrow()
-  expect(await config.getOidcDisplayName()).toBe('Robin’s Auth')
+  expect(await config.getOidcDisplayName()).toBe('Meadow’s Auth')
 
   await config.saveOidcDisplayName('')
   expect(await config.getOidcDisplayName()).toBe('OIDC')
@@ -112,11 +109,11 @@ test('encrypts the provider secret and keeps it out of the admin response', asyn
   expect(JSON.stringify(summary)).not.toContain('new-secret-value')
   expect(summary.oidc.source).toBe('admin')
   expect(summary.oidc.callbackUrl).toBe('https://habit.example.test/api/auth/callback/oidc')
-  delete process.env.AUTHENTIK_ISSUER
+  delete process.env.OIDC_ISSUER
   expect(await config.getLegacyOidcIssuer()).toBe('https://auth.example.test/application/o/habittrove/')
 })
 
-test('uses generic OIDC environment settings ahead of legacy Authentik settings', async () => {
+test('reads the current OIDC environment settings', async () => {
   process.env.OIDC_ISSUER = 'https://login.example.test/issuer'
   process.env.OIDC_CLIENT_ID = 'generic-client'
   process.env.OIDC_CLIENT_SECRET = 'generic-secret'

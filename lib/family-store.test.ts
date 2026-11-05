@@ -30,7 +30,7 @@ describe.skipIf(!enabled)('explicit family backend (dedicated local restricted-r
       await migration.query(await readFile(new URL('./db/family-schema.sql', import.meta.url), 'utf8'))
       await migration.query('COMMIT')
     }
-    await migration.query(`GRANT SELECT,INSERT,UPDATE,DELETE ON habittrove.families,habittrove.family_memberships,habittrove.family_manager_assignments,habittrove.family_permissions,habittrove.family_preferences,habittrove.family_settings,habittrove.household_invitations,habittrove.family_audit,habittrove.family_legacy_adoptions,habittrove.family_document_revisions TO "Mac89Habittrove"; GRANT SELECT ON habittrove.family_configuration,habittrove.global_wallet_totals TO "Mac89Habittrove"`)
+    await migration.query(`GRANT SELECT,INSERT,UPDATE,DELETE ON habittrove.families,habittrove.family_memberships,habittrove.family_manager_assignments,habittrove.family_permissions,habittrove.family_preferences,habittrove.family_settings,habittrove.household_invitations,habittrove.family_audit,habittrove.family_legacy_adoptions,habittrove.family_document_revisions TO "habittrove_test_runtime"; GRANT SELECT ON habittrove.family_configuration,habittrove.global_wallet_totals TO "habittrove_test_runtime"`)
   })
   beforeEach(async () => {
     await migration.query(`TRUNCATE habittrove.users,habittrove.families,habittrove.habits,habittrove.wishlist_items,habittrove.coin_ledger,habittrove.global_wallet_totals,habittrove.attachments CASCADE`)

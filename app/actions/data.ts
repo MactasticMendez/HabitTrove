@@ -161,7 +161,7 @@ async function assignAvatar(data: UserData, avatarPath: string, targetId: string
   await upsertAttachmentMetadata({ ...attachment, owner_id: targetId })
 }
 
-function validateAuthentikSubject(subject: unknown): string | undefined {
+function validateOidcSubject(subject: unknown): string | undefined {
   if (subject == null || subject === '') return undefined
   return z.string().min(1).max(255).regex(/^[\x21-\x7e]+$/).parse(subject)
 }
@@ -1770,9 +1770,9 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   let password = formData.get('password') as string | undefined;
   const avatarPath = validateAvatarPath(formData.get('avatarPath'));
   const email = validateEmail(formData.get('email'))
-  const authentikSubject = validateAuthentikSubject(formData.get('authentikSubject'))
-  const oidcIssuer = authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
-  if (authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
+  const oidcSubject = validateOidcSubject(formData.get('oidcSubject'))
+  const oidcIssuer = oidcSubject ? (await getActiveOidcConfig())?.issuer : undefined
+  if (oidcSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
   const isAdmin = formData.get('isAdmin') === 'true';
   const rawPermissions = formData.get('permissions')
   if (typeof rawPermissions === 'string' && rawPermissions.length > 4096) throw new Error('Invalid permissions')
@@ -1789,7 +1789,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   if (isAdmin && !hashedPassword && process.env.DEMO !== 'true') {
     throw new Error('Administrator accounts require a password')
   }
-  if (!hashedPassword && !authentikSubject && process.env.DEMO !== 'true') {
+  if (!hashedPassword && !oidcSubject && process.env.DEMO !== 'true') {
     throw new Error('A password or OIDC subject is required')
   }
 
@@ -1797,14 +1797,14 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
     if (!data.users.find(user => user.id === administrator.id)?.isAdmin) throw new PermissionError('Administrator access required')
     if (data.users.some(user => user.username === username)) throw new Error('Username already exists')
     if (email && data.users.some(user => user.email?.toLowerCase() === email)) throw new Error('Email already exists')
-    if (authentikSubject && data.users.some(user => user.authentikSubject === authentikSubject)) {
+    if (oidcSubject && data.users.some(user => user.oidcSubject === oidcSubject)) {
       throw new Error('OIDC identity is already linked')
     }
     const user: User = {
       id: uuid(), username, password: hashedPassword, permissions, isAdmin,
       ...(email && { email }),
       authVersion: 0,
-      ...(authentikSubject && { authentikSubject, oidcIssuer }),
+      ...(oidcSubject && { oidcSubject, oidcIssuer }),
       ...(avatarPath && { avatarPath }),
     }
     if (avatarPath) await assignAvatar(data, avatarPath, user.id, administrator)
@@ -1814,7 +1814,7 @@ export async function createUser(formData: FormData): Promise<PublicUser> {
   return sanitizeUserData({ users: [newUser] }, administrator.id, true).users[0]
 }
 
-export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password' | 'authVersion' | 'authentikSubject' | 'oidcIssuer'>> & { authentikSubject?: string | null }): Promise<PublicUser> {
+export async function updateUser(userId: string, updates: Partial<Omit<User, 'id' | 'password' | 'authVersion' | 'oidcSubject' | 'oidcIssuer'>> & { oidcSubject?: string | null }): Promise<PublicUser> {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new PermissionError('User not authenticated')
   if (process.env.DEMO === 'true') throw new PermissionError('Account changes are disabled in demo mode')
@@ -1822,8 +1822,8 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
       (currentUser.id !== userId || Object.keys(updates).some(key => key !== 'email'))) {
     throw new PermissionError('Email is required before using this account')
   }
-  const oidcIssuer = updates.authentikSubject ? (await getActiveOidcConfig())?.issuer : undefined
-  if (updates.authentikSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
+  const oidcIssuer = updates.oidcSubject ? (await getActiveOidcConfig())?.issuer : undefined
+  if (updates.oidcSubject && !oidcIssuer) throw new Error('Configure OIDC before linking an account')
   return withIdentityWrite(currentUser, () => updateAuthData(async data => {
     const actor = data.users.find(user => user.id === currentUser.id)
     if (!actor) throw new PermissionError('User not authenticated')
@@ -1837,7 +1837,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     throw new PermissionError('Cannot edit another user')
   }
 
-  const allowedKeys = ['username', 'email', 'avatarPath', 'permissions', 'isAdmin', 'authentikSubject', 'managedUserIds']
+  const allowedKeys = ['username', 'email', 'avatarPath', 'permissions', 'isAdmin', 'oidcSubject', 'managedUserIds']
   if (Object.keys(updates).some(key => !allowedKeys.includes(key))) {
     throw new Error('Invalid user update')
   }
@@ -1853,7 +1853,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   if (!actor.isAdmin &&
     (updates.isAdmin !== undefined && updates.isAdmin !== existingUser.isAdmin ||
       updates.permissions !== undefined && !_.isEqual(updates.permissions, existingUser.permissions) ||
-      updates.authentikSubject !== undefined || updates.managedUserIds !== undefined)) {
+      updates.oidcSubject !== undefined || updates.managedUserIds !== undefined)) {
     throw new PermissionError('Cannot change account permissions')
   }
 
@@ -1863,8 +1863,8 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     ...(updates.avatarPath !== undefined && { avatarPath: validateAvatarPath(updates.avatarPath) }),
     ...(actor.isAdmin && updates.isAdmin !== undefined && { isAdmin: z.boolean().parse(updates.isAdmin) }),
     ...(actor.isAdmin && updates.permissions !== undefined && { permissions: permissionSchema.parse(updates.permissions) }),
-    ...(actor.isAdmin && updates.authentikSubject !== undefined && { authentikSubject: validateAuthentikSubject(updates.authentikSubject) }),
-    ...(actor.isAdmin && updates.authentikSubject !== undefined && { oidcIssuer }),
+    ...(actor.isAdmin && updates.oidcSubject !== undefined && { oidcSubject: validateOidcSubject(updates.oidcSubject) }),
+    ...(actor.isAdmin && updates.oidcSubject !== undefined && { oidcIssuer }),
     ...(actor.isAdmin && updates.managedUserIds !== undefined && {
       managedUserIds: z.array(z.string().min(1).max(128)).max(50).parse(updates.managedUserIds),
     }),
@@ -1880,8 +1880,8 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
     await assignAvatar(data, validatedUpdates.avatarPath, userId, actor)
   }
 
-  const subject = 'authentikSubject' in validatedUpdates ? validatedUpdates.authentikSubject : existingUser.authentikSubject
-  if (subject && data.users.some(user => user.id !== userId && user.authentikSubject === subject)) {
+  const subject = 'oidcSubject' in validatedUpdates ? validatedUpdates.oidcSubject : existingUser.oidcSubject
+  if (subject && data.users.some(user => user.id !== userId && user.oidcSubject === subject)) {
     throw new Error('OIDC identity is already linked')
   }
   if (!existingUser.password && !subject && process.env.DEMO !== 'true') {
@@ -1904,7 +1904,7 @@ export async function updateUser(userId: string, updates: Partial<Omit<User, 'id
   const updatedUser = {
     ...data.users[userIndex],
     ...validatedUpdates,
-    authVersion: (existingUser.authVersion ?? 0) + (updates.email !== undefined || updates.isAdmin !== undefined || updates.permissions !== undefined || updates.authentikSubject !== undefined || updates.managedUserIds !== undefined ? 1 : 0),
+    authVersion: (existingUser.authVersion ?? 0) + (updates.email !== undefined || updates.isAdmin !== undefined || updates.permissions !== undefined || updates.oidcSubject !== undefined || updates.managedUserIds !== undefined ? 1 : 0),
   }
   data.users[userIndex] = updatedUser
   return sanitizeUserData({ users: [updatedUser] }, actor.id, !!actor.isAdmin).users[0]
@@ -1940,7 +1940,7 @@ export async function updateUserPassword(userId: string, newPassword?: string, c
     if (target.isAdmin && newPassword === undefined && process.env.DEMO !== 'true') {
       throw new Error('Administrator accounts require a password')
     }
-    if (!target.authentikSubject && newPassword === undefined && process.env.DEMO !== 'true') {
+    if (!target.oidcSubject && newPassword === undefined && process.env.DEMO !== 'true') {
       throw new Error('A password or OIDC subject is required')
     }
     data.users[userIndex] = {
@@ -2119,7 +2119,7 @@ export async function loadServerSettings(): Promise<ServerSettings> {
   }
   return {
     isDemo: process.env.DEMO === 'true',
-    authentikEnabled: !!oidc,
+    oidcEnabled: !!oidc,
     oidcDisplayName,
     familiesEnabled,
     familyRole,

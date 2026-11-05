@@ -9,7 +9,7 @@ async function freshProcess(script: string, demo = false) {
   const child = Bun.spawn([process.execPath, '-e', script], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: 'test', HABITTROVE_STORAGE: 'legacy-json', DATABASE_URL: '',
-      DEMO: demo ? 'true' : 'false', AUTHENTIK_ISSUER: '', AUTHENTIK_CLIENT_ID: '', AUTHENTIK_CLIENT_SECRET: '' },
+      DEMO: demo ? 'true' : 'false', OIDC_ISSUER: '', OIDC_CLIENT_ID: '', OIDC_CLIENT_SECRET: '' },
     stdout: 'pipe', stderr: 'pipe',
   })
   const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])

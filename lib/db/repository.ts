@@ -149,11 +149,11 @@ async function writeAuth(data: UserData, expected?: number): Promise<void> {
   await query('DELETE FROM status_days');
   await query('DELETE FROM invitations');
   for (const [ordinal, user] of data.users.entries()) {
-    await query('INSERT INTO users(id,ordinal,username,password_hash,email,is_admin,auth_version,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET ordinal=EXCLUDED.ordinal,username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,email=EXCLUDED.email,is_admin=EXCLUDED.is_admin,auth_version=EXCLUDED.auth_version,attributes=EXCLUDED.attributes', [user.id, ordinal, user.username, user.password ?? null, user.email ?? null, user.isAdmin ?? null, user.authVersion ?? null, encode(attributes(user, ['id', 'username', 'password', 'email', 'isAdmin', 'authVersion', 'authentikSubject', 'permissions', 'managedUserIds', 'personalFolders', 'statusDays']))]);
+    await query('INSERT INTO users(id,ordinal,username,password_hash,email,is_admin,auth_version,attributes) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(id) DO UPDATE SET ordinal=EXCLUDED.ordinal,username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,email=EXCLUDED.email,is_admin=EXCLUDED.is_admin,auth_version=EXCLUDED.auth_version,attributes=EXCLUDED.attributes', [user.id, ordinal, user.username, user.password ?? null, user.email ?? null, user.isAdmin ?? null, user.authVersion ?? null, encode(attributes(user, ['id', 'username', 'password', 'email', 'isAdmin', 'authVersion', 'oidcSubject', 'permissions', 'managedUserIds', 'personalFolders', 'statusDays']))]);
   }
   for (const user of data.users) {
-    if (user.authentikSubject !== undefined)
-      await query('INSERT INTO oidc_identities(user_id,issuer,subject) VALUES($1,$2,$3)', [user.id, user.oidcIssuer ?? null, user.authentikSubject]);
+    if (user.oidcSubject !== undefined)
+      await query('INSERT INTO oidc_identities(user_id,issuer,subject) VALUES($1,$2,$3)', [user.id, user.oidcIssuer ?? null, user.oidcSubject]);
     for (const [ordinal, permission] of (user.permissions ?? []).entries())
       for (const resource of ['habit', 'wishlist', 'coins'] as const)
         await query('INSERT INTO permissions(user_id,ordinal,resource,can_write,can_interact) VALUES($1,$2,$3,$4,$5)', [user.id, ordinal, resource, permission[resource].write, permission[resource].interact]);
@@ -187,9 +187,9 @@ async function readAuth(): Promise<UserData | undefined> {
     if (has(row, 'authVersion'))
       user.authVersion = row.auth_version;
     const identity = (await rows('SELECT * FROM oidc_identities WHERE user_id=$1', [row.id]))[0];
-    if (has(row, 'authentikSubject'))
-      user.authentikSubject = identity?.subject;
-    if (has(row, 'oidcIssuer'))
+    if (identity)
+      user.oidcSubject = identity.subject;
+    if (identity?.issuer != null || has(row, 'oidcIssuer'))
       user.oidcIssuer = identity?.issuer ?? row.attributes.fields.oidcIssuer as string;
     if (has(row, 'permissions')) {
       user.permissions = [];

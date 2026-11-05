@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '22.23.4'
 
+      - name: Check repository privacy
+        run: npm run check:privacy
+
       - name: Verify Docker dependency lockfile
         run: npm ci --dry-run --ignore-scripts --force --no-audit --no-fund
 

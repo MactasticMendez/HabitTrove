@@ -18,7 +18,7 @@ const oidcDisplayNameSchema = z.string().trim().max(64).refine(
 )
 
 export interface OidcConfig {
-  providerId: 'oidc' | 'authentik'
+  providerId: 'oidc'
   issuer: string
   clientId: string
   clientSecret: string
@@ -137,12 +137,8 @@ async function readStoredConfig(): Promise<StoredAdminConfig | undefined> {
 }
 
 function environmentOidcConfig(): OidcConfig | undefined {
-  const { OIDC_ISSUER: genericIssuer, OIDC_CLIENT_ID: genericClientId, OIDC_CLIENT_SECRET: genericClientSecret } = process.env
-  if (genericIssuer && genericClientId && genericClientSecret) {
-    return { providerId: 'oidc', issuer: genericIssuer, clientId: genericClientId, clientSecret: genericClientSecret }
-  }
-  const { AUTHENTIK_ISSUER: issuer, AUTHENTIK_CLIENT_ID: clientId, AUTHENTIK_CLIENT_SECRET: clientSecret } = process.env
-  return issuer && clientId && clientSecret ? { providerId: 'authentik', issuer, clientId, clientSecret } : undefined
+  const { OIDC_ISSUER: issuer, OIDC_CLIENT_ID: clientId, OIDC_CLIENT_SECRET: clientSecret } = process.env
+  return issuer && clientId && clientSecret ? { providerId: 'oidc', issuer, clientId, clientSecret } : undefined
 }
 
 function effectiveOidcConfig(stored?: StoredAdminConfig): OidcConfig | undefined {
@@ -161,7 +157,7 @@ export async function readEffectiveOidcConfig(): Promise<OidcConfig | undefined>
 }
 
 export async function getLegacyOidcIssuer(): Promise<string | undefined> {
-  if (!usesPostgres()) return (await readStoredConfig())?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER
+  if (!usesPostgres()) return (await readStoredConfig())?.legacyIssuer ?? process.env.OIDC_ISSUER
   return (await startupConfiguration()).legacyIssuer
 }
 
@@ -184,7 +180,7 @@ function startupConfiguration(): Promise<StartupConfiguration> {
   return activeConfiguration ??= (async () => {
     try {
       const stored = await readStoredConfig()
-      return { oidc: effectiveOidcConfig(stored), legacyIssuer: stored?.legacyIssuer ?? process.env.AUTHENTIK_ISSUER }
+      return { oidc: effectiveOidcConfig(stored), legacyIssuer: stored?.legacyIssuer ?? process.env.OIDC_ISSUER }
     } catch (error) {
       if (!(error instanceof StoredAdminConfigError)) throw error
       console.error('Saved OIDC configuration could not be loaded; OIDC sign-in is disabled')
@@ -244,9 +240,6 @@ export async function getAdminConfigSummary() {
   const callbackUrl = process.env.AUTH_URL
     ? new URL('/api/auth/callback/oidc', process.env.AUTH_URL).href
     : ''
-  const activeCallbackUrl = active?.providerId === 'authentik' && process.env.AUTH_URL
-    ? new URL('/api/auth/callback/authentik', process.env.AUTH_URL).href
-    : undefined
   return {
     logLevel: stored?.logLevel ?? 'info',
     smtp: {
@@ -267,7 +260,6 @@ export async function getAdminConfigSummary() {
       source: stored?.oidcOverride === undefined ? (oidc ? 'environment' : 'none') : 'admin',
       restartRequired: JSON.stringify(oidc) !== JSON.stringify(active),
       callbackUrl,
-      activeCallbackUrl,
     },
   }
 }
@@ -376,6 +368,6 @@ export async function saveOidcConfig(input: {
       issuer: config.issuer,
       clientId: config.clientId,
       encryptedClientSecret: encryptSecret(config.clientSecret),
-    }, legacyIssuer: current.legacyIssuer ?? process.env.AUTHENTIK_ISSUER }
+    }, legacyIssuer: current.legacyIssuer ?? process.env.OIDC_ISSUER }
   })
 }

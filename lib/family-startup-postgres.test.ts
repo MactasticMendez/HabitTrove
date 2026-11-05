@@ -141,9 +141,9 @@ describe.skipIf(!enabled)('family schema and startup (separate restricted-role l
     await owner.query('DELETE FROM habittrove.family_configuration')
     try { await expect(validateRuntimeStorage()).rejects.toThrow('startup validation failed') }
     finally { await owner.query('INSERT INTO habittrove.family_configuration VALUES(true,false)') }
-    await owner.query('GRANT UPDATE ON habittrove.family_configuration TO "Mac89Habittrove"')
+    await owner.query('GRANT UPDATE ON habittrove.family_configuration TO "habittrove_test_runtime"')
     try { await expect(validateRuntimeStorage()).rejects.toThrow('startup validation failed') }
-    finally { await owner.query('REVOKE UPDATE ON habittrove.family_configuration FROM "Mac89Habittrove"') }
+    finally { await owner.query('REVOKE UPDATE ON habittrove.family_configuration FROM "habittrove_test_runtime"') }
     await owner.query('ALTER TABLE habittrove.habits NO FORCE ROW LEVEL SECURITY')
     try { await expect(validateRuntimeStorage()).rejects.toThrow('startup validation failed') }
     finally { await owner.query('ALTER TABLE habittrove.habits FORCE ROW LEVEL SECURITY') }

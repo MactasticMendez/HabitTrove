@@ -8,10 +8,10 @@ import { Label } from '@/components/ui/label'
 import { acceptFamilyInvite } from '@/app/actions/data'
 import { getHouseholdInvite, acceptExistingHouseholdInvite } from '@/app/actions/family'
 import type { PublicHouseholdInvite } from '@/lib/family-types'
-import { signIn, signInWithAuthentik } from '@/app/actions/user'
+import { signIn, signInWithOidc } from '@/app/actions/user'
 
-export default function InviteAcceptance({ token, familiesEnabled = false, signedIn = false, authentikEnabled = false, oidcDisplayName = 'OIDC' }: {
-  token: string; familiesEnabled?: boolean; signedIn?: boolean; authentikEnabled?: boolean; oidcDisplayName?: string
+export default function InviteAcceptance({ token, familiesEnabled = false, signedIn = false, oidcEnabled = false, oidcDisplayName = 'OIDC' }: {
+  token: string; familiesEnabled?: boolean; signedIn?: boolean; oidcEnabled?: boolean; oidcDisplayName?: string
 }) {
   const t = useTranslations('FamilyInvites')
   const tf = useTranslations('FamilyMembership')
@@ -84,10 +84,10 @@ export default function InviteAcceptance({ token, familiesEnabled = false, signe
             <Input id="invite-confirm" type="password" value={confirmation} onChange={event => setConfirmation(event.target.value)} minLength={12} maxLength={128} autoComplete="new-password" disabled={busy} required /></div>}
         </>}
         <Button type="submit" className="h-auto min-h-10 w-full whitespace-normal" disabled={busy || loading}>{busy ? t('saving') : existing ? tf('acceptExisting') : t('accept')}</Button>
-        {familiesEnabled && existing && !signedIn && authentikEnabled && <Button type="button" variant="outline"
+        {familiesEnabled && existing && !signedIn && oidcEnabled && <Button type="button" variant="outline"
           className="h-auto min-h-10 w-full whitespace-normal" disabled={busy || loading}
-          onClick={() => { void signInWithAuthentik(`/invite/${token}`).catch(() => setError(tf('existingAcceptError'))) }}>
-          {accountText('continueAuthentik', { name: oidcDisplayName })}
+          onClick={() => { void signInWithOidc(`/invite/${token}`).catch(() => setError(tf('existingAcceptError'))) }}>
+          {accountText('continueOidc', { name: oidcDisplayName })}
         </Button>}
       </>}
       {error && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{error}</p>}

@@ -28,6 +28,9 @@ function parseAuthData(raw: string): UserData {
         ((user as User).isAdmin !== undefined && typeof (user as User).isAdmin !== 'boolean'))) {
     throw new Error('Invalid account data')
   }
+  if (data.users.some(user => Object.keys(user).some(field => field !== 'oidcSubject' && /subject$/i.test(field)))) {
+    throw new Error('Unsupported external identity field; convert the account data to use oidcSubject before starting')
+  }
   return data as UserData
 }
 
@@ -103,20 +106,20 @@ export async function findUserById(id: string): Promise<User | undefined> {
 }
 
 export async function userMatchesOidcIdentity(user: User, subject: string, issuer: string): Promise<boolean> {
-  if (user.authentikSubject !== subject) return false
+  if (user.oidcSubject !== subject) return false
   if (user.oidcIssuer) return user.oidcIssuer === issuer
   return (await getLegacyOidcIssuer()) === issuer
 }
 
-export async function findUserByAuthentikSubject(subject: string, issuer: string): Promise<User | undefined> {
+export async function findUserByOidcSubject(subject: string, issuer: string): Promise<User | undefined> {
   const legacyIssuer = await getLegacyOidcIssuer()
   const matches = (await readAuthData()).users.filter(user =>
-    user.authentikSubject === subject && (user.oidcIssuer === issuer || (!user.oidcIssuer && legacyIssuer === issuer)))
+    user.oidcSubject === subject && (user.oidcIssuer === issuer || (!user.oidcIssuer && legacyIssuer === issuer)))
   if (matches.length > 1) throw new Error('Duplicate OIDC identity')
   return matches[0]
 }
 
-export async function linkUserToAuthentikSubject(
+export async function linkUserToOidcSubject(
   userId: string,
   authVersion: number,
   verifiedEmail: string,
@@ -126,13 +129,13 @@ export async function linkUserToAuthentikSubject(
   return updateAuthData(data => {
     const user = data.users.find(candidate => candidate.id === userId)
     if (!user || (user.authVersion ?? 0) !== authVersion ||
-        !user.email || user.email.toLowerCase() !== verifiedEmail || user.authentikSubject) {
+        !user.email || user.email.toLowerCase() !== verifiedEmail || user.oidcSubject) {
       throw new Error('Account link is no longer valid')
     }
-    if (data.users.some(candidate => candidate.authentikSubject === subject)) {
+    if (data.users.some(candidate => candidate.oidcSubject === subject)) {
       throw new Error('OIDC identity is already linked')
     }
-    user.authentikSubject = subject
+    user.oidcSubject = subject
     user.oidcIssuer = issuer
     user.authVersion = authVersion + 1
     return user

@@ -19,7 +19,8 @@
     "test:database": "node scripts/test-database.mjs",
     "db:import": "node scripts/database.mjs import",
     "db:verify": "node scripts/database.mjs verify",
-    "db:export": "node scripts/database.mjs export"
+    "db:export": "node scripts/database.mjs export",
+    "check:privacy": "node scripts/check-repository-privacy.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

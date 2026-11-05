@@ -72,7 +72,7 @@ function ClientWrapperContent({ children }: { children: ReactNode }) {
       ? <main className="min-h-screen flex items-center justify-center bg-background p-4">
           <div className="w-full max-w-md space-y-5 rounded-lg border bg-card p-6">
             <h1 className="text-2xl font-semibold">HabitTrove</h1>
-            <AnonymousSignIn onSuccess={() => {}} authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
+            <AnonymousSignIn onSuccess={() => {}} oidcEnabled={serverSettings.oidcEnabled} oidcDisplayName={serverSettings.oidcDisplayName} isDemo={serverSettings.isDemo} />
           </div>
         </main>
       : status === 'authenticated' && currentAccount && !currentAccount.email && !serverSettings.isDemo
@@ -108,7 +108,7 @@ export default function ClientWrapper({ children }: { children: ReactNode }) {
     if (status === 'loading') return <LoadingSpinner />
     return <InviteAcceptance token={pathname.slice('/invite/'.length)}
       familiesEnabled={serverSettings.familiesEnabled} signedIn={status === 'authenticated'}
-      authentikEnabled={serverSettings.authentikEnabled} oidcDisplayName={serverSettings.oidcDisplayName} />
+      oidcEnabled={serverSettings.oidcEnabled} oidcDisplayName={serverSettings.oidcDisplayName} />
   }
 
   return (

@@ -44,7 +44,7 @@ describe.skipIf(!enabled)('protected assets (dedicated local PostgreSQL restrict
       await admin.query(await fs.readFile(new URL('./db/family-schema.sql', import.meta.url), 'utf8'))
       await admin.query('COMMIT')
     }
-    await admin.query(`GRANT SELECT ON habittrove.family_configuration,habittrove.families,habittrove.family_memberships,habittrove.family_manager_assignments,habittrove.household_invitations TO "Mac89Habittrove"`)
+    await admin.query(`GRANT SELECT ON habittrove.family_configuration,habittrove.families,habittrove.family_memberships,habittrove.family_manager_assignments,habittrove.household_invitations TO "habittrove_test_runtime"`)
     for (const id of ['a', 'b', 'dual', 'member', 'solo', 'outsider']) await admin.query("INSERT INTO habittrove.users(id,ordinal,username,email,auth_version,attributes) VALUES($1,0,$1,$2,0,'{}') ON CONFLICT(id) DO NOTHING", [id, `${id}@example.test`])
     await admin.query("UPDATE habittrove.users SET is_admin=true WHERE id='outsider'")
     await admin.query("INSERT INTO habittrove.families(id,name) VALUES('A','Family A'),('B','Family B') ON CONFLICT DO NOTHING")

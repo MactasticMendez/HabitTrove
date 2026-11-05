@@ -11,7 +11,7 @@ async function checkOidcReturnPaths(assertions: string): Promise<void> {
     mock.module('@/lib/admin-config',()=>({getActiveOidcConfig:async()=>({providerId:'oidc'})}));
     mock.module('@/lib/server-helpers',()=>({getCurrentUser:async()=>undefined}));
     mock.module('@/lib/auth-store',()=>({verifyStepUpPassword:async()=>false}));
-    const {signInWithAuthentik}=await import('./app/actions/user');
+    const {signInWithOidc}=await import('./app/actions/user');
     ${assertions}
   `
   const child = Bun.spawn([process.execPath, '-e', script], {
@@ -24,11 +24,11 @@ async function checkOidcReturnPaths(assertions: string): Promise<void> {
 
 test('OIDC login defaults to home and preserves a bounded internal invite path', async () => {
   await checkOidcReturnPaths(`
-    await signInWithAuthentik();
+    await signInWithOidc();
     assert.deepEqual(calls,[['oidc',{redirectTo:'/'}]]);
     calls.length=0;
     const target='/invite/'+'aB_9-'.repeat(9);
-    await signInWithAuthentik(target);
+    await signInWithOidc(target);
     assert.deepEqual(calls,[['oidc',{redirectTo:target}]]);
   `)
 })
@@ -39,7 +39,7 @@ test('OIDC login refuses external, encoded, ambiguous and unbounded redirects', 
       '/invite/'+'a'.repeat(129),'/invite/'+'a'.repeat(43)+'?next=//example.test',
       '/invite/'+'a'.repeat(43)+'#fragment','/invite/'+'a'.repeat(43)+'/',
       '/invite/%2f%2fexample.test','/invite/../settings',String.fromCharCode(92)+'example.test',null,{}]) {
-      await assert.rejects(()=>signInWithAuthentik(target),/Invalid sign-in return path/);
+      await assert.rejects(()=>signInWithOidc(target),/Invalid sign-in return path/);
     }
     assert.equal(calls.length,0);
   `)

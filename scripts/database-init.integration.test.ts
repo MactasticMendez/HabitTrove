@@ -51,7 +51,7 @@ describe.skipIf(!enabled)('offline init against isolated, pre-migrated PostgreSQ
     const runtime = new Client({ connectionString: runtimeUrl }), admin = new Client({ connectionString: adminUrl })
     await runtime.connect(); await admin.connect()
     try {
-      expect((await runtime.query('SELECT current_user AS role')).rows[0].role).toBe('Mac89Habittrove')
+      expect((await runtime.query('SELECT current_user AS role')).rows[0].role).toBe('habittrove_test_runtime')
       expect(await counts(runtime)).toEqual({ users: 0, documents: 0, settings: 0, batches: 0 })
       await fs.mkdir(path.join(directory, 'data'))
       const original = '{"users":[{"id":"unchanged-legacy-source"}]}'

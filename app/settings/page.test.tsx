@@ -15,9 +15,9 @@ const { default: UserForm } = await import('@/components/UserForm')
 function render(role?: 'member' | 'manager' | 'owner' | 'site-admin', isAdmin = false, familiesEnabled = true, outsider = false) {
   const store = createStore()
   store.set(serverSettingsAtom, { ...getDefaultServerSettings(), familiesEnabled, familyRole: role, familyMember: !!role && !outsider })
-  const actor = { id: 'actor', username: 'Actor', email: 'actor@example.test', isAdmin, managedUserIds: [], hasPassword: true, hasAuthentik: false,
+  const actor = { id: 'actor', username: 'Actor', email: 'actor@example.test', isAdmin, managedUserIds: [], hasPassword: true, hasOidc: false,
     personalFolders: [{ id: 'stale', name: 'Other household folder', itemIds: [] }] }
-  store.set(usersAtom, outsider ? { users: [{ id: 'member', username: 'Member', hasPassword: true, hasAuthentik: false }], currentUser: actor } : { users: [actor] })
+  store.set(usersAtom, outsider ? { users: [{ id: 'member', username: 'Member', hasPassword: true, hasOidc: false }], currentUser: actor } : { users: [actor] })
   store.set(currentUserIdAtom, 'actor')
   return renderToStaticMarkup(<Provider store={store}><NextIntlClientProvider locale="en" timeZone="UTC" messages={messages}>
     <SettingsPage /><Navigation viewPort="main" />{outsider && <><HabitList /><UserForm userId="actor" onCancel={() => {}} onSuccess={() => {}} /></>}

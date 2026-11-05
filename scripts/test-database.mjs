@@ -4,7 +4,7 @@ import { Client } from 'pg'
 
 const databases = ['habittrove_test_repository', 'habittrove_test_migration', 'habittrove_test_restore', 'habittrove_test_auth', 'habittrove_test_actions', 'habittrove_test_media', 'habittrove_test_init', 'habittrove_test_init_race', 'habittrove_test_family_repository_ci', 'habittrove_test_family_backend', 'habittrove_test_family_actions', 'habittrove_test_family_startup', 'habittrove_test_media_maintenance', 'habittrove_test_family_backup_source', 'habittrove_test_family_backup_restore', 'habittrove_test_family_backup_empty', 'habittrove_test_family_backup_generic', 'habittrove_test_invite_kdf']
 const preparedDatabases = new Set(['habittrove_test_media', 'habittrove_test_family_repository_ci', 'habittrove_test_family_backend', 'habittrove_test_family_actions', 'habittrove_test_media_maintenance'])
-const runtimeRole = 'Mac89Habittrove'
+const runtimeRole = 'habittrove_test_runtime'
 const genericRole = 'habittrove_ci_"runtime'
 const quotedRole = value => '"' + value.replaceAll('"', '""') + '"'
 const tables = ['documents', 'users', 'oidc_identities', 'permissions', 'manager_assignments', 'folders', 'folder_items', 'status_days', 'invitations', 'habits', 'habit_assignees', 'habit_approvers', 'checklist_entries', 'completions', 'completion_recipients', 'slips', 'wishlist_items', 'wishlist_assignees', 'coin_ledger', 'setting_sections', 'admin_configuration', 'migration_batches', 'authentication_throttles', 'job_leases', 'attachments']
