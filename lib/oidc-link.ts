@@ -1,16 +1,16 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-export const authentikLinkCookie = 'habittrove-authentik-link'
+export const oidcLinkCookie = 'habittrove-oidc-link'
 const linkLifetimeMs = 5 * 60 * 1000
 
-export type AuthentikLinkIntent = {
+export type OidcLinkIntent = {
   userId: string
   authVersion: number
   email: string
   expiresAt: number
 }
 
-export function createAuthentikLinkIntent(
+export function createOidcLinkIntent(
   userId: string,
   authVersion: number,
   email: string,
@@ -23,7 +23,7 @@ export function createAuthentikLinkIntent(
   return `${body}.${signature}`
 }
 
-export function verifyAuthentikLinkIntent(value: string | undefined, secret: string, now = Date.now()): AuthentikLinkIntent | null {
+export function verifyOidcLinkIntent(value: string | undefined, secret: string, now = Date.now()): OidcLinkIntent | null {
   if (!value || value.length > 2048 || secret.length < 32) return null
   const parts = value.split('.')
   if (parts.length !== 2) return null
@@ -34,12 +34,12 @@ export function verifyAuthentikLinkIntent(value: string | undefined, secret: str
   try {
     const intent: unknown = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'))
     if (!intent || typeof intent !== 'object') return null
-    const parsed = intent as Partial<AuthentikLinkIntent>
+    const parsed = intent as Partial<OidcLinkIntent>
     if (typeof parsed.userId !== 'string' || !parsed.userId ||
         !Number.isSafeInteger(parsed.authVersion) || (parsed.authVersion ?? -1) < 0 ||
         typeof parsed.email !== 'string' || !parsed.email ||
         typeof parsed.expiresAt !== 'number' || parsed.expiresAt <= now || parsed.expiresAt > now + linkLifetimeMs) return null
-    return parsed as AuthentikLinkIntent
+    return parsed as OidcLinkIntent
   } catch {
     return null
   }

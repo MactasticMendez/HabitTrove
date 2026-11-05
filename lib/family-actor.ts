@@ -70,7 +70,7 @@ export async function readFamilyDirectory(actor: User): Promise<UserData> {
     return { ...identity, id: row.id, username: row.username, isAdmin: row.is_admin === true,
       ...(row.email ? { email: row.email } : {}), ...(row.password_hash ? { password: row.password_hash } : {}),
       ...(row.auth_version !== null ? { authVersion: row.auth_version } : {}),
-      ...(row.subject ? { authentikSubject: row.subject } : {}), ...(row.issuer ? { oidcIssuer: row.issuer } : {}),
+      ...(row.subject ? { oidcSubject: row.subject } : {}), ...(row.issuer ? { oidcIssuer: row.issuer } : {}),
       permissions: [resources], managedUserIds: assignments.filter((assignment) => assignment.manager_id === row.id).map((assignment) => assignment.member_id),
       personalFolders: personal.folders ?? [], statusDays: personal.statusDays ?? [],
       ...(personal.lastNotificationReadTimestamp ? { lastNotificationReadTimestamp: personal.lastNotificationReadTimestamp } : {}),

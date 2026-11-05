@@ -54,8 +54,8 @@ test('external popups reject unsafe schemes and isolate the opener', () => {
   })
   try {
     expect(openWindow('javascript:alert(1)')).toBe(false)
-    expect(openWindow('https://example.com/reward')).toBe(true)
-    expect(calls).toEqual([['https://example.com/reward', '_blank', 'noopener,noreferrer']])
+    expect(openWindow('https://example.test/reward')).toBe(true)
+    expect(calls).toEqual([['https://example.test/reward', '_blank', 'noopener,noreferrer']])
   } finally {
     if (original) Object.defineProperty(globalThis, 'window', original)
     else Reflect.deleteProperty(globalThis, 'window')

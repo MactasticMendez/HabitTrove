@@ -14,7 +14,7 @@ import { useTheme } from "next-themes"
 import { signOut } from "@/app/actions/user"
 import { toast } from "@/hooks/use-toast"
 import { useTranslations } from 'next-intl'
-import AuthentikLinkForm from './AuthentikLinkForm'
+import OidcLinkForm from './OidcLinkForm'
 import { DateTime } from 'luxon'
 
 export function Profile() {
@@ -119,9 +119,9 @@ export function Profile() {
               </div>
             </div>
           </DropdownMenuItem>
-          {user && serverSettings.authentikEnabled && !user.hasAuthentik && (
+          {user && serverSettings.oidcEnabled && !user.hasOidc && (
             <DropdownMenuItem className="cursor-pointer px-2 py-1.5" onClick={() => { setOpen(false); setIsLinking(true) }}>
-              {accountText('linkAuthentik')}
+              {accountText('linkOidc')}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem className="cursor-pointer px-2 py-1.5" asChild>
@@ -210,8 +210,8 @@ export function Profile() {
       {isLinking && user && (
         <Dialog open={isLinking} onOpenChange={setIsLinking}>
           <DialogContent className="sm:max-w-md">
-            <DialogHeader><DialogTitle>{accountText('linkAuthentik')}</DialogTitle></DialogHeader>
-            {user.email && user.hasPassword ? <AuthentikLinkForm /> : (
+            <DialogHeader><DialogTitle>{accountText('linkOidc')}</DialogTitle></DialogHeader>
+            {user.email && user.hasPassword ? <OidcLinkForm /> : (
               <p role="status" className="text-sm">{accountText('linkUnavailable')}</p>
             )}
           </DialogContent>

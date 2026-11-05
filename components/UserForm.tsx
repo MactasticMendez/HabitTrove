@@ -64,8 +64,8 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
   const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState<string | undefined>('');
   const [currentPassword, setCurrentPassword] = useState('');
-  const [authentikSubject, setAuthentikSubject] = useState('');
-  const [removeAuthentik, setRemoveAuthentik] = useState(false);
+  const [oidcSubject, setOidcSubject] = useState('');
+  const [removeOidc, setRemoveOidc] = useState(false);
   const [disablePassword, setDisablePassword] = useState(user ? !user.hasPassword : serverSettings.isDemo);
   const [error, setError] = useState('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -167,7 +167,7 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
 
       if (isEditing) {
         const profileChanged = username !== user.username || email !== (user.email || '') || avatarPath !== user.avatarPath ||
-          (currentUser?.isAdmin && (isAdmin !== user.isAdmin || authentikSubject || removeAuthentik)) ||
+          (currentUser?.isAdmin && (isAdmin !== user.isAdmin || oidcSubject || removeOidc)) ||
           (canEditLegacyPermissions && (!_.isEqual(permissions, user.permissions) || !_.isEqual(managedUserIds, user.managedUserIds ?? [])));
         const passwordChanged = (disablePassword && user.hasPassword) || !!password;
         if (profileChanged && passwordChanged) {
@@ -182,8 +182,8 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
             avatarPath,
             ...(canEditLegacyPermissions && !_.isEqual(permissions, user.permissions) && { permissions }),
             ...(currentUser?.isAdmin && isAdmin !== user.isAdmin && { isAdmin }),
-            ...(currentUser?.isAdmin && authentikSubject && { authentikSubject }),
-            ...(currentUser?.isAdmin && removeAuthentik && { authentikSubject: null }),
+            ...(currentUser?.isAdmin && oidcSubject && { oidcSubject }),
+            ...(currentUser?.isAdmin && removeOidc && { oidcSubject: null }),
             ...(canEditLegacyPermissions && !_.isEqual(managedUserIds, user.managedUserIds ?? []) && { managedUserIds }),
           });
         }
@@ -204,7 +204,7 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
               ...(currentUser?.isAdmin && { isAdmin }),
               ...(canEditLegacyPermissions && { permissions, managedUserIds }),
               hasPassword: disablePassword ? false : (password ? true : !!account.hasPassword),
-              hasAuthentik: removeAuthentik ? false : (authentikSubject ? true : !!account.hasAuthentik),
+              hasOidc: removeOidc ? false : (oidcSubject ? true : !!account.hasOidc),
           })
           return {
             ...prev,
@@ -231,7 +231,7 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
         if (!serverSettings.familiesEnabled) formData.append('permissions', JSON.stringify(isAdmin ? undefined : permissions));
         if (currentUser?.isAdmin) formData.append('isAdmin', JSON.stringify(isAdmin));
         formData.append('avatarPath', avatarPath || '');
-        if (authentikSubject) formData.append('authentikSubject', authentikSubject);
+        if (oidcSubject) formData.append('oidcSubject', oidcSubject);
 
         const newUser = await createUser(formData);
         if (!serverSettings.familiesEnabled) setUsersData(prev => ({
@@ -252,7 +252,7 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
       await onSuccess();
       if (user && currentUser?.id === user.id &&
           (email !== (user.email || '') || !!password || (disablePassword && user.hasPassword) ||
-           authentikSubject || removeAuthentik || isAdmin !== user.isAdmin || !_.isEqual(permissions, user.permissions))) {
+           oidcSubject || removeOidc || isAdmin !== user.isAdmin || !_.isEqual(permissions, user.permissions))) {
         window.location.reload();
       }
     } catch (err) {
@@ -391,12 +391,12 @@ export default function UserForm({ userId, account, onCancel, onSuccess }: UserF
 
         {currentUser?.isAdmin && (
           <div className="space-y-2">
-            <Label htmlFor="authentik-subject">{accountText('authentikSubject')}</Label>
-            <Input id="authentik-subject" value={authentikSubject} onChange={event => setAuthentikSubject(event.target.value)} placeholder={user?.hasAuthentik ? accountText('subjectReplacePlaceholder') : accountText('subjectPlaceholder')} autoComplete="off" />
-            {user?.hasAuthentik && (
+            <Label htmlFor="oidc-subject">{accountText('oidcSubject')}</Label>
+            <Input id="oidc-subject" value={oidcSubject} onChange={event => setOidcSubject(event.target.value)} placeholder={user?.hasOidc ? accountText('subjectReplacePlaceholder') : accountText('subjectPlaceholder')} autoComplete="off" />
+            {user?.hasOidc && (
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={removeAuthentik} onChange={event => setRemoveAuthentik(event.target.checked)} />
-                {accountText('removeAuthentikLink')}
+                <input type="checkbox" checked={removeOidc} onChange={event => setRemoveOidc(event.target.checked)} />
+                {accountText('removeOidcLink')}
               </label>
             )}
           </div>

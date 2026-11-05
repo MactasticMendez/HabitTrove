@@ -9,7 +9,7 @@ import { SafeUser } from '@/lib/types';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { signInWithAuthentik } from '@/app/actions/user';
+import { signInWithOidc } from '@/app/actions/user';
 import { useAtomValue } from 'jotai';
 import { serverSettingsAtom } from '@/lib/atoms';
 
@@ -99,12 +99,12 @@ export default function PasswordEntryForm({
         </Button>
       </div>
     </form>
-    {user.hasAuthentik && serverSettings.authentikEnabled && (
-      <form action={signInWithAuthentik.bind(null, '/')}>
-        <Button type="submit" variant="outline" className="w-full">{accountText('continueAuthentik', { name: serverSettings.oidcDisplayName })}</Button>
+    {user.hasOidc && serverSettings.oidcEnabled && (
+      <form action={signInWithOidc.bind(null, '/')}>
+        <Button type="submit" variant="outline" className="w-full">{accountText('continueOidc', { name: serverSettings.oidcDisplayName })}</Button>
       </form>
     )}
-    {!canUseLocal && !(user.hasAuthentik && serverSettings.authentikEnabled) && (
+    {!canUseLocal && !(user.hasOidc && serverSettings.oidcEnabled) && (
       <p role="status" className="text-sm text-destructive">{accountText('contactAdmin')}</p>
     )}
     </div>

@@ -1,15 +1,15 @@
 'use client'
 
 import { useActionState } from 'react'
-import { startAuthentikLink } from '@/app/actions/user'
+import { startOidcLink } from '@/app/actions/user'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { useTranslations } from 'next-intl'
 
-export default function AuthentikLinkForm() {
+export default function OidcLinkForm() {
   const t = useTranslations('AccountSecurity')
-  const [state, action, pending] = useActionState(startAuthentikLink, { error: '' })
+  const [state, action, pending] = useActionState(startOidcLink, { error: '' })
 
   return (
     <form action={action} className="space-y-4">
@@ -19,7 +19,7 @@ export default function AuthentikLinkForm() {
         <Input id="link-current-password" name="password" type="password" autoComplete="current-password" required />
       </div>
       {state.error && <p role="alert" className="text-sm text-destructive">{state.error}</p>}
-      <Button type="submit" disabled={pending}>{t('linkAuthentik')}</Button>
+      <Button type="submit" disabled={pending}>{t('linkOidc')}</Button>
     </form>
   )
 }

@@ -62,12 +62,14 @@ export function validateSnapshot(snapshot: DatabaseSnapshot): Pick<MigrationMani
   const counts = { users: ids.users.length, habits: ids.habits.length, rewards: ids.rewards.length, transactions: ids.transactions.length, completions: 0, legacyCompletions: 0, voided: 0, pending: 0, approved: 0, rejected: 0, historicalReferences: 0 }
   const historical = (id: string | undefined) => { if (id && !users.has(id)) counts.historicalReferences++ }
   for (const user of snapshot.auth.users) {
+    requireCondition(Object.keys(user).every(field => field === 'oidcSubject' || !/subject$/i.test(field)),
+      'Unsupported external identity field; convert the backup to use oidcSubject before importing')
     requireCondition(typeof user.username === 'string' && !!user.username, 'Invalid login identity')
     const username = user.username.toLowerCase()
     requireCondition(!usernames.has(username), 'Colliding login identities'); usernames.add(username)
     if (user.password !== undefined) requireCondition(typeof user.password === 'string', 'Invalid password hash')
     if (user.email) { const email = user.email.trim().toLowerCase(); requireCondition(!emails.has(email), 'Colliding email identities'); emails.add(email) }
-    if (user.authentikSubject) { requireCondition(typeof user.authentikSubject === 'string', 'Invalid external identity'); const identity = JSON.stringify([user.oidcIssuer ?? '', user.authentikSubject]); requireCondition(!identities.has(identity), 'Colliding external identities'); identities.add(identity) }
+    if (user.oidcSubject) { requireCondition(typeof user.oidcSubject === 'string', 'Invalid external identity'); const identity = JSON.stringify([user.oidcIssuer ?? '', user.oidcSubject]); requireCondition(!identities.has(identity), 'Colliding external identities'); identities.add(identity) }
     for (const id of user.managedUserIds ?? []) requireCondition(users.has(id), 'Manager references missing active account')
     if (user.personalFolders) uniqueIds(user.personalFolders, 'folder')
   }

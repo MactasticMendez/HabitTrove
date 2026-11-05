@@ -4,9 +4,10 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { saltAndHashPassword } from './password'
+import { sanitizeUserData } from './user-sanitizer'
 
 mock.module('server-only', () => ({}))
-const { authenticateLocalUser, verifyStepUpPassword } = await import('./auth-store')
+const { authenticateLocalUser, readAuthData, verifyStepUpPassword } = await import('./auth-store')
 
 test('locks a username after repeated wrong local passwords', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-login-'))
@@ -15,7 +16,7 @@ test('locks a username after repeated wrong local passwords', async () => {
   try {
     await fs.mkdir(path.join(directory, 'data'))
     await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({ users: [{
-      id: 'test-user', username, email: 'user@example.com', password: saltAndHashPassword('correct-password-123'),
+      id: 'test-user', username, email: 'user@example.test', password: saltAndHashPassword('correct-password-123'),
     }] }))
     for (let attempt = 0; attempt < 10; attempt++) {
       expect(await authenticateLocalUser(username, 'wrong-password')).toBeNull()
@@ -34,7 +35,7 @@ test('unknown usernames cannot fill the account failure tracker', async () => {
   try {
     await fs.mkdir(path.join(directory, 'data'))
     await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({ users: [{
-      id: randomUUID(), username, email: 'user@example.com', password: saltAndHashPassword('correct-password-123'),
+      id: randomUUID(), username, email: 'user@example.test', password: saltAndHashPassword('correct-password-123'),
     }] }))
     for (let index = 0; index < 1001; index++) {
       expect(await authenticateLocalUser(`unknown${index}`, '')).toBeNull()
@@ -69,7 +70,7 @@ test('step-up password failures are throttled separately from public sign-in', a
   const cwdSpy = spyOn(process, 'cwd').mockImplementation(() => directory)
   const user = {
     id: randomUUID(), username: `user${randomUUID().replace(/-/g, '').slice(0, 12)}`,
-    email: 'user@example.com', password: saltAndHashPassword('correct-password-123'),
+    email: 'user@example.test', password: saltAndHashPassword('correct-password-123'),
   }
   try {
     await fs.mkdir(path.join(directory, 'data'))
@@ -79,6 +80,32 @@ test('step-up password failures are throttled separately from public sign-in', a
     }
     expect(await verifyStepUpPassword(user, 'correct-password-123')).toBe(false)
     expect((await authenticateLocalUser(user.username, 'correct-password-123'))?.id).toBe(user.id)
+  } finally {
+    cwdSpy.mockRestore()
+    await fs.rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects unrecognized subject fields before account data reaches the public directory', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'habittrove-identity-schema-'))
+  const cwdSpy = spyOn(process, 'cwd').mockImplementation(() => directory)
+  const file = path.join(directory, 'data', 'auth.json')
+  const user = { id: 'test-user', username: 'Member', retainedMetadata: 'preserved' }
+  try {
+    await fs.mkdir(path.dirname(file))
+    for (const field of ['externalSubject', 'externalSUBJECT']) {
+      const raw = JSON.stringify({ users: [{ ...user, [field]: 'private-subject' }] })
+      await fs.writeFile(file, raw)
+      await expect(readAuthData().then(data => sanitizeUserData(data, user.id, true)))
+        .rejects.toThrow('convert the account data to use oidcSubject')
+      expect(await fs.readFile(file, 'utf8')).toBe(raw)
+    }
+    await fs.writeFile(file, JSON.stringify({ users: [{ ...user, oidcSubject: 'private-subject' }] }))
+    const data = await readAuthData()
+    expect(data.users[0]).toMatchObject({ retainedMetadata: 'preserved', oidcSubject: 'private-subject' })
+    const sanitized = sanitizeUserData(data, user.id, true)
+    expect(sanitized.users[0]).toMatchObject({ retainedMetadata: 'preserved', hasOidc: true })
+    expect(JSON.stringify(sanitized)).not.toContain('private-subject')
   } finally {
     cwdSpy.mockRestore()
     await fs.rm(directory, { recursive: true, force: true })

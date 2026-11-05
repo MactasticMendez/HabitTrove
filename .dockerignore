@@ -21,3 +21,20 @@ tags
 tsconfig.tsbuildinfo
 .env.local
 .env.*.local
+
+# Credentials and local operational artifacts must never enter image layers.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.sql.gz
+*.dump
+*.backup
+*.zip
+*.log
+/dist/
+/outputs/
+/tmp/

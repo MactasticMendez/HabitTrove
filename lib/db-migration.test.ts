@@ -6,7 +6,7 @@ import { captureLegacySource, snapshotFingerprint, validateSnapshot, verifySaved
 import type { DatabaseSnapshot } from './db/repository'
 
 export const migrationFixture = (): DatabaseSnapshot => ({
-  auth: { users: [{ id: 'old-user-id', username: 'Meadow', password: 'exact:hash', authentikSubject: 'subject-unchanged', oidcIssuer: 'https://issuer.example', managedUserIds: [], permissions: [] }] },
+  auth: { users: [{ id: 'old-user-id', username: 'Meadow', password: 'exact:hash', oidcSubject: 'subject-unchanged', oidcIssuer: 'https://issuer.example', managedUserIds: [], permissions: [] }] },
   habits: { habits: [{ id: '12345', name: 'Legacy', description: '', frequency: 'daily', coinReward: 0.25, userIds: ['old-user-id'], completions: ['2024-01-01T00:00:00Z', '2024-01-02T00:00:00Z', '2024-01-03T00:00:00Z'], completionRecords: [null, { id: 'event-old', actorId: 'deleted-user', voided: true, rewardAmount: 0.25, rewardedUserIds: ['deleted-user'] }, { id: 'pending-old', actorId: 'old-user-id', approval: 'pending' }] }] },
   wishlist: { items: [{ id: 'reward-old', name: 'Reward', description: '', coinCost: 0.5 }] },
   coins: { balance: 12.75, transactions: [{ id: 'transaction-old', amount: 0.1, type: 'MANUAL_ADJUSTMENT', description: '', timestamp: '2024-01-01T00:00:00Z', userId: 'old-user-id', relatedItemId: 'deleted-item' }, { id: 'transaction-old2', amount: 0.2, type: 'MANUAL_ADJUSTMENT', description: '', timestamp: '2024-01-01T00:00:00Z', userId: 'old-user-id' }] },
@@ -57,12 +57,26 @@ test('reverse export uses private files and a verifiable checksum manifest witho
 })
 
 describe('rejects ambiguous or unsafe source data', () => {
+  test('rejects unrecognized subject fields before an external identity can be lost', () => {
+    const snapshot = migrationFixture()
+    const account: DatabaseSnapshot['auth']['users'][number] & { externalSubject?: string; retainedMetadata: string } = {
+      ...snapshot.auth.users[0], externalSubject: 'unrecognized-subject', retainedMetadata: 'preserved',
+    }
+    delete account.password
+    delete account.oidcSubject
+    snapshot.auth.users[0] = account
+    expect(() => validateSnapshot(snapshot)).toThrow('convert the backup to use oidcSubject')
+    delete account.externalSubject
+    account.oidcSubject = 'recognized-subject'
+    expect(() => validateSnapshot(snapshot)).not.toThrow()
+  })
+
   test('duplicate case-insensitive identity, external binding and duplicate event IDs', () => {
     const snapshot = migrationFixture()
     snapshot.auth.users.push({ id: 'second', username: 'meadow' })
     expect(() => validateSnapshot(snapshot)).toThrow('Colliding login')
     snapshot.auth.users[1].username = 'Other'
-    snapshot.auth.users[1].authentikSubject = 'subject-unchanged'; snapshot.auth.users[1].oidcIssuer = 'https://issuer.example'
+    snapshot.auth.users[1].oidcSubject = 'subject-unchanged'; snapshot.auth.users[1].oidcIssuer = 'https://issuer.example'
     expect(() => validateSnapshot(snapshot)).toThrow('Colliding external')
     snapshot.auth.users.pop()
     snapshot.habits.habits[0].completionRecords![2]!.id = 'event-old'

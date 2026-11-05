@@ -44,7 +44,7 @@ HabitTrove is a gamified habit tracking PWA built with Next.js 15, TypeScript, a
 - **Individual ownership**: `CoinTransaction` has single `userId`
 - **Shared ownership**: `Habit` and `WishlistItemType` have `userIds: string[]` array
 - **Admin features**: Admin users can view/manage any user's data via dropdown selectors
-- **Data persistence**: JSON files in `/data` directory with automatic `/backups`
+- **Data persistence**: PostgreSQL in production; `/data` holds protected assets and `/backups` holds private recovery archives. JSON is limited to development/tests/demo.
 
 ### Key Components Structure
 - **Feature components**: `HabitList`, `CoinsManager`, `WishlistManager` - main page components
@@ -92,7 +92,7 @@ Reference `CoinsManager.tsx:107-119` for admin user selection implementation. Si
 - Always backup `/data` before major changes
 - Test with existing data files to prevent data loss
 - Validate user permissions for all data operations
-- Handle migration scripts carefully (see PLAN.md for shared ownership migration)
+- Handle migration scripts carefully; follow `docs/database.md` for offline migration, family activation and recovery.
 
 ## Performance Considerations
 - State updates use immutable patterns

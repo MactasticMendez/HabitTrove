@@ -18,7 +18,7 @@ let directory: string
 let cwdSpy: ReturnType<typeof spyOn>
 const originalEnv = {
   AUTH_SECRET: process.env.AUTH_SECRET, AUTH_URL: process.env.AUTH_URL, DEMO: process.env.DEMO,
-  AUTHENTIK_ISSUER: process.env.AUTHENTIK_ISSUER,
+  OIDC_ISSUER: process.env.OIDC_ISSUER,
 }
 
 beforeEach(async () => {
@@ -29,14 +29,14 @@ beforeEach(async () => {
   currentUser = admin
   process.env.AUTH_SECRET = 'b'.repeat(40)
   process.env.AUTH_URL = 'https://habit.example.test'
-  process.env.AUTHENTIK_ISSUER = 'https://auth.example.test/application/o/habittrove/'
+  process.env.OIDC_ISSUER = 'https://auth.example.test/application/o/habittrove/'
   delete process.env.DEMO
 })
 
 afterEach(async () => {
   cwdSpy.mockRestore()
   currentUser = undefined
-  for (const name of ['AUTH_SECRET', 'AUTH_URL', 'DEMO', 'AUTHENTIK_ISSUER'] as const) {
+  for (const name of ['AUTH_SECRET', 'AUTH_URL', 'DEMO', 'OIDC_ISSUER'] as const) {
     const value = originalEnv[name]
     if (value === undefined) delete process.env[name]
     else process.env[name] = value
@@ -88,9 +88,9 @@ test('applies the log level immediately and blocks changes in demo mode', async 
   await expect(actions.updateApplicationLogLevel('debug')).rejects.toThrow('Administrator access required')
 })
 
-test('prevents an issuer change while existing Authentik identities are linked', async () => {
+test('prevents an issuer change while existing OIDC identities are linked', async () => {
   await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
-    users: [{ ...admin, authentikSubject: 'subject-1' }],
+    users: [{ ...admin, oidcSubject: 'subject-1' }],
   }))
   await expect(actions.updateOidcProvider({
     enabled: true,
@@ -100,11 +100,11 @@ test('prevents an issuer change while existing Authentik identities are linked',
     currentPassword: 'current-password',
   })).rejects.toThrow('Unlink existing OIDC accounts')
   await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
-    users: [{ ...admin, authentikSubject: 'subject-1', oidcIssuer: 'https://other.example.test/issuer' }],
+    users: [{ ...admin, oidcSubject: 'subject-1', oidcIssuer: 'https://other.example.test/issuer' }],
   }))
   await expect(actions.updateOidcProvider({
     enabled: true,
-    issuer: process.env.AUTHENTIK_ISSUER!,
+    issuer: process.env.OIDC_ISSUER!,
     clientId: 'client', clientSecret: 'secret', currentPassword: 'current-password',
   })).rejects.toThrow('Unlink existing OIDC accounts')
   await expect(fs.stat(path.join(directory, 'data', 'admin-config.json'))).rejects.toThrow()
@@ -113,7 +113,7 @@ test('prevents an issuer change while existing Authentik identities are linked',
 test('prevents disabling OIDC while a linked account has no local password', async () => {
   await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
     users: [admin, { id: 'oidc-only', username: 'oidc-only', email: 'oidc@example.test',
-      authentikSubject: 'subject-2', oidcIssuer: process.env.AUTHENTIK_ISSUER }],
+      oidcSubject: 'subject-2', oidcIssuer: process.env.OIDC_ISSUER }],
   }))
   await expect(actions.updateOidcProvider({
     enabled: false, issuer: '', clientId: '', clientSecret: '', currentPassword: 'current-password',
@@ -124,7 +124,7 @@ test('prevents disabling OIDC while a linked account has no local password', asy
   await fs.writeFile(path.join(directory, 'data', 'auth.json'), JSON.stringify({
     users: [admin, { id: 'oidc-only', username: 'oidc-only', email: 'oidc@example.test',
       password: saltAndHashPassword('second-local-password'),
-      authentikSubject: 'subject-2', oidcIssuer: process.env.AUTHENTIK_ISSUER }],
+      oidcSubject: 'subject-2', oidcIssuer: process.env.OIDC_ISSUER }],
   }))
   const summary = await actions.updateOidcProvider({
     enabled: false, issuer: '', clientId: '', clientSecret: '', currentPassword: 'current-password',

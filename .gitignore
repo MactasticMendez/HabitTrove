@@ -52,3 +52,16 @@ CHANGELOG.md.tmp
 
 # Generated offline database tools
 /dist/
+
+# Private credentials and local operational artifacts
+*.key
+*.p12
+*.pfx
+*.jks
+*.sql.gz
+*.dump
+*.backup
+*.zip
+*.log
+/outputs/
+/tmp/

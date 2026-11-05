@@ -160,7 +160,6 @@ export default function AdminConfiguration() {
             <p className="text-sm font-medium">{t('oidcCallbackLabel')}</p>
             <code className="block break-all rounded bg-muted p-2 text-sm">{summary?.oidc.callbackUrl || t('oidcCallbackMissing')}</code>
           </div>
-          {summary?.oidc.activeCallbackUrl && <p className="text-sm text-muted-foreground">{t('oidcLegacyCallbackLabel')}: <code className="break-all">{summary.oidc.activeCallbackUrl}</code></p>}
           <div className="space-y-2">
             <Label htmlFor="oidc-issuer">{t('oidcIssuerLabel')}</Label>
             <Input id="oidc-issuer" type="url" value={issuer} onChange={event => setIssuer(event.target.value)} disabled={!enabled || savingOidc} required={enabled} maxLength={2048} autoComplete="url" />

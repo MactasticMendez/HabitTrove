@@ -15,7 +15,7 @@ const enabled = process.env.HABITTROVE_TEST_DATABASE === '1' && !!process.env.DA
 const password = 'test-correct-password-123'
 const account = { id: 'auth-admin', username: 'Admin', email: 'admin@example.test', isAdmin: true,
   password: saltAndHashPassword(password), authVersion: 3 }
-const envNames = ['AUTH_SECRET', 'AUTH_URL', 'AUTHENTIK_ISSUER', 'AUTHENTIK_CLIENT_ID', 'AUTHENTIK_CLIENT_SECRET'] as const
+const envNames = ['AUTH_SECRET', 'AUTH_URL', 'OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const
 const original = Object.fromEntries(envNames.map(name => [name, process.env[name]]))
 
 async function checkFreshStartup(fails: boolean, databaseUrl = process.env.DATABASE_URL!): Promise<void> {
@@ -77,7 +77,7 @@ async function checkAdministratorWriteRace(scenario: string): Promise<void> {
           if (scenario==='smtp-password') actor.password=replacementHash;
           if (scenario==='oidc-email') actor.email='changed@example.test';
           if (scenario==='oidc-only' || scenario==='oidc-linked') {
-            other.authentikSubject='newly-linked-subject';
+            other.oidcSubject='newly-linked-subject';
             other.oidcIssuer='https://original.example.test/issuer';
             if (scenario==='oidc-only') delete other.password;
           }
@@ -132,9 +132,9 @@ describe.skipIf(!enabled)('PostgreSQL auth integration (isolated auth test datab
   beforeAll(async () => {
     process.env.AUTH_SECRET = 'test-only-secret-'.repeat(3)
     process.env.AUTH_URL = 'https://habit.example.test'
-    process.env.AUTHENTIK_ISSUER = 'https://original.example.test/issuer'
-    process.env.AUTHENTIK_CLIENT_ID = 'original-client'
-    process.env.AUTHENTIK_CLIENT_SECRET = 'original-secret'
+    process.env.OIDC_ISSUER = 'https://original.example.test/issuer'
+    process.env.OIDC_CLIENT_ID = 'original-client'
+    process.env.OIDC_CLIENT_SECRET = 'original-secret'
     await migrateDatabase()
   })
   beforeEach(async () => {

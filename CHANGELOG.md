@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+* Check tracked files for private contact details, non-example IP addresses, credential material and runtime artifacts before publication.
+
+### Changed
+
+* Use provider-neutral OIDC names for account fields, linking, configuration, callbacks and translations; read existing PostgreSQL identities from normalized rows.
+* Use fictional test identities and a generic disposable database role.
+
+### Removed
+
+* Remove obsolete provider-specific environment variables and callback aliases; configure `OIDC_*` and `/api/auth/callback/oidc` before upgrading.
+* Remove unused starter assets and obsolete planning material.
+
+### Security
+
+* Keep privacy checks in CI and restrict additional credential, dump and local-output files from Git and Docker contexts.
+
 ## Version 1.0.2
 
 ### Fixed
@@ -208,7 +226,7 @@ Stage A retains existing access/delegation behavior. Explicit family membership 
 
 * Record the member who adds each new habit completion and the members rewarded when its daily target is reached.
 * Add an administrator tab in Settings for generic OIDC setup and application log level.
-* Support standard OIDC providers through in-app settings or `OIDC_*` environment variables, while retaining legacy Authentik configuration and linked accounts.
+* Support standard OIDC providers through in-app settings or `OIDC_*` environment variables, while retaining legacy OIDC configuration and linked accounts.
 * Add local and OIDC sign-in, required account email, and a password-confirmed account-link flow for matching verified emails.
 * Add a recovery script for assigning local passwords to legacy passwordless accounts.
 
@@ -245,19 +263,19 @@ Stage A retains existing access/delegation behavior. Explicit family membership 
 * Block disabling OIDC while linked accounts lack local passwords, and fail closed if the saved OIDC configuration cannot be read.
 * Require administrator access and current local-password proof for OIDC changes, encrypt the OIDC client secret in an owner-only file, and prevent issuer changes while linked accounts exist.
 * Require a fresh client secret when changing the OIDC issuer or client ID.
-* Bind OIDC account links to the issuer and reject a matching subject from a different provider; preserve legacy Authentik links for their original issuer.
+* Bind OIDC account links to the issuer and reject a matching subject from a different provider; preserve legacy OIDC links for their original issuer.
 * Pin the Docker build and runtime to Node.js 22.23.4 for CVE-2026-111497.
 * Update Next.js, Auth.js, next-intl, and Zod to patched releases; refresh compatible locked dependencies.
 * Require an initial administrator password for new non-demo installations, strengthen new passwords, enforce server-side account, item, coin, and settings permissions, and prevent replayed habit rewards.
 * Require authentication for avatar uploads and freshness checks, protect account deletion from cross-origin requests, and remove unused push actions.
 * Reject malformed data instead of silently replacing it, and compare password hashes in constant time.
-* Block local sign-in for passwordless accounts, throttle failed local sign-ins, and invalidate sessions after credential, email, role, or Authentik-link changes.
-* Require local-password proof and a matching verified Authentik email before linking accounts; use Authentik's subject for subsequent sign-ins.
+* Block local sign-in for passwordless accounts, throttle failed local sign-ins, and invalidate sessions after credential, email, role, or OIDC-link changes.
+* Require local-password proof and a matching verified OIDC email before linking accounts; use OIDC's subject for subsequent sign-ins.
 * Update Archiver and node-cron, and replace Next.js's vulnerable nested PostCSS version with a patched release.
 * Write JSON data atomically and serialize in-process mutations to prevent duplicate rewards and concurrent overspending.
 * Restrict reward links to HTTP(S), isolate external popups, validate shared drawings, habit schedules, rewards, and settings, and bound retained avatar uploads.
 * Enforce demo restrictions in server actions, require resource permissions for habit credits and wishlist redemption, and make redemption limits and task archive transitions server controlled.
-* Restrict new data and backup files to their owner, hide other users' coin balances, and require an administrator to add the first local password to an Authentik-only account.
+* Restrict new data and backup files to their owner, hide other users' coin balances, and require an administrator to add the first local password to an OIDC-only account.
 * Pin the demo deployment action to a fixed revision, publish only from upstream main, and validate release versions before shell use.
 
 ## Version 0.2.31

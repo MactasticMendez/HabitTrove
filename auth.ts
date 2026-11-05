@@ -1,10 +1,10 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import type { Provider } from 'next-auth/providers'
-import { authenticateLocalUser, findUserByAuthentikSubject, findUserById, linkUserToAuthentikSubject, userMatchesOidcIdentity } from './lib/auth-store'
+import { authenticateLocalUser, findUserByOidcSubject, findUserById, linkUserToOidcSubject, userMatchesOidcIdentity } from './lib/auth-store'
 import { signInSchema } from './lib/zod'
 import { cookies } from 'next/headers'
-import { authentikLinkCookie, verifyAuthentikLinkIntent } from './lib/authentik-link'
+import { oidcLinkCookie, verifyOidcLinkIntent } from './lib/oidc-link'
 import { getActiveOidcConfig, type OidcConfig } from './lib/admin-config'
 
 export function providersFor(oidc?: OidcConfig): Provider[] {
@@ -31,14 +31,14 @@ export function providersFor(oidc?: OidcConfig): Provider[] {
     authorization: { params: { scope: 'openid profile email' } },
     profile: async profile => {
       if (typeof profile.sub !== 'string' || !profile.sub) throw new Error('Invalid identity')
-      let user = await findUserByAuthentikSubject(profile.sub, oidc.issuer)
+      let user = await findUserByOidcSubject(profile.sub, oidc.issuer)
       if (!user) {
-        const intent = verifyAuthentikLinkIntent((await cookies()).get(authentikLinkCookie)?.value, process.env.AUTH_SECRET ?? '')
+        const intent = verifyOidcLinkIntent((await cookies()).get(oidcLinkCookie)?.value, process.env.AUTH_SECRET ?? '')
         if (!intent || profile.email_verified !== true || typeof profile.email !== 'string' ||
             profile.email.trim().toLowerCase() !== intent.email) {
           throw new Error('OIDC account is not linked')
         }
-        user = await linkUserToAuthentikSubject(intent.userId, intent.authVersion, intent.email, profile.sub, oidc.issuer)
+        user = await linkUserToOidcSubject(intent.userId, intent.authVersion, intent.email, profile.sub, oidc.issuer)
       }
       return { id: profile.sub, localUserId: user.id, authVersion: user.authVersion ?? 0 }
     },
@@ -53,7 +53,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth(async () => ({
   callbacks: {
     jwt: async ({ token, user, account }) => {
       if (user) {
-        const oidcAccount = account?.provider === 'authentik' || account?.provider === 'oidc'
+        const oidcAccount = account?.provider === 'oidc'
         const userId = oidcAccount
           ? 'localUserId' in user ? user.localUserId : undefined
           : user.id

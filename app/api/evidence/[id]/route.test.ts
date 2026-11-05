@@ -23,7 +23,7 @@ beforeEach(async () => {
       evidenceId, evidenceMime: 'image/png' }],
   }] }))
   await fs.writeFile(path.join(directory, 'data', 'evidence', `${evidenceId}.png`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-  currentUser = { id: 'approver', username: 'approver', email: 'approver@example.com' }
+  currentUser = { id: 'approver', username: 'approver', email: 'approver@example.test' }
 })
 
 afterEach(async () => {
@@ -42,12 +42,12 @@ describe('completion evidence access', () => {
   })
 
   test('hides evidence from unrelated and signed-out users', async () => {
-    currentUser = { id: 'assigned', username: 'assigned', email: 'assigned@example.com' }
+    currentUser = { id: 'assigned', username: 'assigned', email: 'assigned@example.test' }
     const habits = JSON.parse(await fs.readFile(path.join(directory, 'data', 'habits.json'), 'utf8'))
     habits.habits[0].userIds.push('assigned')
     await fs.writeFile(path.join(directory, 'data', 'habits.json'), JSON.stringify(habits))
     expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(404)
-    currentUser = { id: 'stranger', username: 'stranger', email: 'stranger@example.com' }
+    currentUser = { id: 'stranger', username: 'stranger', email: 'stranger@example.test' }
     expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(404)
     currentUser = undefined
     expect((await GET(new Request('http://localhost/api/evidence/' + evidenceId), { params: Promise.resolve({ id: evidenceId }) })).status).toBe(401)
