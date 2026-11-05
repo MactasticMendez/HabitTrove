@@ -72,16 +72,16 @@ export default function WishlistItem({
       id={`wishlist-${item.id}`}
       className={`h-full flex flex-col transition-all duration-500 ${isHighlighted ? 'bg-yellow-100 dark:bg-yellow-900' : ''
         } ${isRecentlyRedeemed ? 'animate-[celebrate_1s_ease-in-out] shadow-lg ring-2 ring-primary' : ''
-        } ${item.archived ? 'opacity-75' : ''}`}
+        }`}
     >
       <CardHeader className="flex-shrink-0">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <CardTitle className={`line-clamp-1 ${item.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>
+            <CardTitle className={`line-clamp-1 ${item.archived ? 'text-gray-600 dark:text-gray-300 line-through' : ''}`}>
               {item.name}
             </CardTitle>
             {item.targetCompletions && (
-              <span className="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+              <span className={`text-sm ${item.archived ? 'text-gray-600 dark:text-gray-300' : 'text-gray-500 dark:text-gray-400'} flex-shrink-0`}>
                 ({t(item.targetCompletions === 1 ? 'usesLeftSingular' : 'usesLeftPlural', { count: item.targetCompletions })})
               </span>
             )}
@@ -91,7 +91,7 @@ export default function WishlistItem({
         {(item.description || item.drawing) && (
           <div className={`flex gap-4 mt-2 ${!item.description ? 'justify-end' : ''}`}>
             {item.description && (
-              <CardDescription className={`whitespace-pre-line flex-1 min-w-0 break-words ${item.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>
+              <CardDescription className={`whitespace-pre-line flex-1 min-w-0 break-words ${item.archived ? 'text-gray-600 dark:text-gray-300' : ''}`}>
                 {item.description}
               </CardDescription>
             )}
@@ -111,8 +111,8 @@ export default function WishlistItem({
       <CardContent className="flex-grow flex flex-col justify-end">
         <div className="mt-auto">
           <div className="flex items-center gap-2">
-            <Coins className={`h-4 w-4 ${item.archived ? 'text-gray-400 dark:text-gray-500' : 'text-yellow-400'}`} />
-            <span className={`text-sm font-medium ${item.archived ? 'text-gray-400 dark:text-gray-500' : ''}`}>
+            <Coins className={`h-4 w-4 ${item.archived ? 'text-gray-600 dark:text-gray-300' : 'text-yellow-400'}`} />
+            <span className={`text-sm font-medium ${item.archived ? 'text-gray-600 dark:text-gray-300' : ''}`}>
               {item.coinCost} {t('coinsSuffix')}
             </span>
           </div>
