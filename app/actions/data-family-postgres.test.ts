@@ -669,5 +669,130 @@ else {
         expect((await owner.query("SELECT is_admin,auth_version FROM habittrove.users WHERE id='admin'")).rows).toEqual([{ is_admin: true, auth_version: 1 }])
       })
     }
+
+    for (const policy of ['manager', 'both'] as const) {
+      test(`a nonmember site administrator records and undoes a ${policy} any-time action only in its selected family`, async () => {
+        await scoped('A', async () => {
+          const habits = (await readDocument<HabitsData>('habits'))!
+          const item = habits.habits.find(habit => habit.id === 'anytime-a')!
+          item.schedule = { type: 'anytime', recordingPolicy: policy }
+          await writeDocument('habits', habits)
+        })
+        expect((await owner.query("SELECT count(*) AS n FROM habittrove.family_memberships WHERE user_id='admin'")).rows[0].n).toBe('0')
+        as('admin')
+        const directory = await actions.loadUsersPublicData()
+        expect(directory.users.map(user => user.id).sort()).toEqual(['dual', 'managerA', 'ownerA', 'peerA'])
+        expect(directory.currentUser?.id).toBe('admin')
+        const requestId = randomUUID()
+        const timestamp = now()
+        const completed = await Promise.all([1, 2].map(() => actions.recordHabitCompletion('anytime-a', timestamp, undefined, { beneficiaryId: 'dual', requestId })))
+        expect(completed.filter(result => result.rewarded)).toHaveLength(1)
+        expect(completed.every(result => result.coins.balance === 0 && result.coins.transactions.length === 0)).toBe(true)
+        const record = completed[0].habit.completionRecords?.[0]
+        expect(record?.actorId).toBe('admin')
+        expect(record?.beneficiaryId).toBe('dual')
+        expect(completed[0].habit.completions).toEqual([timestamp])
+        expect((await owner.query("SELECT user_id,actor_id,amount::text,family_id FROM habittrove.coin_ledger WHERE type='HABIT_COMPLETION'")).rows).toEqual([
+          { user_id: 'dual', actor_id: 'admin', amount: '3', family_id: 'A' },
+        ])
+        as('dual', 'B')
+        expect((await actions.loadCoinsData()).balance).toBe(13)
+        as('admin', 'B')
+        await expect(actions.recordHabitCompletion('anytime-a', now(), undefined, { beneficiaryId: 'dual', requestId: randomUUID() })).rejects.toThrow()
+        await expect(actions.undoHabitCompletion('anytime-a', 0, timestamp)).rejects.toThrow()
+        as('admin')
+        const undone = await Promise.allSettled([1, 2].map(() => actions.undoHabitCompletion('anytime-a', 0, timestamp)))
+        expect(undone.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+        expect((await owner.query("SELECT user_id,actor_id,amount::text,family_id FROM habittrove.coin_ledger WHERE type='HABIT_UNDO'")).rows).toEqual([
+          { user_id: 'dual', actor_id: 'admin', amount: '-3', family_id: 'A' },
+        ])
+        const retained = await scoped('A', async () => (await readDocument<HabitsData>('habits'))!.habits.find(habit => habit.id === 'anytime-a')!)
+        expect(retained.completions).toEqual([timestamp])
+        expect(retained.completionRecords?.[0]?.voided).toBe(true)
+        expect((await owner.query("SELECT id,amount::text,family_id FROM habittrove.coin_ledger WHERE id IN ('credit-A','credit-B') ORDER BY id")).rows).toEqual([
+          { id: 'credit-A', amount: '4', family_id: 'A' }, { id: 'credit-B', amount: '6', family_id: 'B' },
+        ])
+        as('dual', 'B')
+        expect((await actions.loadCoinsData()).balance).toBe(10)
+        as('admin')
+        expect((await actions.loadUsersPublicData()).users.some(user => user.id === 'admin')).toBe(false)
+      })
+    }
+
+    test('a nonmember site administrator can undo a manager-recorded any-time award without acquiring household membership', async () => {
+      as('managerA')
+      const timestamp = now()
+      await actions.recordHabitCompletion('anytime-a', timestamp, undefined, { beneficiaryId: 'dual', requestId: randomUUID() })
+      as('admin')
+      const undone = await actions.undoHabitCompletion('anytime-a', 0, timestamp)
+      expect(undone.rewardReversed).toBe(true)
+      expect(undone.habit.completionRecords?.[0]?.actorId).toBe('managerA')
+      expect(undone.habit.completionRecords?.[0]?.voided).toBe(true)
+      expect((await owner.query("SELECT user_id,actor_id,amount::text FROM habittrove.coin_ledger WHERE type='HABIT_UNDO'")).rows).toEqual([
+        { user_id: 'dual', actor_id: 'admin', amount: '-3' },
+      ])
+      expect((await owner.query("SELECT count(*) AS n FROM habittrove.family_memberships WHERE user_id='admin'")).rows[0].n).toBe('0')
+    })
+
+    test('member-only any-time recording excludes an administrator acting for someone else and unrelated managers retain no recording access', async () => {
+      await scoped('A', async () => {
+        const habits = (await readDocument<HabitsData>('habits'))!
+        habits.habits.find(habit => habit.id === 'anytime-a')!.schedule = { type: 'anytime', recordingPolicy: 'member' }
+        await writeDocument('habits', habits)
+      })
+      as('admin')
+      await expect(actions.recordHabitCompletion('anytime-a', now(), undefined, { beneficiaryId: 'dual', requestId: randomUUID() })).rejects.toThrow()
+      as('dual')
+      const timestamp = now()
+      await actions.recordHabitCompletion('anytime-a', timestamp, undefined, { beneficiaryId: 'dual', requestId: randomUUID() })
+      await owner.query("DELETE FROM habittrove.family_manager_assignments WHERE manager_id='managerA'")
+      await scoped('A', async () => {
+        const habits = (await readDocument<HabitsData>('habits'))!
+        habits.habits.find(habit => habit.id === 'anytime-a')!.schedule = { type: 'anytime', recordingPolicy: 'both' }
+        await writeDocument('habits', habits)
+      })
+      as('managerA')
+      await expect(actions.recordHabitCompletion('anytime-a', now(), undefined, { beneficiaryId: 'dual', requestId: randomUUID() })).rejects.toThrow()
+      await expect(actions.undoHabitCompletion('anytime-a', 0, timestamp)).rejects.toThrow()
+      expect((await owner.query("SELECT user_id,actor_id,amount::text FROM habittrove.coin_ledger WHERE type='HABIT_COMPLETION'")).rows).toEqual([
+        { user_id: 'dual', actor_id: 'dual', amount: '3' },
+      ])
+      expect((await owner.query("SELECT count(*) AS n FROM habittrove.coin_ledger WHERE type='HABIT_UNDO'")).rows[0].n).toBe('0')
+    })
+
+    test('archived orphan any-time and negative histories do not prevent saving an unrelated retained habit', async () => {
+      await scoped('A', async () => {
+        const habits = (await readDocument<HabitsData>('habits'))!
+        await writeDocument('habits', { ...habits, habits: [...habits.habits, { ...habit('negative-a'), isNegative: true, coinPenalty: 1 }] })
+      })
+      const timestamp = now()
+      await actions.recordHabitCompletion('anytime-a', timestamp, undefined, { beneficiaryId: 'dual', requestId: randomUUID() })
+      await actions.recordHabitSlip('negative-a', timestamp)
+      await removeMembership('A', 'dual')
+      as('admin')
+      const loaded = await actions.loadHabitsData()
+      const anytime = loaded.habits.find(item => item.id === 'anytime-a')!
+      const negative = loaded.habits.find(item => item.id === 'negative-a')!
+      if (!anytime.completionRecords || !negative.slips) throw new Error('Orphan histories must be retained')
+      for (const orphan of [anytime, negative]) {
+        expect(orphan.archived).toBe(true)
+        expect(orphan.userIds).toEqual([])
+      }
+      const saved = await actions.saveHabitsData({ ...loaded, habits: loaded.habits.map(item => item.id === 'shared-a' ? { ...item, name: 'Edited unrelated peer habit' } : item) })
+      expect(saved.habits.find(item => item.id === 'shared-a')?.name).toBe('Edited unrelated peer habit')
+      const retainedAnytime = saved.habits.find(item => item.id === 'anytime-a')!
+      const retainedNegative = saved.habits.find(item => item.id === 'negative-a')!
+      if (!retainedAnytime.completionRecords || !retainedNegative.slips) throw new Error('Saving must preserve orphan histories')
+      expect(retainedAnytime.completions).toEqual(anytime.completions)
+      expect(retainedAnytime.completionRecords).toEqual(anytime.completionRecords)
+      expect(retainedNegative.slips).toEqual(negative.slips)
+      expect(retainedAnytime.userIds).toEqual([])
+      expect(retainedNegative.userIds).toEqual([])
+      await expect(actions.recordHabitCompletion('anytime-a', now(), undefined, { beneficiaryId: 'ownerA', requestId: randomUUID() })).rejects.toThrow()
+      await expect(actions.recordHabitSlip('negative-a', now())).rejects.toThrow('Slip recording is not allowed')
+      const unchanged = (await actions.loadHabitsData()).habits
+      expect(unchanged.find(item => item.id === 'anytime-a')?.completionRecords).toEqual(retainedAnytime.completionRecords)
+      expect(unchanged.find(item => item.id === 'negative-a')?.slips).toEqual(retainedNegative.slips)
+    })
   })
 }

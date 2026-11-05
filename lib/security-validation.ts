@@ -81,7 +81,10 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
   if (schedule && (habit.taskRepeat || habit.taskRepeatInterval !== undefined || habit.taskRepeatUntil !== undefined)) {
     throw new Error('Choose one schedule mode')
   }
-  if (schedule?.type === 'anytime' && (habit.isTask || habit.isNegative || habit.userIds?.length !== 1 ||
+  // Membership removal archives unassigned items while retaining their event history.
+  const validSingleAssignee = habit.userIds?.length === 1 ||
+    habit.archived === true && Array.isArray(habit.userIds) && habit.userIds.length === 0
+  if (schedule?.type === 'anytime' && (habit.isTask || habit.isNegative || !validSingleAssignee ||
       habit.targetCompletions !== undefined && habit.targetCompletions !== 1 || habit.reminderTime !== undefined)) {
     throw new Error('Any-time actions require one assignee and one completion per reward')
   }
@@ -91,7 +94,7 @@ export function validateHabit(habit: Habit, existingFrequency?: string): Habit {
     if (!habit.isNegative) throw new Error('Coin penalty requires a negative habit')
   }
   if (habit.isNegative && (habit.isTask || habit.targetCompletions && habit.targetCompletions !== 1 ||
-      habit.requiresApproval || habit.coinBoost || habit.userIds?.length !== 1)) throw new Error('Invalid negative habit settings')
+      habit.requiresApproval || habit.coinBoost || !validSingleAssignee)) throw new Error('Invalid negative habit settings')
   if (habit.slips !== undefined && (!habit.isNegative || !Array.isArray(habit.slips) || habit.slips.length > 20_000 ||
       new Set(habit.slips.map(slip => slip?.id)).size !== habit.slips.length || habit.slips.some(slip =>
         !slip || typeof slip.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(slip.id) ||

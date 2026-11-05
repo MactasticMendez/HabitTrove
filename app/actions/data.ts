@@ -766,8 +766,8 @@ async function recordHabitCompletionImpl(habitId: string, timestamp: string, evi
       if (!request.requestId || request.beneficiaryId && request.beneficiaryId !== beneficiaryId) {
         throw new PermissionError('Invalid any-time completion recipient')
       }
-      const authData = await readDataUsers()
-      const actor = authData.users.find(account => account.id === user.id)
+      const actor = usesPostgres() && await getFamiliesEnabled()
+        ? user : (await readAuthData()).users.find(account => account.id === user.id)
       const isManager = !!actor && (actor.isAdmin || actor.managedUserIds?.includes(beneficiaryId))
       const isMember = user.id === beneficiaryId && (user.isAdmin || checkPermission(user.permissions, 'habit', 'interact'))
       const policy = habit.schedule.recordingPolicy
@@ -976,7 +976,8 @@ async function undoHabitCompletionImpl(habitId: string, completionIndex: number,
     const anytime = habit.schedule?.type === 'anytime'
     const potentialRecord = habit.completionRecords?.[completionIndex]
     if (anytime) {
-      const actor = (await readDataUsers()).users.find(account => account.id === user.id)
+      const actor = usesPostgres() && await getFamiliesEnabled()
+        ? user : (await readAuthData()).users.find(account => account.id === user.id)
       const inScope = !!actor && (actor.isAdmin || habit.userIds?.includes(actor.id) && checkPermission(actor.permissions, 'habit', 'interact') ||
         habit.userIds?.length === 1 && actor.managedUserIds?.includes(habit.userIds[0]))
       if (!inScope) throw new PermissionError('Habit interaction is not allowed')
