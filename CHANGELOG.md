@@ -25,6 +25,7 @@
 
 ### Security
 
+* Resolve the remaining lint-toolchain minimatch advisory with a scoped, Node 22-tested override and a reproducible lockfile; full and production npm audits report zero advisories.
 * Keep privacy checks in CI and restrict additional credential, dump and local-output files from Git and Docker contexts.
 
 ## Version 1.0.2

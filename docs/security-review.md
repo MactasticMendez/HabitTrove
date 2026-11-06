@@ -30,7 +30,9 @@ Git ignores and Docker exclusions protect local environment files, credential fi
 
 The current cleanup includes offline source review, tracked-content privacy searches and a separate reachable-history secret scan. It does not establish live credential validity, production identity-provider behavior, hosted artifact privacy or whole-application accessibility conformance. Detailed local results and remaining actions are reported with the cleanup rather than embedding private scan output in Git.
 
-The dependency advisory check on 2026-11-05 reported no production advisories and six moderate development-only rows from the lint toolchain, all cascading from [the minimatch amplification advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249). A compatible lint-toolchain update remains outstanding; no broad dependency or major-version override was applied.
+The dependency recheck on 2026-11-05 reported zero advisories in both the full and production-only npm audits. The six earlier moderate development rows all cascaded from [the minimatch amplification advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249). A scoped override moves only the TypeScript ESLint parser's minimatch dependency from 9.0.9 to the patched 11.0.1, already used elsewhere in this lockfile. Its CommonJS/named API and Node engine support were checked, including typed project-service glob inclusion/exclusion before and after a clean npm 10 install on Node 22.23.4. Retain the override until a compatible parent dependency requires a patched version; a newer parent release alone may still select an affected version.
+
+The existing React/emoji-picker and Auth.js/mail peer-range warnings remain. The lint runner also warns that ESLint 9 is unsupported. These are compatibility/maintenance limits, not currently reported advisories; upgrading the framework/lint major or downgrading the patched mail transport is outside this focused fix. Audits are dated registry evidence rather than a guarantee against undisclosed vulnerabilities.
 
 Retain these operational assumptions:
 
