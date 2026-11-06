@@ -4,8 +4,10 @@
 
 ### Fixed
 
+* Keep the standalone CLI packaging test within its existing timeout on macOS by requesting filesystem clones with portable copy fallback.
 * Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.
 * Disable ineffective task move shortcuts for completion-relative schedules and pending approvals, with an accessible explanation and unchanged history.
+* Refresh notification guidance after browser permissions change, clearing stale test feedback.
 * Keep in-app reminders working when a platform exposes notification permission but rejects the page-level notification constructor.
 
 ### Added

@@ -14,7 +14,10 @@ export default function BrowserNotificationSettings({ enabled }: { enabled: bool
   const [feedback, setFeedback] = useState<'testSent' | 'testFailed' | 'requestFailed' | null>(null)
 
   useEffect(() => {
-    const refresh = () => setPermission(getBrowserNotificationPermission())
+    const refresh = () => {
+      setPermission(getBrowserNotificationPermission())
+      setFeedback(null)
+    }
     refresh()
     window.addEventListener('focus', refresh)
     return () => window.removeEventListener('focus', refresh)

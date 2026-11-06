@@ -66,3 +66,14 @@ test('permission request errors reach the UI without pretending permission was g
   await expect(requestBrowserNotificationPermission()).rejects.toThrow('Browser request failed')
   expect(getBrowserNotificationPermission()).toBe('default')
 })
+
+test('permission changes are read fresh without requesting or displaying after revocation', async () => {
+  const { calls, Notification } = browser('granted')
+  expect(showBrowserNotification('Before revocation')).toBe(true)
+  Notification.permission = 'denied'
+  expect(getBrowserNotificationPermission()).toBe('denied')
+  expect(await requestBrowserNotificationPermission()).toBe('denied')
+  expect(showBrowserNotification('After revocation')).toBe(false)
+  expect(calls.requests).toBe(0)
+  expect(calls.shown).toEqual(['Before revocation'])
+})
