@@ -27,7 +27,7 @@ function renderDailyOnly(isTask: boolean, overview = false) {
   }, {
     ...base, id: 'daily-relative', name: 'Daily relative fixture', taskRepeat: undefined,
     schedule: { type: 'afterCompletion', interval: 1, unit: 'days', startsOn: today.toISODate()! },
-  }, ...(isTask ? [{ ...base, id: 'one-off', name: 'One-off fixture', taskRepeat: undefined }] : [{
+  }, ...(!isTask ? [{ ...base, id: 'restricted', name: 'Restricted weekday fixture', frequency: 'FREQ=DAILY;BYDAY=' + ['MO','TU','WE','TH','FR','SA','SU'][today.weekday - 1] }] : []), ...(isTask ? [{ ...base, id: 'one-off', name: 'One-off fixture', taskRepeat: undefined }] : [{
     ...base, id: 'anytime', name: 'Anytime fixture', schedule: { type: 'anytime' as const, recordingPolicy: 'member' as const },
   }])]
   const store = createStore()
@@ -50,7 +50,10 @@ for (const isTask of [false, true]) {
       expect(html.includes('Alternate fixture')).toBe(false)
       expect(html.includes('Monthly relative fixture')).toBe(false)
       if (isTask) expect(html.includes('One-off fixture')).toBe(true)
-      else expect(html.includes('Anytime fixture')).toBe(false)
+      else {
+        expect(html.includes('Anytime fixture')).toBe(false)
+        expect(html.includes('Restricted weekday fixture')).toBe(false)
+      }
     })
   }
 }

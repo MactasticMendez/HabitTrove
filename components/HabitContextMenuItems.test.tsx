@@ -35,6 +35,7 @@ test('reschedule controls explain unsupported cycles and pending approval withou
       assert(moves.every(entry => entry.disabled === true), 'completion-relative moves must be disabled');
       assert(moves.every(entry => entry['aria-describedby']), 'disabled moves need an explanation');
       assert(html.includes(messages.HabitContextMenuItems.rescheduleAfterCompletionHelp));
+      assert(entries.find(entry => !entry.disabled)?.['aria-describedby'], 'first keyboard-reachable action must announce the move explanation');
       assert.equal(saved.length, 0);
       const pending = { ...base, completions: ['2026-01-01T12:00:00Z'], completionRecords: [{ id: 'pending', actorId: 'actor', approval: 'pending' }] };
       const waiting = render(pending, context);

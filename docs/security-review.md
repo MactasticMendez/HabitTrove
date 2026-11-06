@@ -10,6 +10,8 @@ OIDC uses discovery, PKCE, state and nonce. Accounts bind both subject and issue
 
 Family operations resolve a fresh actor, active membership, resource permissions and directed manager assignments. PostgreSQL transaction-local context and forced row-level security reinforce those boundaries. Global site administration does not grant implicit family oversight. Invitation acceptance binds the offered email, family and role, rechecks authority and consumes a hashed token transactionally.
 
+Foreground reminders use fresh read-only server actions under the existing account/family boundary. Results bind the current account and displayed family, exclude unassigned items, and are discarded after a switch/disable/unmount; failed checks never deliver cached private names. This narrows the authorization-to-delivery window without claiming atomic revocation of an OS notification already shown.
+
 SQL values are parameterized. Protected avatars and completion evidence require authorized routes, bounded image types and private response headers. Upload and backup paths reject traversal and symlinks. Backups capture consistent state and assets, verify checksums, and publish owner-only archives only after successful completion. Complete family recovery uses the version 2 raw format and a separate offline identity against an empty prepared target. Keep `AUTH_SECRET` separately; losing it prevents decryption of saved provider/mail credentials.
 
 ## OIDC upgrade

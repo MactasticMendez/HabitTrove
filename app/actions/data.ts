@@ -62,6 +62,7 @@ import { getFamilyScopedUser, readFamilyDirectory, readFamilySettings, saveFamil
 import { preflightNewHouseholdInvite, withHouseholdInviteEmail } from '@/lib/family-store'
 import { acquirePasswordVerification, reserveAuthenticationAttempt, clearAuthenticationAttempts } from '@/lib/auth-throttle'
 import { readCompletionLedger } from '@/lib/db/repository'
+import type { ReminderData } from '@/lib/reminders'
 
 
 
@@ -527,6 +528,21 @@ async function loadHabitsDataImpl(): Promise<HabitsData> {
     ...data,
     habits: data.habits.filter(x => familyItemVisible(x, user))
   }
+}
+
+async function loadReminderDataImpl(expectedFamilyId?: string): Promise<ReminderData | undefined> {
+  if (expectedFamilyId !== undefined && (typeof expectedFamilyId !== 'string' || !expectedFamilyId || expectedFamilyId.length > 128)) {
+    throw new Error('Invalid reminder family')
+  }
+  const user = await getCurrentDataUser()
+  if (!user || (!user.email && process.env.DEMO !== 'true')) return undefined
+  const data = await loadHabitsDataImpl()
+  // Another tab can change the shared family cookie while this page still displays the old family.
+  if (data.familyId !== expectedFamilyId) return undefined
+  const settings = await loadSettingsImpl()
+  return { userId: user.id, familyId: data.familyId, timezone: settings.system.timezone,
+    habits: data.habits.filter(habit => habit.userIds?.includes(user.id) && habit.reminderTime &&
+      !habit.archived && habit.schedule?.type !== 'anytime') }
 }
 
 async function saveHabitsDataImpl(data: HabitsData): Promise<HabitsData> {
@@ -2168,6 +2184,10 @@ export async function saveWishlistItems(...args: Parameters<typeof saveWishlistI
 
 export async function loadHabitsData(...args: Parameters<typeof loadHabitsDataImpl>): Promise<Awaited<ReturnType<typeof loadHabitsDataImpl>>> {
   return withSelectedFamilyAction(() => loadHabitsDataImpl(...args), true, async actor => getDefaultHabitsData())
+}
+
+export async function loadReminderData(...args: Parameters<typeof loadReminderDataImpl>): Promise<Awaited<ReturnType<typeof loadReminderDataImpl>>> {
+  return withSelectedFamilyAction(() => loadReminderDataImpl(...args), true, async () => undefined)
 }
 
 export async function saveHabitsData(...args: Parameters<typeof saveHabitsDataImpl>): Promise<Awaited<ReturnType<typeof saveHabitsDataImpl>>> {

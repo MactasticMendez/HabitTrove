@@ -476,6 +476,17 @@ export function isHabitDueToday({
   return isHabitDue({ habit, timezone, date: today })
 }
 
+function allowsEveryCalendarPosition(values: number[] | null, lengths: number[]): boolean {
+  if (!values?.length) return true
+  const positions = new Set(values)
+  return lengths.every(length => {
+    for (let day = 1; day <= length; day++) {
+      if (!positions.has(day) && !positions.has(day - length - 1)) return false
+    }
+    return true
+  })
+}
+
 export function isDailyScheduledItem(habit: Habit): boolean {
   if (habit.schedule?.type === 'anytime') return false
   if (habit.schedule?.type === 'afterCompletion') {
@@ -484,7 +495,17 @@ export function isDailyScheduledItem(habit: Habit): boolean {
   if (habit.isTask) return !habit.taskRepeat ||
     habit.taskRepeat === 'daily' && (habit.taskRepeatInterval ?? 1) === 1
   const rule = deserializeRRule(habit.frequency)
-  return !!rule && rule.options.freq === RRule.DAILY && rule.options.interval === 1
+  if (!rule || rule.options.freq !== RRule.DAILY || rule.options.interval !== 1) return false
+  const options = rule.options
+  // Date filters can make a DAILY rule weekly, monthly or yearly; time filters alone do not.
+  if (options.byeaster !== null || options.bynweekday?.length ||
+      options.byweekday && new Set(options.byweekday).size !== 7 ||
+      !allowsEveryCalendarPosition(options.bymonth, [12]) ||
+      !allowsEveryCalendarPosition([...options.bymonthday, ...options.bynmonthday], [28, 29, 30, 31]) ||
+      !allowsEveryCalendarPosition(options.byyearday, [365, 366]) ||
+      !allowsEveryCalendarPosition(options.byweekno, [52, 53])) return false
+  const timesPerDay = options.byhour.length * options.byminute.length * options.bysecond.length
+  return !options.bysetpos?.length || options.bysetpos.some(position => position !== 0 && Math.abs(position) <= timesPerDay)
 }
 
 export function getHabitFreq(habit: Habit): Freq {

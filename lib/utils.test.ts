@@ -19,6 +19,7 @@ import {
   filterCoinTransactions,
   calculateCoinsSpentToday,
   isHabitDueToday,
+  isDailyScheduledItem,
   isHabitDue,
   getUndoableCompletionIndex,
   uuid,
@@ -1259,4 +1260,18 @@ describe('freshness utilities', () => {
       expect(actualHash).toBe(expectedHash);
     });
   });
+})
+
+
+test('Daily only respects legacy calendar restrictions while retaining daily time/bound filters', () => {
+  const base = { id: 'daily-filter', name: 'Daily filter', description: '', coinReward: 1, completions: [] }
+  for (const frequency of ['FREQ=DAILY;BYDAY=MO', 'FREQ=DAILY;BYMONTH=1', 'FREQ=DAILY;BYMONTHDAY=-1',
+    'FREQ=DAILY;BYYEARDAY=1', 'FREQ=DAILY;BYWEEKNO=1', 'FREQ=DAILY;BYSETPOS=2']) {
+    expect(isDailyScheduledItem({ ...base, frequency })).toBe(false)
+  }
+  for (const frequency of ['FREQ=DAILY', 'FREQ=DAILY;COUNT=3', 'FREQ=DAILY;BYHOUR=8,16;BYSETPOS=2',
+    'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SA,SU', 'FREQ=DAILY;BYMONTH=1,2,3,4,5,6,7,8,9,10,11,12',
+    'FREQ=DAILY;BYMONTHDAY=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31']) {
+    expect(isDailyScheduledItem({ ...base, frequency })).toBe(true)
+  }
 })

@@ -3,6 +3,8 @@ import type { Habit } from './types'
 import { getCompletionsForDate, isHabitDue } from './utils'
 import { getTaskMissedDates } from './task-schedule'
 
+export type ReminderData = { userId: string; familyId?: string; timezone: string; habits: Habit[] }
+
 export function reminderDueDate(habit: Habit, now: DateTime, timezone: string, leadMinutes: number): string | null {
   if (!habit.reminderTime || habit.archived || !Number.isFinite(leadMinutes) || leadMinutes < 0 || leadMinutes > 60) return null
   const localNow = now.setZone(timezone)

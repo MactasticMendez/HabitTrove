@@ -54,6 +54,7 @@ export function HabitContextMenuItems({
       {!habit.archived && (
         <MenuItemComponent
           disabled={!canInteract}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => {
             setPomo((prev) => ({
               ...prev,
@@ -102,6 +103,7 @@ export function HabitContextMenuItems({
       {!habit.archived && (
         <MenuItemComponent
           disabled={!canWrite}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => saveHabit({ ...habit, pinned: !habit.pinned }))}
         >
           <Pin className="mr-2 h-4 w-4" />
