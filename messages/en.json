@@ -572,6 +572,22 @@
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} completed"
   },
+  "BrowserNotifications": {
+    "title": "Browser notifications",
+    "help": "Reminder names may appear on your screen. The site must stay open; in-app reminders remain available without browser permission.",
+    "default": "Allow browser notifications if you want alerts outside this page.",
+    "granted": "Browser permission is granted. You can send a test notification.",
+    "denied": "Notifications are blocked. Change this site’s browser permissions to allow them; in-app reminders still work.",
+    "unavailable": "Browser notifications are unavailable here. Use HTTPS and a supported browser; in-app reminders still work.",
+    "enable": "Enable browser notifications",
+    "requesting": "Requesting permission…",
+    "test": "Send test notification",
+    "testTitle": "HabitTrove notification test",
+    "testBody": "Browser notifications are working. Keep the site open for reminders.",
+    "testSent": "Test notification sent.",
+    "testFailed": "This browser could not show a notification. In-app reminders remain available.",
+    "requestFailed": "The permission request failed. Try again or use in-app reminders."
+  },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",
     "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",

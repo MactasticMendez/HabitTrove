@@ -66,6 +66,8 @@ Schedule modes are fixed once an item has completion or slip history; create a n
 
 Task-menu **Move to Today** and **Move to Tomorrow** shortcuts are unavailable for completion-relative tasks and while approval is pending. The menu explains the restriction; these shortcuts do not alter a completion-relative cycle or its history.
 
+With pop-up reminders enabled, **Settings → Preferences → Browser notifications** offers an explicit permission request and a test notification. Browser permission is optional: in-app reminders still work if permission is denied, the browser is unsupported or a system notification cannot be shown. Reminder names may appear on your screen. Browser notifications require a secure context and platform support; the site must remain open. This does not enable background push delivery.
+
 ## Docker Deployment
 
 Build this checkout; the upstream image does not contain this fork's changes. Version 1.0.0 requires PostgreSQL for production. Existing v0.9 installations retain their current access until an operator explicitly prepares, maps and activates families. PostgreSQL is authoritative for accounts, settings, habits, rewards, coins and attachment metadata; `/app/data` retains protected avatar/evidence files. Existing JSON is migration evidence, not a writable fallback.

@@ -464,6 +464,22 @@
   "CompletionCountBadge": {
     "countCompleted": "完了 {completedCount}/{totalCount}"
   },
+  "BrowserNotifications": {
+    "title": "ブラウザー通知",
+    "help": "リマインダー名が画面に表示される場合があります。サイトを開いたままにしてください。アプリ内のリマインダーはブラウザーの許可なしでも利用できます。",
+    "default": "このページの外でも通知を受け取るには、ブラウザー通知を許可してください。",
+    "granted": "ブラウザーの許可が付与されています。テスト通知を送信できます。",
+    "denied": "通知がブロックされています。このサイトのブラウザー権限を変更してください。アプリ内のリマインダーは引き続き利用できます。",
+    "unavailable": "ここではブラウザー通知を利用できません。HTTPSと対応ブラウザーを使用してください。アプリ内のリマインダーは引き続き利用できます。",
+    "enable": "ブラウザー通知を有効にする",
+    "requesting": "許可をリクエスト中…",
+    "test": "テスト通知を送信",
+    "testTitle": "HabitTroveの通知テスト",
+    "testBody": "ブラウザー通知は動作しています。リマインダーのためにサイトを開いたままにしてください。",
+    "testSent": "テスト通知を送信しました。",
+    "testFailed": "このブラウザーでは通知を表示できませんでした。アプリ内のリマインダーは引き続き利用できます。",
+    "requestFailed": "許可のリクエストに失敗しました。再試行するか、アプリ内のリマインダーを使用してください。"
+  },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",
     "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",

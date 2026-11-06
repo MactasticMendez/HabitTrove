@@ -464,6 +464,22 @@
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} completat"
   },
+  "BrowserNotifications": {
+    "title": "Notificacions del navegador",
+    "help": "Els noms dels recordatoris poden aparèixer a la pantalla. El lloc ha de romandre obert; els recordatoris dins de l’aplicació no necessiten permís del navegador.",
+    "default": "Permet les notificacions del navegador per rebre avisos fora d’aquesta pàgina.",
+    "granted": "El navegador ha concedit el permís. Pots enviar una notificació de prova.",
+    "denied": "Les notificacions estan bloquejades. Canvia els permisos d’aquest lloc al navegador; els recordatoris dins de l’aplicació continuen funcionant.",
+    "unavailable": "Les notificacions del navegador no estan disponibles aquí. Fes servir HTTPS i un navegador compatible; els recordatoris dins de l’aplicació continuen funcionant.",
+    "enable": "Activa les notificacions del navegador",
+    "requesting": "Sol·licitant permís…",
+    "test": "Envia una notificació de prova",
+    "testTitle": "Prova de notificació de HabitTrove",
+    "testBody": "Les notificacions funcionen. Mantén el lloc obert per rebre recordatoris.",
+    "testSent": "Notificació de prova enviada.",
+    "testFailed": "Aquest navegador no ha pogut mostrar la notificació. Els recordatoris dins de l’aplicació continuen disponibles.",
+    "requestFailed": "La sol·licitud de permís ha fallat. Torna-ho a provar o utilitza els recordatoris dins de l’aplicació."
+  },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",
     "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",

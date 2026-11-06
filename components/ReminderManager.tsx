@@ -7,6 +7,7 @@ import { browserSettingsAtom, currentUserAtom, habitsAtom, settingsAtom } from '
 import { reminderDueDate } from '@/lib/reminders'
 import { useTranslations } from 'next-intl'
 import { toast } from '@/hooks/use-toast'
+import { showBrowserNotification } from '@/lib/browser-notifications'
 
 export default function ReminderManager() {
   const browserSettings = useAtomValue(browserSettingsAtom)
@@ -27,9 +28,7 @@ export default function ReminderManager() {
         if (localStorage.getItem(key) === date) continue
         localStorage.setItem(key, date)
         toast({ title: t('title'), description: t('body', { name: habit.name }) })
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(t('title'), { body: t('body', { name: habit.name }), tag: key })
-        }
+        showBrowserNotification(t('title'), { body: t('body', { name: habit.name }), tag: key })
       }
     }
     check()

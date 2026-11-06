@@ -6,9 +6,11 @@
 
 * Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.
 * Disable ineffective task move shortcuts for completion-relative schedules and pending approvals, with an accessible explanation and unchanged history.
+* Keep in-app reminders working when a platform exposes notification permission but rejects the page-level notification constructor.
 
 ### Added
 
+* Add browser notification permission setup, a test notification and denied/unsupported guidance for foreground reminders.
 * Check tracked files for private contact details, non-example IP addresses, credential material and runtime artifacts before publication.
 
 ### Changed

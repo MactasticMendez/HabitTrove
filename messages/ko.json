@@ -464,6 +464,22 @@
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} 완료됨"
   },
+  "BrowserNotifications": {
+    "title": "브라우저 알림",
+    "help": "화면에 알림 이름이 표시될 수 있습니다. 사이트를 열어 두어야 합니다. 앱 내 알림은 브라우저 권한 없이도 사용할 수 있습니다.",
+    "default": "이 페이지 밖에서도 알림을 받으려면 브라우저 알림을 허용하세요.",
+    "granted": "브라우저 권한이 허용되었습니다. 테스트 알림을 보낼 수 있습니다.",
+    "denied": "알림이 차단되었습니다. 이 사이트의 브라우저 권한을 변경하세요. 앱 내 알림은 계속 작동합니다.",
+    "unavailable": "여기서는 브라우저 알림을 사용할 수 없습니다. HTTPS와 지원되는 브라우저를 사용하세요. 앱 내 알림은 계속 작동합니다.",
+    "enable": "브라우저 알림 활성화",
+    "requesting": "권한 요청 중…",
+    "test": "테스트 알림 보내기",
+    "testTitle": "HabitTrove 알림 테스트",
+    "testBody": "브라우저 알림이 작동합니다. 알림을 받으려면 사이트를 열어 두세요.",
+    "testSent": "테스트 알림을 보냈습니다.",
+    "testFailed": "이 브라우저에서 알림을 표시하지 못했습니다. 앱 내 알림은 계속 사용할 수 있습니다.",
+    "requestFailed": "권한 요청에 실패했습니다. 다시 시도하거나 앱 내 알림을 사용하세요."
+  },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",
     "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",

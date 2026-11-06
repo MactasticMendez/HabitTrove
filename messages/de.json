@@ -464,6 +464,22 @@
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} abgeschlossen"
   },
+  "BrowserNotifications": {
+    "title": "Browser-Benachrichtigungen",
+    "help": "Erinnerungsnamen können auf deinem Bildschirm erscheinen. Die Seite muss geöffnet bleiben; Erinnerungen innerhalb der App funktionieren ohne Browser-Erlaubnis.",
+    "default": "Erlaube Browser-Benachrichtigungen, um Hinweise außerhalb dieser Seite zu erhalten.",
+    "granted": "Die Browser-Erlaubnis wurde erteilt. Du kannst eine Testbenachrichtigung senden.",
+    "denied": "Benachrichtigungen sind blockiert. Ändere die Browser-Berechtigungen dieser Website; Erinnerungen innerhalb der App funktionieren weiterhin.",
+    "unavailable": "Browser-Benachrichtigungen sind hier nicht verfügbar. Verwende HTTPS und einen unterstützten Browser; Erinnerungen innerhalb der App funktionieren weiterhin.",
+    "enable": "Browser-Benachrichtigungen aktivieren",
+    "requesting": "Erlaubnis wird angefragt…",
+    "test": "Testbenachrichtigung senden",
+    "testTitle": "HabitTrove-Testbenachrichtigung",
+    "testBody": "Browser-Benachrichtigungen funktionieren. Lass die Seite für Erinnerungen geöffnet.",
+    "testSent": "Testbenachrichtigung gesendet.",
+    "testFailed": "Dieser Browser konnte keine Benachrichtigung anzeigen. Erinnerungen innerhalb der App bleiben verfügbar.",
+    "requestFailed": "Die Berechtigungsanfrage ist fehlgeschlagen. Versuche es erneut oder nutze Erinnerungen innerhalb der App."
+  },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",
     "remindersHelp": "Show reminders while this site is open. Times use the app timezone.",
