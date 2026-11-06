@@ -106,6 +106,8 @@
     "startPomodoro": "Démarrer Pomodoro",
     "moveToToday": "Déplacer à aujourd'hui",
     "moveToTomorrow": "Déplacer à demain",
+    "rescheduleAfterCompletionHelp": "Les raccourcis de déplacement ne sont pas disponibles pour les tâches qui se répètent après leur achèvement.",
+    "reschedulePendingHelp": "Traitez les approbations en attente avant de déplacer cette tâche.",
     "unpin": "Détacher",
     "pin": "Attacher",
     "edit": "Modifier",

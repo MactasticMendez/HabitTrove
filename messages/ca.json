@@ -106,6 +106,8 @@
     "startPomodoro": "Inicia Pomodoro",
     "moveToToday": "Mou a avui",
     "moveToTomorrow": "Mou a demà",
+    "rescheduleAfterCompletionHelp": "Les dreceres per moure no estan disponibles per a les tasques que es repeteixen després de completar-les.",
+    "reschedulePendingHelp": "Resol les aprovacions pendents abans de moure aquesta tasca.",
     "unpin": "Desfixa",
     "pin": "Fixa",
     "edit": "Edita",

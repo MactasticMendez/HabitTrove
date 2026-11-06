@@ -106,6 +106,8 @@
     "startPomodoro": "뽀모도로 시작",
     "moveToToday": "오늘로 이동",
     "moveToTomorrow": "내일로 이동",
+    "rescheduleAfterCompletionHelp": "완료 후 반복되는 작업에는 이동 바로가기를 사용할 수 없습니다.",
+    "reschedulePendingHelp": "이 작업을 이동하기 전에 대기 중인 승인을 처리하세요.",
     "unpin": "고정 해제",
     "pin": "고정",
     "edit": "수정",

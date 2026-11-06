@@ -64,6 +64,8 @@ Also, try [TaskTrove](https://github.com/dohsimpson/TaskTrove):
 
 Schedule modes are fixed once an item has completion or slip history; create a new item to change its mode without reinterpreting old records. Resolve pending approvals before changing schedules, recording permissions or assignees. For completion-relative items, record cycles in date order and undo later cycles before correcting an earlier one. Monthly calendar dates that do not exist in a month are skipped; choose **Last day** when every month should have an occurrence.
 
+Task-menu **Move to Today** and **Move to Tomorrow** shortcuts are unavailable for completion-relative tasks and while approval is pending. The menu explains the restriction; these shortcuts do not alter a completion-relative cycle or its history.
+
 ## Docker Deployment
 
 Build this checkout; the upstream image does not contain this fork's changes. Version 1.0.0 requires PostgreSQL for production. Existing v0.9 installations retain their current access until an operator explicitly prepares, maps and activates families. PostgreSQL is authoritative for accounts, settings, habits, rewards, coins and attachment metadata; `/app/data` retains protected avatar/evidence files. Existing JSON is migration evidence, not a writable fallback.

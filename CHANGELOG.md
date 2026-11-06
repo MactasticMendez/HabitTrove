@@ -5,6 +5,7 @@
 ### Fixed
 
 * Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.
+* Disable ineffective task move shortcuts for completion-relative schedules and pending approvals, with an accessible explanation and unchanged history.
 
 ### Added
 

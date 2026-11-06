@@ -106,6 +106,8 @@
     "startPomodoro": "开始番茄钟",
     "moveToToday": "移动到今天",
     "moveToTomorrow": "移动到明天",
+    "rescheduleAfterCompletionHelp": "完成后重复的任务无法使用移动快捷操作。",
+    "reschedulePendingHelp": "移动此任务前，请先处理待审批事项。",
     "unpin": "取消固定",
     "pin": "固定",
     "edit": "编辑",

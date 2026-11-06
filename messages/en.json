@@ -118,6 +118,8 @@
     "startPomodoro": "Start Pomodoro",
     "moveToToday": "Move to Today",
     "moveToTomorrow": "Move to Tomorrow",
+    "rescheduleAfterCompletionHelp": "Move shortcuts are unavailable for tasks that repeat after completion.",
+    "reschedulePendingHelp": "Resolve pending approvals before moving this task.",
     "unpin": "Unpin",
     "pin": "Pin",
     "edit": "Edit",

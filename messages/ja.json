@@ -106,6 +106,8 @@
     "startPomodoro": "ポモドーロを開始",
     "moveToToday": "今日に移動",
     "moveToTomorrow": "明日に移動",
+    "rescheduleAfterCompletionHelp": "完了後に繰り返すタスクでは、移動のショートカットは利用できません。",
+    "reschedulePendingHelp": "このタスクを移動する前に、保留中の承認を処理してください。",
     "unpin": "ピン留めを解除",
     "pin": "ピン留めする",
     "edit": "編集",

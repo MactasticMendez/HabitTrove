@@ -106,6 +106,8 @@
     "startPomodoro": "Iniciar Pomodoro",
     "moveToToday": "Mover a hoy",
     "moveToTomorrow": "Mover a mañana",
+    "rescheduleAfterCompletionHelp": "Los atajos para mover no están disponibles para tareas que se repiten después de completarse.",
+    "reschedulePendingHelp": "Resuelve las aprobaciones pendientes antes de mover esta tarea.",
     "unpin": "Desanclar",
     "pin": "Anclar",
     "edit": "Editar",

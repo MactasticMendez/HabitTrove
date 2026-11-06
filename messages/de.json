@@ -106,6 +106,8 @@
     "startPomodoro": "Pomodoro starten",
     "moveToToday": "Auf heute verschieben",
     "moveToTomorrow": "Auf morgen verschieben",
+    "rescheduleAfterCompletionHelp": "Verschieben ist für Aufgaben, die sich nach Abschluss wiederholen, nicht verfügbar.",
+    "reschedulePendingHelp": "Kläre ausstehende Genehmigungen, bevor du diese Aufgabe verschiebst.",
     "unpin": "Abheften",
     "pin": "Anheften",
     "edit": "Bearbeiten",
