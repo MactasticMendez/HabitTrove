@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+* Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.
+
 ### Added
 
 * Check tracked files for private contact details, non-example IP addresses, credential material and runtime artifacts before publication.

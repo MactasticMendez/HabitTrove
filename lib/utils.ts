@@ -476,6 +476,17 @@ export function isHabitDueToday({
   return isHabitDue({ habit, timezone, date: today })
 }
 
+export function isDailyScheduledItem(habit: Habit): boolean {
+  if (habit.schedule?.type === 'anytime') return false
+  if (habit.schedule?.type === 'afterCompletion') {
+    return habit.schedule.unit === 'days' && habit.schedule.interval === 1
+  }
+  if (habit.isTask) return !habit.taskRepeat ||
+    habit.taskRepeat === 'daily' && (habit.taskRepeatInterval ?? 1) === 1
+  const rule = deserializeRRule(habit.frequency)
+  return !!rule && rule.options.freq === RRule.DAILY && rule.options.interval === 1
+}
+
 export function getHabitFreq(habit: Habit): Freq {
   if (habit.isTask) {
     if (habit.schedule?.type === 'afterCompletion') {
