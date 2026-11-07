@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input' // Added
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select' // Added
 import { Label } from '@/components/ui/label' // Added
 import { DateTime } from 'luxon' // Added
-import { checkPermission, getHabitFreq } from '@/lib/utils'
+import { checkPermission, getHabitFreq, isDailyScheduledItem } from '@/lib/utils'
 import { savePersonalFolders } from '@/app/actions/data'
 import type { PersonalFolder } from '@/lib/types'
 import { uuid } from '@/lib/utils'
@@ -98,7 +98,7 @@ export default function HabitList() {
   const allHabitsInView = useMemo(() => {
     return habitsData.habits.filter(habit =>
       (isTasksView ? habit.isTask : !habit.isTask) &&
-      (!browserSettings.hideNonDaily || (habit.isTask ? !habit.taskRepeat || habit.taskRepeat === 'daily' : getHabitFreq(habit) === 'daily'))
+      (!browserSettings.hideNonDaily || isDailyScheduledItem(habit))
     );
   }, [habitsData.habits, isTasksView, browserSettings.hideNonDaily]);
 

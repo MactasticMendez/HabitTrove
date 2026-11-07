@@ -2,7 +2,7 @@ import { expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createStore, Provider } from 'jotai'
 import { NextIntlClientProvider } from 'next-intl'
-import { currentUserIdAtom, serverSettingsAtom, usersAtom } from '@/lib/atoms'
+import { browserSettingsAtom, currentUserIdAtom, serverSettingsAtom, usersAtom } from '@/lib/atoms'
 import { getDefaultServerSettings } from '@/lib/types'
 import messages from '@/messages/en.json'
 
@@ -12,17 +12,25 @@ const { default: Navigation } = await import('@/components/Navigation')
 const { default: HabitList } = await import('@/components/HabitList')
 const { default: UserForm } = await import('@/components/UserForm')
 
-function render(role?: 'member' | 'manager' | 'owner' | 'site-admin', isAdmin = false, familiesEnabled = true, outsider = false) {
+function render(role?: 'member' | 'manager' | 'owner' | 'site-admin', isAdmin = false, familiesEnabled = true, outsider = false, remindersEnabled = false) {
   const store = createStore()
   store.set(serverSettingsAtom, { ...getDefaultServerSettings(), familiesEnabled, familyRole: role, familyMember: !!role && !outsider })
   const actor = { id: 'actor', username: 'Actor', email: 'actor@example.test', isAdmin, managedUserIds: [], hasPassword: true, hasOidc: false,
     personalFolders: [{ id: 'stale', name: 'Other household folder', itemIds: [] }] }
   store.set(usersAtom, outsider ? { users: [{ id: 'member', username: 'Member', hasPassword: true, hasOidc: false }], currentUser: actor } : { users: [actor] })
   store.set(currentUserIdAtom, 'actor')
+  store.set(browserSettingsAtom, { ...store.get(browserSettingsAtom), remindersEnabled })
   return renderToStaticMarkup(<Provider store={store}><NextIntlClientProvider locale="en" timeZone="UTC" messages={messages}>
     <SettingsPage /><Navigation viewPort="main" />{outsider && <><HabitList /><UserForm userId="actor" onCancel={() => {}} onSuccess={() => {}} /></>}
   </NextIntlClientProvider></Provider>)
 }
+
+test('members with foreground reminders enabled receive browser notification setup and fallback guidance', () => {
+  const html = render('member', false, true, false, true)
+  expect(html.includes('Browser notifications')).toBe(true)
+  expect(html.includes('The site must stay open')).toBe(true)
+  expect(render('member').includes('Browser notifications')).toBe(false)
+})
 
 test('all family members can open membership and personal language without owner or infrastructure privileges', () => {
   for (const role of ['member', 'manager'] as const) {

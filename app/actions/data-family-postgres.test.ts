@@ -118,6 +118,51 @@ else {
       if (directory) await fs.rm(directory, { recursive: true, force: true })
     })
 
+    test('reminder snapshots bind the current account and selected family and exclude unassigned items', async () => {
+      for (const family of ['A', 'B']) await scoped(family, async () => {
+        const data = await readDocument<HabitsData>('habits')
+        await writeDocument('habits', { ...data, habits: data!.habits.map(item => ({ ...item, reminderTime: '00:00' })) })
+      })
+      as('dual', 'A')
+      const a = await actions.loadReminderData('A')
+      expect(a).toMatchObject({ userId: 'dual', familyId: 'A', timezone: 'UTC' })
+      expect(a?.habits.map(item => item.id).sort()).toEqual(['habit-a', 'shared-a'])
+      as('dual', 'B')
+      expect(await actions.loadReminderData('A')).toBeUndefined()
+      const b = await actions.loadReminderData('B')
+      expect(b).toMatchObject({ userId: 'dual', familyId: 'B', timezone: 'Asia/Tokyo' })
+      expect(b?.habits.map(item => item.id)).toEqual(['habit-b'])
+      as('managerA', 'A')
+      expect((await actions.loadReminderData('A'))?.habits).toEqual([])
+      as('noFamily', undefined)
+      expect(await actions.loadReminderData()).toBeUndefined()
+      as('dual', 'A')
+      await expect(actions.loadReminderData('x'.repeat(129))).rejects.toThrow('Invalid reminder family')
+    })
+
+    test('an open-tab reminder read drops removed assignments and revoked family membership', async () => {
+      await scoped('A', async () => {
+        const data = await readDocument<HabitsData>('habits')
+        await writeDocument('habits', { ...data, habits: data!.habits.map(item => ({ ...item, reminderTime: '00:00' })) })
+      })
+      expect((await actions.loadReminderData('A'))?.habits.length).toBe(2)
+      await scoped('A', async () => {
+        const data = await readDocument<HabitsData>('habits')
+        await writeDocument('habits', { ...data, habits: data!.habits.map(item => ({ ...item, userIds: ['peerA'] })) })
+      })
+      expect((await actions.loadReminderData('A'))?.habits).toEqual([])
+      await removeMembership('A', 'dual')
+      expect(await actions.loadReminderData('A')).toBeUndefined()
+      as('dual', 'B')
+      expect(await actions.loadReminderData('B')).toMatchObject({ userId: 'dual', familyId: 'B' })
+    })
+
+    test('reminder reads reject a stale authenticated actor after credentials are invalidated', async () => {
+      sessionActorOverride = { ...account('dual'), authVersion: 0 }
+      await owner.query("UPDATE habittrove.users SET auth_version=1 WHERE id='dual'")
+      await expect(actions.loadReminderData('A')).rejects.toThrow('Unauthorized')
+    })
+
     test('the actual runtime identity is restricted and cannot write the global summary directly', async () => {
       const identity = await withStorageTransaction(async () => (await currentDatabaseClient()!.query('SELECT current_user AS name,rolsuper,rolcreatedb,rolcreaterole,rolbypassrls FROM pg_roles WHERE rolname=current_user')).rows[0])
       expect(identity).toEqual({ name: decodeURIComponent(new URL(process.env.DATABASE_URL!).username), rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolbypassrls: false })

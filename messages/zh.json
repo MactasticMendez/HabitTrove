@@ -106,6 +106,8 @@
     "startPomodoro": "开始番茄钟",
     "moveToToday": "移动到今天",
     "moveToTomorrow": "移动到明天",
+    "rescheduleAfterCompletionHelp": "完成后重复的任务无法使用移动快捷操作。",
+    "reschedulePendingHelp": "移动此任务前，请先处理待审批事项。",
     "unpin": "取消固定",
     "pin": "固定",
     "edit": "编辑",
@@ -461,6 +463,22 @@
   },
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} 已完成"
+  },
+  "BrowserNotifications": {
+    "title": "浏览器通知",
+    "help": "提醒名称可能会显示在屏幕上。网站必须保持打开；应用内提醒无需浏览器权限也能使用。",
+    "default": "允许浏览器通知，以便在此页面之外收到提醒。",
+    "granted": "已获得浏览器权限，可以发送测试通知。",
+    "denied": "通知已被阻止。请更改此网站的浏览器权限；应用内提醒仍可正常使用。",
+    "unavailable": "此处无法使用浏览器通知。请使用 HTTPS 和支持的浏览器；应用内提醒仍可正常使用。",
+    "enable": "启用浏览器通知",
+    "requesting": "正在请求权限…",
+    "test": "发送测试通知",
+    "testTitle": "HabitTrove 通知测试",
+    "testBody": "浏览器通知正常。请保持网站打开以接收提醒。",
+    "testSent": "测试通知已发送。",
+    "testFailed": "此浏览器无法显示通知。应用内提醒仍然可用。",
+    "requestFailed": "请求权限失败。请重试或使用应用内提醒。"
   },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",

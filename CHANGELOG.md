@@ -2,8 +2,20 @@
 
 ## Unreleased
 
+## Version 1.0.3
+
+### Fixed
+
+* Exclude calendar-restricted legacy daily rules from Daily only while retaining daily time filters, and announce move explanations on keyboard-reachable menu actions.
+* Keep the standalone CLI packaging test within its existing timeout on macOS by requesting filesystem clones with portable copy fallback.
+* Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.
+* Disable ineffective task move shortcuts for completion-relative schedules and pending approvals, with an accessible explanation and unchanged history.
+* Refresh notification guidance after browser permissions change, clearing stale test feedback.
+* Keep in-app reminders working when a platform exposes notification permission but rejects the page-level notification constructor.
+
 ### Added
 
+* Add browser notification permission setup, a test notification and denied/unsupported guidance for foreground reminders.
 * Check tracked files for private contact details, non-example IP addresses, credential material and runtime artifacts before publication.
 
 ### Changed
@@ -18,6 +30,8 @@
 
 ### Security
 
+* Reauthorize foreground reminder reads with the current account and selected family; suppress revoked/unassigned items, failed checks and obsolete in-flight responses.
+* Resolve the remaining lint-toolchain minimatch advisory with a scoped, Node 22-tested override and a reproducible lockfile; full and production npm audits report zero advisories.
 * Keep privacy checks in CI and restrict additional credential, dump and local-output files from Git and Docker contexts.
 
 ## Version 1.0.2

@@ -106,6 +106,8 @@
     "startPomodoro": "Démarrer Pomodoro",
     "moveToToday": "Déplacer à aujourd'hui",
     "moveToTomorrow": "Déplacer à demain",
+    "rescheduleAfterCompletionHelp": "Les raccourcis de déplacement ne sont pas disponibles pour les tâches qui se répètent après leur achèvement.",
+    "reschedulePendingHelp": "Traitez les approbations en attente avant de déplacer cette tâche.",
     "unpin": "Détacher",
     "pin": "Attacher",
     "edit": "Modifier",
@@ -461,6 +463,22 @@
   },
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} complété"
+  },
+  "BrowserNotifications": {
+    "title": "Notifications du navigateur",
+    "help": "Les noms des rappels peuvent apparaître à l’écran. Le site doit rester ouvert ; les rappels dans l’application fonctionnent sans autorisation du navigateur.",
+    "default": "Autorisez les notifications du navigateur pour recevoir des alertes en dehors de cette page.",
+    "granted": "L’autorisation du navigateur est accordée. Vous pouvez envoyer une notification de test.",
+    "denied": "Les notifications sont bloquées. Modifiez les autorisations de ce site dans le navigateur ; les rappels dans l’application fonctionnent toujours.",
+    "unavailable": "Les notifications du navigateur sont indisponibles ici. Utilisez HTTPS et un navigateur compatible ; les rappels dans l’application fonctionnent toujours.",
+    "enable": "Activer les notifications du navigateur",
+    "requesting": "Demande d’autorisation…",
+    "test": "Envoyer une notification de test",
+    "testTitle": "Test de notification HabitTrove",
+    "testBody": "Les notifications fonctionnent. Gardez le site ouvert pour les rappels.",
+    "testSent": "Notification de test envoyée.",
+    "testFailed": "Ce navigateur n’a pas pu afficher de notification. Les rappels dans l’application restent disponibles.",
+    "requestFailed": "La demande d’autorisation a échoué. Réessayez ou utilisez les rappels dans l’application."
   },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",

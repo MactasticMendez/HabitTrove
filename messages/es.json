@@ -106,6 +106,8 @@
     "startPomodoro": "Iniciar Pomodoro",
     "moveToToday": "Mover a hoy",
     "moveToTomorrow": "Mover a mañana",
+    "rescheduleAfterCompletionHelp": "Los atajos para mover no están disponibles para tareas que se repiten después de completarse.",
+    "reschedulePendingHelp": "Resuelve las aprobaciones pendientes antes de mover esta tarea.",
     "unpin": "Desanclar",
     "pin": "Anclar",
     "edit": "Editar",
@@ -461,6 +463,22 @@
   },
   "CompletionCountBadge": {
     "countCompleted": "{completedCount}/{totalCount} completado"
+  },
+  "BrowserNotifications": {
+    "title": "Notificaciones del navegador",
+    "help": "Los nombres de los recordatorios pueden aparecer en la pantalla. El sitio debe permanecer abierto; los recordatorios dentro de la aplicación no necesitan permiso del navegador.",
+    "default": "Permite las notificaciones del navegador para recibir avisos fuera de esta página.",
+    "granted": "El navegador ha concedido el permiso. Puedes enviar una notificación de prueba.",
+    "denied": "Las notificaciones están bloqueadas. Cambia los permisos de este sitio en el navegador; los recordatorios dentro de la aplicación siguen funcionando.",
+    "unavailable": "Las notificaciones del navegador no están disponibles aquí. Usa HTTPS y un navegador compatible; los recordatorios dentro de la aplicación siguen funcionando.",
+    "enable": "Activar notificaciones del navegador",
+    "requesting": "Solicitando permiso…",
+    "test": "Enviar notificación de prueba",
+    "testTitle": "Prueba de notificación de HabitTrove",
+    "testBody": "Las notificaciones funcionan. Mantén el sitio abierto para recibir recordatorios.",
+    "testSent": "Notificación de prueba enviada.",
+    "testFailed": "Este navegador no pudo mostrar una notificación. Los recordatorios dentro de la aplicación siguen disponibles.",
+    "requestFailed": "La solicitud de permiso falló. Inténtalo de nuevo o usa los recordatorios dentro de la aplicación."
   },
   "SettingsPage": {
     "remindersEnabled": "Pop-up reminders",

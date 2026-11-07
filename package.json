@@ -1,6 +1,6 @@
 {
   "name": "habittrove",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -106,6 +106,9 @@
     "postcss": "$postcss",
     "postcss-selector-parser": "6.1.5",
     "glob": "14.0.2",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    },
     "readdir-glob": {
       "minimatch": "11.0.1"
     }

@@ -1,5 +1,7 @@
 'use client'
 
+import BrowserNotificationSettings from '@/components/BrowserNotificationSettings'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -110,6 +112,7 @@ export default function SettingsPage() {
                 <option value={30}>{t('reminderMinutes', { count: 30 })}</option>
               </select>
             </div>
+            <BrowserNotificationSettings enabled={Boolean(browserSettings.remindersEnabled)} />
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="number-formatting">{t('numberFormattingLabel')}</Label>

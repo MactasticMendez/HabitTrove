@@ -25,7 +25,8 @@ async function copyPostgresDependencies(target: string) {
       if (next === directory) throw new Error('PostgreSQL dependency metadata not found')
       directory = next
     }
-    await fs.cp(directory, path.join(target, name), { recursive: true })
+    // Bun's default recursive copy can stall on npm-installed trees on macOS.
+    await fs.cp(directory, path.join(target, name), { recursive: true, mode: fs.constants.COPYFILE_FICLONE })
     for (const dependency of Object.keys({ ...metadata.dependencies, ...metadata.optionalDependencies })) await copy(dependency, directory)
   }
   await copy('pg', repository)

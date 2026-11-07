@@ -7,6 +7,7 @@ import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdow
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { Timer, Calendar, Pin, Edit, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useId } from 'react';
 
 interface HabitContextMenuItemsProps {
   habit: Habit;
@@ -36,6 +37,10 @@ export function HabitContextMenuItems({
   const MenuSeparatorComponent = context === 'daily-overview' ? ContextMenuSeparator : DropdownMenuSeparator;
 
   const taskIsDueToday = habit.isTask ? isHabitDueToday({ habit, timezone: settings.system.timezone }) : false;
+  const rescheduleHelpId = useId();
+  const rescheduleHelp = habit.completionRecords?.some(record => record?.approval === 'pending')
+    ? t('reschedulePendingHelp')
+    : habit.schedule?.type === 'afterCompletion' ? t('rescheduleAfterCompletionHelp') : undefined;
 
   const handleAction = (action: () => void) => {
     action();
@@ -44,9 +49,12 @@ export function HabitContextMenuItems({
 
   return (
     <>
+      {habit.isTask && !habit.archived && rescheduleHelp &&
+        <p id={rescheduleHelpId} className="max-w-64 px-2 py-1.5 text-sm text-muted-foreground">{rescheduleHelp}</p>}
       {!habit.archived && (
         <MenuItemComponent
           disabled={!canInteract}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => {
             setPomo((prev) => ({
               ...prev,
@@ -63,8 +71,10 @@ export function HabitContextMenuItems({
       {/* "Move to Today" option: Show if task is not due today */}
       {habit.isTask && !habit.archived && !taskIsDueToday && (
         <MenuItemComponent
-          disabled={!canWrite}
+          disabled={!canWrite || Boolean(rescheduleHelp)}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => {
+            if (rescheduleHelp) return;
             const today = getNow({ timezone: settings.system.timezone });
             saveHabit({ ...habit, frequency: d2t({ dateTime: today }) });
           })}
@@ -77,8 +87,10 @@ export function HabitContextMenuItems({
       {/* "Move to Tomorrow" option: Show if task is due today OR not due today */}
       {habit.isTask && !habit.archived && (
         <MenuItemComponent
-          disabled={!canWrite}
+          disabled={!canWrite || Boolean(rescheduleHelp)}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => {
+            if (rescheduleHelp) return;
             const tomorrow = getNow({ timezone: settings.system.timezone }).plus({ days: 1 });
             saveHabit({ ...habit, frequency: d2t({ dateTime: tomorrow }) });
           })}
@@ -91,6 +103,7 @@ export function HabitContextMenuItems({
       {!habit.archived && (
         <MenuItemComponent
           disabled={!canWrite}
+          aria-describedby={rescheduleHelp ? rescheduleHelpId : undefined}
           onClick={() => handleAction(() => saveHabit({ ...habit, pinned: !habit.pinned }))}
         >
           <Pin className="mr-2 h-4 w-4" />

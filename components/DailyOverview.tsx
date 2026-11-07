@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { useAtom } from 'jotai'
 import { useTranslations } from 'next-intl'
 import { pomodoroAtom, settingsAtom, completedHabitsMapAtom, browserSettingsAtom, hasTasksAtom, currentUserAtom } from '@/lib/atoms'
-import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue, getHabitFreq } from '@/lib/utils'
+import { getTodayInTimezone, getUndoableCompletionIndex, isSameDate, t2d, d2t, getNow, isHabitDue, isTaskOverdue, isDailyScheduledItem } from '@/lib/utils'
 import { isCountedCompletion } from '@/lib/task-schedule'
 import { useTodayInTimezone } from '@/hooks/useTodayInTimezone'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -422,13 +422,13 @@ export default function DailyOverview({
   const dailyTasks = habits.filter(habit =>
     habit.isTask &&
     !habit.archived &&
-    (!browserSettings.hideNonDaily || !habit.taskRepeat || habit.taskRepeat === 'daily') &&
+    (!browserSettings.hideNonDaily || isDailyScheduledItem(habit)) &&
     (isHabitDue({ habit, timezone, date: todayDateObj }) || isTaskOverdue(habit, timezone))
   )
   const dailyHabits = habits.filter(habit =>
     !habit.isTask &&
     !habit.archived &&
-    (!browserSettings.hideNonDaily || habit.schedule?.type !== 'anytime' && getHabitFreq(habit) === 'daily') &&
+    (!browserSettings.hideNonDaily || isDailyScheduledItem(habit)) &&
     isHabitDue({ habit, timezone, date: todayDateObj })
   )
 
