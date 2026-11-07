@@ -6,6 +6,7 @@
 
 ### Fixed
 
+* Apply existing backup defaults to legacy family settings that omit the backup toggle, while preserving explicit disabled settings and the exact recovery snapshot.
 * Exclude calendar-restricted legacy daily rules from Daily only while retaining daily time filters, and announce move explanations on keyboard-reachable menu actions.
 * Keep the standalone CLI packaging test within its existing timeout on macOS by requesting filesystem clones with portable copy fallback.
 * Apply the same interval-aware Daily only filter to habit/task lists and Today's Overview, retaining one-off tasks and excluding any-time actions.

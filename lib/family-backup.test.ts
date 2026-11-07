@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { FAMILY_SNAPSHOT_TABLES, migrateFamilyDatabase, createFamilyBackupSource, readFamilySource, validateFamilySnapshot, writeFamilySnapshotDirectory, type FamilyDatabaseSnapshot, type FamilySnapshotTable } from './family-backup'
+import { FAMILY_SNAPSHOT_TABLES, migrateFamilyDatabase, createFamilyBackupSource, readFamilySource, readFamilyBackupSettings, validateFamilySnapshot, writeFamilySnapshotDirectory, type FamilyDatabaseSnapshot, type FamilySnapshotTable } from './family-backup'
 
 function fixture(): FamilyDatabaseSnapshot {
   const tables = {} as FamilyDatabaseSnapshot['tables']
@@ -16,6 +16,38 @@ function fixture(): FamilyDatabaseSnapshot {
   tables.global_wallet_totals = [['dual', '0.3'], ['historical-zero', '0']]
   return { format: 'habittrove-family-database', version: 2, schemaVersion: 2, tables }
 }
+
+test('backs up legacy family settings without an explicit backup flag and preserves the stored snapshot', () => {
+  const snapshot = fixture()
+  snapshot.tables.setting_sections = [['system', '{"timezone":"Europe/London","weekStartDay":0,"language":"en"}']]
+  const source = createFamilyBackupSource(snapshot, new Map())
+  const before = JSON.stringify(source.snapshot)
+  const settings = readFamilyBackupSettings(source)
+  expect(settings.system.autoBackupEnabled).toBe(true)
+  expect(settings.system.timezone).toBe('Europe/London')
+  expect(settings.system.weekStartDay).toBe(0)
+  expect(JSON.stringify(source.snapshot)).toBe(before)
+})
+
+test('preserves an explicit disabled or enabled instance backup setting', () => {
+  for (const enabled of [false, true]) {
+    const snapshot = fixture()
+    snapshot.tables.setting_sections = [['system', JSON.stringify({ autoBackupEnabled: enabled })]]
+    expect(readFamilyBackupSettings(createFamilyBackupSource(snapshot, new Map())).system.autoBackupEnabled).toBe(enabled)
+  }
+})
+
+test('uses existing defaults when legacy settings omit the system section', () => {
+  expect(readFamilyBackupSettings(createFamilyBackupSource(fixture(), new Map())).system.autoBackupEnabled).toBe(true)
+})
+
+test('rejects malformed backup settings instead of enabling an invalid saved value', () => {
+  for (const system of [null, [], false, 'enabled', { autoBackupEnabled: null }, { autoBackupEnabled: 'false' }]) {
+    const snapshot = fixture()
+    snapshot.tables.setting_sections = [['system', JSON.stringify(system)]]
+    expect(() => readFamilyBackupSettings(createFamilyBackupSource(snapshot, new Map()))).toThrow()
+  }
+})
 
 test('complete family format preserves exact decimals, removed historical flags and allowlisted raw fields', () => {
   const snapshot = fixture()
