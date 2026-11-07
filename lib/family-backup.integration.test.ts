@@ -117,6 +117,8 @@ describe.skipIf(!enabled)('complete family backup and isolated offline restorati
       await expect(captureDatabaseSource(data)).rejects.toThrow('version 2')
       const hidden = await withStorageTransaction(async () => (await currentDatabaseClient()!.query('SELECT count(*)::int AS count FROM habittrove.habits')).rows[0].count, { readOnly: true })
       expect(hidden).toBe(0)
+      // Imported settings may predate the backup toggle; recovery must retain their original shape.
+      await sourceAdmin.query("UPDATE habittrove.setting_sections SET value=value-'autoBackupEnabled' WHERE name='system'")
       const snapshot = await captureFamilyDatabaseSource(data)
       expect(snapshot.snapshot.tables.habits).toHaveLength(2)
       expect(snapshot.manifest.ledgerTotals).toEqual({ dual: '3.05', removed: '0.2' })

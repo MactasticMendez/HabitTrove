@@ -5,7 +5,7 @@ import { Client, type PoolClient } from 'pg'
 import stringify from 'json-stable-stringify'
 import { assertDatabaseTarget, currentDatabaseClient, withStorageTransaction } from './db/client'
 import { MigrationValidationError, canonicalSourceDirectory, captureProtectedAssets, readSnapshotFile, validateProtectedAssetMap, verifyProtectedAssets } from './db-migration'
-import type { User } from './types'
+import { getDefaultSettings, type User } from './types'
 
 type CellType = 'text' | 'integer' | 'bigint' | 'numeric' | 'boolean' | 'date' | 'timestamptz' | 'jsonb'
 interface Column { name: string; type: CellType; nullable: boolean }
@@ -324,8 +324,10 @@ export function readFamilyBackupSettings(source: CapturedFamilySource): import('
     const item = rowObject('setting_sections', row)
     return [item.name!, JSON.parse(item.value!)]
   })) as import('./types').Settings
-  requireValid(settings.system && typeof settings.system.autoBackupEnabled === 'boolean', 'Missing instance backup settings')
-  return settings
+  requireValid(settings.system === undefined || (settings.system && typeof settings.system === 'object' && !Array.isArray(settings.system)), 'Invalid instance backup settings')
+  const system = { ...getDefaultSettings().system, ...settings.system }
+  requireValid(typeof system.autoBackupEnabled === 'boolean', 'Invalid instance backup settings')
+  return { ...settings, system }
 }
 
 export interface FamilyActivationPreview { sourceHash: string; issues: Record<string, number>; canActivate: boolean }
