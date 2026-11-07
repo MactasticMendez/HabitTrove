@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## Version 1.0.3
+
 ### Fixed
 
 * Exclude calendar-restricted legacy daily rules from Daily only while retaining daily time filters, and announce move explanations on keyboard-reachable menu actions.
